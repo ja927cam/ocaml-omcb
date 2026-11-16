@@ -1,0 +1,5 @@
+(executable
+ (name server)
+ (libraries dream protocol)
+ (preprocess (pps lwt_ppx))
+)

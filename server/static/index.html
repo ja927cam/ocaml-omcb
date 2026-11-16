@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>OCaml Wasm Ray Tracer</title>
+  <link rel="icon" href="data:,">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden; /* Prevents scrollbars from ever appearing */
+      background: #000;
+    }
+
+    canvas#game {
+      display: block;   /* Removes inline bottom gap */
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;     /* Stretches visually to fill full viewport width */
+      height: 100vh;    /* Stretches visually to fill full viewport height */
+      image-rendering: pixelated; /* Keeps crisp pixels without blurry smoothing */
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <script src="/static/main.bc.wasm.js"></script>
+</body>
+</html>

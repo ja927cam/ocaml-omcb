@@ -1,0 +1,8 @@
+(executable
+ (name main)
+ (modes wasm)
+ (libraries
+  brr
+  protocol
+  )
+)

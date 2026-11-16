@@ -1,0 +1,6 @@
+(library
+ (name protocol)
+ (preprocess 
+  (pps ppx_deriving_yojson)
+ )
+)
