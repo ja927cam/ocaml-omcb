@@ -429,8 +429,9 @@ game’s expected next sequence. Tests verify:
 - castling/en-passant/promotion flags and captured IDs;
 - sequence continuity.
 
-A unit test for wraparound with a small capacity would strengthen this
-invariant; it is a good candidate for the next test pass or a QCheck model.
+The engine tests include a capacity-4 wraparound case that checks
+latest/next/oldest and overwritten/retained events. A QCheck model would add
+broader coverage of interleaved appends and reads.
 
 ---
 
@@ -670,6 +671,7 @@ It covers:
 - rejected transactions leaving board, ledger and sequence unchanged;
 - accepted transactions appending exactly one event and advancing sequence;
 - ledger event metadata and flags;
+- small-capacity ledger wraparound and sequence retention;
 - protocol round trips and invalid lengths/IDs/deltas;
 - worker FIFO, same-piece races, queue-full and shutdown with pending work;
 - client rollback behaviour was also exercised manually in headless Chromium.
