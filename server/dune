@@ -1,5 +1,8 @@
 (executable
  (name server)
  (libraries dream protocol)
- (preprocess (pps lwt_ppx))
-)
+ (preprocess (pps lwt_ppx)))
+
+(alias
+ (name default)
+ (deps (alias ../client/all)))
