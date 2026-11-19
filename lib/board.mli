@@ -35,6 +35,19 @@ val index : position -> int
 (** [index p] is the world index in [0; 63_999_999].
     @raise Invalid_argument if any coordinate is out of range. *)
 
+val in_bounds : position -> bool
+(** [in_bounds p] is [true] iff [p] is a valid world position. *)
+
+val world_x : position -> int
+(** [world_x p] is the absolute x coordinate in [0; 7999]. *)
+
+val world_y : position -> int
+(** [world_y p] is the absolute y coordinate in [0; 7999]. *)
+
+val position_of_world : x:int -> y:int -> position
+(** Convert absolute world coordinates back to a board/square position.
+    @raise Invalid_argument if [x] or [y] is outside [0; 7999]. *)
+
 val get : t -> position -> Piece.t
 (** [get t p] is the packed piece at [p], or {!Piece.empty}.
     @raise Invalid_argument if [p] is out of range. *)

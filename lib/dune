@@ -1,4 +1,4 @@
 (library
  (name sim_map_lib)
  (wrapped false)
- (modules piece board))
+ (modules piece board move move_validator move_processor))

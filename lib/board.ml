@@ -25,6 +25,13 @@ let squares_per_board = 64
 let total_squares = boards_x * boards_y * squares_per_board
 let dimensions = (boards_x, boards_y)
 
+let in_bounds_board bp =
+  bp.board_x >= 0 && bp.board_x < boards_x && bp.board_y >= 0
+  && bp.board_y < boards_y
+
+let in_bounds_square sp = sp.x >= 0 && sp.x < 8 && sp.y >= 0 && sp.y < 8
+let in_bounds p = in_bounds_board p.board && in_bounds_square p.square
+
 let validate_board bp =
   if bp.board_x < 0 || bp.board_x >= boards_x then
     invalid_arg "Board: board_x is out of range";
@@ -49,6 +56,20 @@ let index p =
   validate_board p.board;
   validate_square p.square;
   index_unchecked p
+
+let world_x p = (p.board.board_x * 8) + p.square.x
+let world_y p = (p.board.board_y * 8) + p.square.y
+
+let position_of_world ~x ~y =
+  let world_size = boards_x * 8 in
+  if x < 0 || x >= world_size then
+    invalid_arg "Board.position_of_world: x is out of range";
+  if y < 0 || y >= world_size then
+    invalid_arg "Board.position_of_world: y is out of range";
+  {
+    board = { board_x = x / 8; board_y = y / 8 };
+    square = { x = x mod 8; y = y mod 8 };
+  }
 
 let create () =
   let squares = Array1.create int64 c_layout total_squares in
