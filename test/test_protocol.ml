@@ -45,4 +45,59 @@ let () =
   check "short frame rejected" (move_of_bytes (Bytes.create 4) = None);
   check "long frame rejected" (move_of_bytes (Bytes.create 6) = None);
 
+  let request =
+    {
+      request_id = 77l;
+      expected_piece_id = 12345l;
+      move = move (pos 3 4 2 5) (pos 3 4 2 3);
+    }
+  in
+  let request_bytes = move_request_to_bytes request in
+  check "request length" (Bytes.length request_bytes = 13);
+  (match move_request_of_bytes request_bytes with
+   | None -> failwith "request decoded to None"
+   | Some decoded ->
+     check "request id" (decoded.request_id = request.request_id);
+     check "expected id" (decoded.expected_piece_id = request.expected_piece_id);
+     check "request move src" (same_position decoded.move.src request.move.src);
+     check "request move dst" (same_position decoded.move.dst request.move.dst));
+
+  expect_invalid "invalid request piece id" (fun () ->
+      move_request_to_bytes { request with expected_piece_id = 0l });
+
+  let accepted_response =
+    {
+      request_id = 77l;
+      status = Accepted;
+      sequence = 42L;
+      moved_piece = 0x1234567890L;
+      captured_piece_id = 99l;
+      rejection = 0;
+    }
+  in
+  let rb = response_to_bytes accepted_response in
+  check "response length" (Bytes.length rb = 26);
+  (match response_of_bytes rb with
+   | None -> failwith "response decoded to None"
+   | Some r ->
+     check "response status" (r.status = Accepted);
+     check "response request" (r.request_id = 77l);
+     check "response sequence" (r.sequence = 42L);
+     check "response moved piece" (r.moved_piece = 0x1234567890L);
+     check "response captured" (r.captured_piece_id = 99l);
+     check "response rejection" (r.rejection = 0));
+
+  let rejected_response =
+    { accepted_response with status = Rejected; sequence = 0L;
+      moved_piece = 0L; captured_piece_id = 0l;
+      rejection = rejection_blocked_path }
+  in
+  (match response_of_bytes (response_to_bytes rejected_response) with
+   | None -> failwith "rejected response decoded to None"
+   | Some r ->
+     check "rejected status" (r.status = Rejected);
+     check "rejected code" (r.rejection = rejection_blocked_path));
+
+  check "short response rejected" (response_of_bytes (Bytes.create 25) = None);
+
   Printf.printf "All protocol move codec tests passed.\n"

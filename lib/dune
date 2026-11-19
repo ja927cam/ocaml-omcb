@@ -1,4 +1,16 @@
 (library
  (name sim_map_lib)
  (wrapped false)
- (modules piece board move move_validator move_processor))
+ (libraries lwt.unix)
+ (modules
+  piece
+  board
+  int16
+  ledger
+  move
+  move_validator
+  move_processor
+  game_state
+  move_request
+  move_engine
+  state_worker))

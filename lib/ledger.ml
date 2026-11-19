@@ -47,7 +47,7 @@ let move_mask = 0xFFFFFFFFFFFFFL
 let piece_id_mask = 0x1FFFFFFL
 let max_flags = 0x3FFF
 
-let create_ledger capacity =
+let create_ledger ?(next_seq = 0L) capacity =
   if capacity <= 0 || (capacity land (capacity - 1)) <> 0 then
     invalid_arg "Ledger.create_ledger: capacity must be a positive power of two";
   {
@@ -55,11 +55,11 @@ let create_ledger capacity =
     metadata = Array1.create int64 c_layout capacity;
     capacity;
     mask = capacity - 1;
-    head_seq = 0L;
-    oldest_seq = 0L;
+    head_seq = next_seq;
+    oldest_seq = next_seq;
   }
 
-let create = create_ledger
+let create capacity = create_ledger capacity
 let capacity t = t.capacity
 let latest_seq t = t.head_seq
 let oldest_seq t = t.oldest_seq

@@ -1,6 +1,6 @@
 (tests
- (names test_piece_board test_move)
- (libraries sim_map_lib))
+ (names test_piece_board test_move test_game_state test_engine test_worker)
+ (libraries sim_map_lib lwt.unix))
 
 (test
  (name test_protocol)

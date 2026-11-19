@@ -140,6 +140,155 @@ let move_of_bytes b =
               };
           }
 
+(* {2 Move requests (13 bytes)}
+
+   byte  0..4   move (5-byte codec above)
+   byte  5..8   expected piece ID (int32, little-endian)
+   byte  9..12  request ID (int32, little-endian) *)
+
+type move_request = {
+  request_id : int32;
+  expected_piece_id : int32;
+  move : move;
+}
+
+let request_bytes = 13
+let max_piece_id = 0x1FFFFFFl
+
+let get_i32_le b off =
+  let byte i = Int32.of_int (Char.code (Bytes.get b (off + i))) in
+  Int32.logor (byte 0)
+    (Int32.logor
+       (Int32.shift_left (byte 1) 8)
+       (Int32.logor
+          (Int32.shift_left (byte 2) 16)
+          (Int32.shift_left (byte 3) 24)))
+
+let set_i32_le b off v =
+  for i = 0 to 3 do
+    let byte =
+      Int32.logand (Int32.shift_right_logical v (i * 8)) 0xffl
+      |> Int32.to_int
+    in
+    Bytes.set b (off + i) (Char.chr byte)
+  done
+
+let get_i64_le b off =
+  let packed = ref 0L in
+  for i = 0 to 7 do
+    packed :=
+      Int64.logor !packed
+        (Int64.shift_left
+           (Int64.of_int (Char.code (Bytes.get b (off + i))))
+           (i * 8))
+  done;
+  !packed
+
+let set_i64_le b off v =
+  for i = 0 to 7 do
+    let byte =
+      Int64.logand (Int64.shift_right_logical v (i * 8)) 0xffL
+      |> Int64.to_int
+    in
+    Bytes.set b (off + i) (Char.chr byte)
+  done
+
+let valid_piece_id id =
+  Int32.compare id 0l > 0 && Int32.compare id max_piece_id <= 0
+
+let move_request_to_bytes request =
+  if not (valid_piece_id request.expected_piece_id) then
+    invalid_arg "Protocol.Types.move_request_to_bytes: invalid piece ID";
+  let b = Bytes.create request_bytes in
+  let move = move_to_bytes request.move in
+  Bytes.blit move 0 b 0 move_bytes;
+  set_i32_le b 5 request.expected_piece_id;
+  set_i32_le b 9 request.request_id;
+  b
+
+let move_request_of_bytes b =
+  if Bytes.length b <> request_bytes then None
+  else
+    match move_of_bytes (Bytes.sub b 0 move_bytes) with
+    | None -> None
+    | Some move ->
+      let expected_piece_id = get_i32_le b 5 in
+      if not (valid_piece_id expected_piece_id) then None
+      else
+        Some
+          {
+            request_id = get_i32_le b 9;
+            expected_piece_id;
+            move;
+          }
+
+(* {2 Responses (26 bytes)}
+
+   byte  0      status: 1 accepted, 0 rejected
+   byte  1..4   request ID (int32, little-endian)
+   byte  5..12  sequence (int64, little-endian; 0 when rejected)
+   byte 13..20  updated moving piece (int64; 0 when rejected)
+   byte 21..24  captured piece ID (int32; 0 when none/rejected)
+   byte 25      rejection code (0 for accepted) *)
+
+type response_status =
+  | Accepted
+  | Rejected
+
+type response = {
+  request_id : int32;
+  status : response_status;
+  sequence : int64;
+  moved_piece : int64;
+  captured_piece_id : int32;
+  rejection : int;
+}
+
+let response_bytes = 26
+
+let rejection_none = 0
+let rejection_stale_piece = 1
+let rejection_empty_source = 2
+let rejection_invalid_geometry = 3
+let rejection_blocked_path = 4
+let rejection_invalid_destination = 5
+let rejection_cross_board_capture = 6
+let rejection_invalid_special_move = 7
+let rejection_invalid_request = 8
+let rejection_queue_full = 9
+let rejection_worker_stopped = 10
+let rejection_worker_failed = 11
+
+let response_to_bytes response =
+  let b = Bytes.create response_bytes in
+  Bytes.set b 0
+    (Char.chr (match response.status with Accepted -> 1 | Rejected -> 0));
+  set_i32_le b 1 response.request_id;
+  set_i64_le b 5 response.sequence;
+  set_i64_le b 13 response.moved_piece;
+  set_i32_le b 21 response.captured_piece_id;
+  Bytes.set b 25 (Char.chr (response.rejection land 0xff));
+  b
+
+let response_of_bytes b =
+  if Bytes.length b <> response_bytes then None
+  else
+    let status =
+      match Char.code (Bytes.get b 0) with
+      | 1 -> Accepted
+      | _ -> Rejected
+    in
+    Some
+      {
+        request_id = get_i32_le b 1;
+        status;
+        sequence = get_i64_le b 5;
+        moved_piece = get_i64_le b 13;
+        captured_piece_id = get_i32_le b 21;
+        rejection = Char.code (Bytes.get b 25);
+      }
+
+
 type client_msg =
   | Move of { x : float; y : float }
   | Cast_ray of { angle : float }

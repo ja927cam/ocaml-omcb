@@ -1,6 +1,6 @@
 (executable
  (name server)
- (libraries dream protocol)
+ (libraries dream protocol sim_map_lib)
  (preprocess (pps lwt_ppx)))
 
 (alias

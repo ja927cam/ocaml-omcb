@@ -137,6 +137,10 @@ let copy t =
   Array1.blit t.squares squares;
   { squares }
 
+let back_rank =
+  [| Piece.Rook; Piece.Knight; Piece.Bishop; Piece.Queen; Piece.King;
+     Piece.Bishop; Piece.Knight; Piece.Rook |]
+
 let initialise_standard_position t bp =
   let bid = board_id bp in
   clear_board t bp;
@@ -149,10 +153,6 @@ let initialise_standard_position t bp =
       Piece.create ~id:(Int32.of_int id) ~piece_type ~is_white
     in
     Array1.unsafe_set t.squares (base + ((y * 8) + x)) piece
-  in
-  let back_rank =
-    [| Piece.Rook; Piece.Knight; Piece.Bishop; Piece.Queen; Piece.King;
-       Piece.Bishop; Piece.Knight; Piece.Rook |]
   in
   Array.iteri (fun x piece_type -> put x 0 piece_type false) back_rank;
   for x = 0 to 7 do put x 1 Piece.Pawn false done;

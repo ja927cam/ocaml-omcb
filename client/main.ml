@@ -36,6 +36,22 @@ let make_board _board_x _board_y =
   done;
   board
 
+(* Piece IDs must match Board.initialise_standard_position on the server:
+   black back rank, black pawns, white pawns, white back rank. *)
+let make_piece_ids board_x board_y =
+  let base = (((board_y * 1000) + board_x) * 32) + 1 in
+  let ids = Array.make 64 0l in
+  let slot = ref 0 in
+  let put x y =
+    ids.((y * 8) + x) <- Int32.of_int (base + !slot);
+    incr slot
+  in
+  for x = 0 to 7 do put x 0 done;
+  for x = 0 to 7 do put x 1 done;
+  for x = 0 to 7 do put x 6 done;
+  for x = 0 to 7 do put x 7 done;
+  ids
+
 let square_at x y =
   if x < 0. || y < 0. || x >= float board_px || y >= float board_px
   then None
@@ -109,10 +125,12 @@ let main () =
   let atlas = C2d.image_src_of_el (Canvas.to_el atlas_canvas) in
 
   let board = ref (make_board 0 0) in
+  let piece_ids = ref (make_piece_ids 0 0) in
   let board_x = ref 0 in
   let board_y = ref 0 in
   let drag = ref None in
   let ws = ref None in
+  let next_request_id = ref 0l in
   let needs_draw = ref true in
   let frame_pending = ref false in
 
@@ -184,21 +202,30 @@ let main () =
       (Ev.Mouse.client_y m -. !origin_y) *. !scale_y )
   in
 
-  let send_move src dst =
+  let send_move ~expected_piece_id src dst =
     match !ws with
     | Some socket
       when Brr_io.Websocket.ready_state socket
            = Brr_io.Websocket.Ready_state.open' ->
       let position sq =
         {
-          Protocol.Types.board_x = !board_x land 0x3ff;
-          board_y = !board_y land 0x3ff;
+          Protocol.Types.board_x = !board_x;
+          board_y = !board_y;
           x = sq mod 8;
           y = sq / 8;
         }
       in
-      let move = { Protocol.Types.src = position src; dst = position dst } in
-      let data = Protocol.Types.move_to_bytes move in
+      let request_id = !next_request_id in
+      next_request_id := Int32.succ request_id;
+      let request =
+        {
+          Protocol.Types.request_id;
+          expected_piece_id;
+          move =
+            { Protocol.Types.src = position src; dst = position dst };
+        }
+      in
+      let data = Protocol.Types.move_request_to_bytes request in
       let len = Bytes.length data in
       let buffer = Tarray.Buffer.create len in
       let bytes = Tarray.uint8_of_buffer buffer |> Tarray.to_bigarray1 in
@@ -213,6 +240,7 @@ let main () =
 
   let load_board x y =
     board := make_board x y;
+    piece_ids := make_piece_ids x y;
     board_x := x;
     board_y := y;
     drag := None;
@@ -248,10 +276,14 @@ let main () =
       let x, y = to_board ev in
       (match square_at x y with
        | Some sq when sq <> d.from ->
+         let expected_piece_id = !piece_ids.(d.from) in
          let b = !board in
          Bytes.unsafe_set b d.from empty;
          Bytes.unsafe_set b sq d.piece;
-         send_move d.from sq
+         let ids = !piece_ids in
+         ids.(sq) <- expected_piece_id;
+         ids.(d.from) <- 0l;
+         send_move ~expected_piece_id d.from sq
        | _ -> ());
       drag := None;
       request_draw ()
