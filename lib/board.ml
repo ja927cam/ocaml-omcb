@@ -76,6 +76,17 @@ let create () =
   Array1.fill squares Piece.empty;
   { squares }
 
+let get_world t ~x ~y =
+  let world_size = boards_x * 8 in
+  if x < 0 || x >= world_size || y < 0 || y >= world_size then
+    invalid_arg "Board.get_world: coordinates are out of range";
+  let board_x = x / 8 and board_y = y / 8 in
+  let i =
+    (((board_y * boards_x) + board_x) * squares_per_board)
+    + (((y mod 8) * 8) + (x mod 8))
+  in
+  Array1.unsafe_get t.squares i
+
 let get t p = Array1.unsafe_get t.squares (index p)
 
 let set t p piece = Array1.unsafe_set t.squares (index p) piece

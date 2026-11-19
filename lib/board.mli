@@ -48,6 +48,10 @@ val position_of_world : x:int -> y:int -> position
 (** Convert absolute world coordinates back to a board/square position.
     @raise Invalid_argument if [x] or [y] is outside [0; 7999]. *)
 
+val get_world : t -> x:int -> y:int -> Piece.t
+(** [get_world t ~x ~y] reads an absolute world square without constructing a
+    position record. @raise Invalid_argument outside [0; 7999]. *)
+
 val get : t -> position -> Piece.t
 (** [get t p] is the packed piece at [p], or {!Piece.empty}.
     @raise Invalid_argument if [p] is out of range. *)

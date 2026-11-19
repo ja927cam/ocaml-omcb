@@ -147,6 +147,11 @@ let test_board () =
   let p = Piece.create ~id:42l ~piece_type:Piece.Knight ~is_white:true in
   Board.set world first p;
   check "set/get first" (Piece.id (Board.get world first) = 42l);
+  check "get_world first"
+    (Piece.id
+       (Board.get_world world ~x:(Board.world_x first)
+          ~y:(Board.world_y first))
+    = 42l);
   check "occupied after set" (Board.occupied_count world = 1);
   Board.set world last p;
   check "set/get last" (Piece.id (Board.get world last) = 42l);

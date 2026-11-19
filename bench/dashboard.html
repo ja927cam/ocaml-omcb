@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>One Million Chessboards — Benchmarks</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111317;
+      --panel: #181b21;
+      --panel-2: #20242c;
+      --text: #e8eaf0;
+      --muted: #8b93a3;
+      --accent: #7ee2b8;
+      --accent-2: #6aa9ff;
+      --line: #2c313b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    header {
+      padding: 32px clamp(20px, 5vw, 64px) 20px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #161a20, #111317);
+    }
+    h1 { margin: 0 0 6px; font-size: clamp(22px, 4vw, 34px); letter-spacing: -0.02em; }
+    h2 { margin: 34px 0 10px; font-size: 16px; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; }
+    h3 { margin: 0 0 4px; font-size: 15px; }
+    .meta { color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px 22px; }
+    .meta b { color: var(--text); font-weight: 600; }
+    main { padding: 10px clamp(20px, 5vw, 64px) 60px; max-width: 1500px; margin: 0 auto; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 14px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px 16px;
+    }
+    .card .sub { color: var(--muted); font-size: 12px; margin-bottom: 10px; min-height: 1.4em; }
+    .row { display: grid; grid-template-columns: 1fr 120px 90px 92px; gap: 8px; align-items: center; margin: 7px 0; }
+    .name { color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
+    .bar-wrap { height: 9px; background: #252a33; border-radius: 99px; overflow: hidden; }
+    .bar { height: 100%; background: var(--accent); min-width: 2px; border-radius: 99px; }
+    .bar.slow { background: var(--accent-2); }
+    .value { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; font-size: 12px; }
+    .ops { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 20px 0 0; }
+    .stat { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+    .stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+    .stat .v { font-size: 19px; margin-top: 4px; }
+    .note { color: var(--muted); font-size: 11px; margin-top: 10px; }
+    .empty { color: var(--muted); }
+    footer { color: var(--muted); border-top: 1px solid var(--line); padding: 18px clamp(20px, 5vw, 64px); font-size: 12px; }
+    code { color: var(--text); }
+    a { color: var(--accent-2); }
+  </style>
+</head>
+<body>
+<header>
+  <h1>One Million Chessboards — benchmark dashboard</h1>
+  <div class="meta">
+    <span>generated <b id="generated">—</b></span>
+    <span>commit <b id="commit">—</b></span>
+    <span>OCaml <b id="ocaml">—</b></span>
+    <span>CPU <b id="cpu">—</b></span>
+    <span>RSS <b id="rss">—</b></span>
+  </div>
+  <div class="summary">
+    <div class="stat"><div class="k">measurements</div><div class="v" id="count">—</div></div>
+    <div class="stat"><div class="k">groups</div><div class="v" id="groups">—</div></div>
+    <div class="stat"><div class="k">fastest loop</div><div class="v" id="fastest">—</div></div>
+    <div class="stat"><div class="k">slowest loop</div><div class="v" id="slowest">—</div></div>
+  </div>
+</header>
+<main id="app"></main>
+<footer>
+  Run <code>dune exec bench/bench.exe</code> from the repository root, then open
+  <code>bench/dashboard.html</code>. Bars are scaled so the fastest variant in
+  each benchmark is full width; lower ns/op is better. Startup and worker
+  single-shot results show milliseconds as well.
+</footer>
+<script src="results.js"></script>
+<script>
+(() => {
+  const data = window.BENCH_RESULTS;
+  const app = document.getElementById("app");
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+  const fmtInt = (n) => Number(n).toLocaleString("en-GB");
+  const fmtNs = (n) => {
+    n = Number(n);
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + " ms";
+    if (n >= 1e3) return (n / 1e3).toFixed(2) + " µs";
+    return n.toFixed(1) + " ns";
+  };
+  const fmtOps = (n) => {
+    n = Number(n);
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + " G/s";
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + " M/s";
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + " k/s";
+    return n.toFixed(0) + "/s";
+  };
+
+  if (!data || !data.results) {
+    app.innerHTML = '<p class="empty">No results.js found. Run <code>dune exec bench/bench.exe</code>.</p>';
+    return;
+  }
+
+  document.getElementById("generated").textContent = data.generated || "—";
+  document.getElementById("commit").textContent = data.commit || "—";
+  document.getElementById("ocaml").textContent = data.ocaml || "—";
+  document.getElementById("cpu").textContent = data.cpu || "—";
+  document.getElementById("rss").textContent = data.rss_kb
+    ? (Number(data.rss_kb) / 1024).toFixed(1) + " MiB"
+    : "—";
+
+  const results = data.results.slice();
+  const groups = new Map();
+  for (const r of results) {
+    if (!groups.has(r.group)) groups.set(r.group, new Map());
+    const names = groups.get(r.group);
+    if (!names.has(r.name)) names.set(r.name, []);
+    names.get(r.name).push(r);
+  }
+
+  document.getElementById("count").textContent = fmtInt(results.length);
+  document.getElementById("groups").textContent = fmtInt(groups.size);
+
+  const loops = results.filter((r) => !r.single && r.ns_per_op > 0);
+  if (loops.length) {
+    const byNs = loops.slice().sort((a, b) => a.ns_per_op - b.ns_per_op);
+    const fast = byNs[0], slow = byNs[byNs.length - 1];
+    document.getElementById("fastest").textContent =
+      fast.name + " · " + fmtNs(fast.ns_per_op);
+    document.getElementById("slowest").textContent =
+      slow.name + " · " + fmtNs(slow.ns_per_op);
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const [group, names] of groups) {
+    const h2 = document.createElement("h2");
+    h2.textContent = group;
+    frag.appendChild(h2);
+    const grid = document.createElement("div");
+    grid.className = "grid";
+
+    for (const [name, variants] of names) {
+      const card = document.createElement("section");
+      card.className = "card";
+      const h3 = document.createElement("h3");
+      h3.textContent = name;
+      card.appendChild(h3);
+
+      const note = variants.find((r) => r.note)?.note || "";
+      if (note) {
+        const sub = document.createElement("div");
+        sub.className = "sub";
+        sub.textContent = note;
+        card.appendChild(sub);
+      }
+
+      const best = variants
+        .filter((r) => r.ns_per_op > 0)
+        .reduce((m, r) => Math.min(m, r.ns_per_op), Infinity);
+
+      for (const r of variants) {
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const nameEl = document.createElement("div");
+        nameEl.className = "name";
+        nameEl.textContent = r.variant;
+        row.appendChild(nameEl);
+
+        const barWrap = document.createElement("div");
+        barWrap.className = "bar-wrap";
+        const bar = document.createElement("div");
+        bar.className = "bar" + (r.ns_per_op > best ? " slow" : "");
+        const width = r.ns_per_op > 0 && Number.isFinite(best)
+          ? Math.max(1, Math.min(100, best / r.ns_per_op * 100))
+          : 0;
+        bar.style.width = width + "%";
+        barWrap.appendChild(bar);
+        row.appendChild(barWrap);
+
+        const value = document.createElement("div");
+        value.className = "value";
+        const ops = document.createElement("div");
+        ops.className = "ops";
+
+        if (r.single) {
+          const ms = Number(r.total_ns) / 1e6;
+          value.textContent = ms.toFixed(2) + " ms";
+          ops.textContent = r.iterations > 1
+            ? fmtOps(r.ops_per_sec) + " · " + fmtInt(r.iterations)
+            : "single shot";
+        } else {
+          value.textContent = fmtNs(r.ns_per_op);
+          ops.textContent = fmtOps(r.ops_per_sec);
+        }
+        row.appendChild(value);
+        row.appendChild(ops);
+        card.appendChild(row);
+      }
+      grid.appendChild(card);
+    }
+    frag.appendChild(grid);
+  }
+  app.appendChild(frag);
+})();
+</script>
+</body>
+</html>

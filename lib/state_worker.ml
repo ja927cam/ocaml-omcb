@@ -31,6 +31,7 @@ type t = {
   condition : unit Lwt_condition.t;
   mutable accepting : bool;
   mutable failed : bool;
+  mutable notification_pending : bool;
   mutable depth : int;
   mutable requests_processed : int64;
   mutable requests_rejected : int64;
@@ -76,31 +77,40 @@ let update_metrics t ~started_ns ~finished_ns item =
   if Int64.compare wait t.max_queue_wait_ns > 0 then
     t.max_queue_wait_ns <- wait
 
-let rec loop t =
+let batch_size = 64
+
+let process_one t item =
+  let started_ns = now_ns () in
+  match Move_engine.process t.state item.request with
+  | result ->
+    let finished_ns = now_ns () in
+    update_metrics t ~started_ns ~finished_ns item;
+    (match result with
+     | Move_engine.Accepted _ -> ()
+     | Move_engine.Rejected _ ->
+       t.requests_rejected <- Int64.succ t.requests_rejected);
+    Lwt.wakeup_later item.promise (Ok result);
+    true
+  | exception exn ->
+    fail_queue t exn;
+    Lwt.wakeup_later item.promise (Error Worker_failed);
+    false
+
+let rec loop t budget =
   if t.depth = 0 then
     if not t.accepting then begin
       finish t;
       Lwt.return_unit
     end
-    else Lwt_condition.wait t.condition >>= fun () -> loop t
+    else Lwt_condition.wait t.condition >>= fun () -> loop t batch_size
+  else if budget = 0 then
+    (* Yield after a bounded batch so a continuously full queue cannot starve
+       the Lwt scheduler. *)
+    Lwt.pause () >>= fun () -> loop t batch_size
   else begin
     let item = Queue.take t.queue in
     t.depth <- t.depth - 1;
-    let started_ns = now_ns () in
-    match Move_engine.process t.state item.request with
-    | result ->
-      let finished_ns = now_ns () in
-      update_metrics t ~started_ns ~finished_ns item;
-      (match result with
-       | Move_engine.Accepted _ -> ()
-       | Move_engine.Rejected _ ->
-         t.requests_rejected <- Int64.succ t.requests_rejected);
-      Lwt.wakeup_later item.promise (Ok result);
-      Lwt.pause () >>= fun () -> loop t
-    | exception exn ->
-      fail_queue t exn;
-      Lwt.wakeup_later item.promise (Error Worker_failed);
-      Lwt.return_unit
+    if process_one t item then loop t (budget - 1) else Lwt.return_unit
   end
 
 let start ~(config : config) state =
@@ -115,6 +125,7 @@ let start ~(config : config) state =
       condition = Lwt_condition.create ();
       accepting = true;
       failed = false;
+      notification_pending = false;
       depth = 0;
       requests_processed = 0L;
       requests_rejected = 0L;
@@ -127,8 +138,20 @@ let start ~(config : config) state =
       finished_done = false;
     }
   in
-  Lwt.async (fun () -> loop worker);
+  Lwt.async (fun () -> loop worker batch_size);
   worker
+
+let schedule_notification t =
+  if not t.notification_pending then begin
+    t.notification_pending <- true;
+    (* Notify after yielding so a burst of submits can fill the queue before
+       the worker starts processing. *)
+    Lwt.async (fun () ->
+        Lwt.pause () >>= fun () ->
+        t.notification_pending <- false;
+        Lwt_condition.broadcast t.condition ();
+        Lwt.return_unit)
+  end
 
 let submit t request =
   if t.failed then Lwt.return (Error Worker_failed)
@@ -141,12 +164,7 @@ let submit t request =
       { request; promise = resolver; enqueued_ns = now_ns () }
       t.queue;
     t.depth <- t.depth + 1;
-    (* Notify after yielding so a burst of submits can fill the queue before
-       the worker starts processing. *)
-    Lwt.async (fun () ->
-        Lwt.pause () >>= fun () ->
-        Lwt_condition.broadcast t.condition ();
-        Lwt.return_unit);
+    schedule_notification t;
     promise
   end
 

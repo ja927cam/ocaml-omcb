@@ -288,9 +288,3 @@ let response_of_bytes b =
         captured_piece_id = get_i32_le b 21;
         rejection = Char.code (Bytes.get b 25);
       }
-
-
-type client_msg =
-  | Move of { x : float; y : float }
-  | Cast_ray of { angle : float }
-[@@deriving yojson]

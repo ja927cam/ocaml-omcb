@@ -43,8 +43,8 @@ let path_clear t (src : Board.position) (dst : Board.position) =
   let x = ref (x0 + dx) and y = ref (y0 + dy) in
   let clear = ref true in
   while !clear && (!x <> x1 || !y <> y1) do
-    let p = Board.position_of_world ~x:!x ~y:!y in
-    if not (Piece.is_empty (Board.get t p)) then clear := false
+    if not (Piece.is_empty (Board.get_world t ~x:!x ~y:!y)) then
+      clear := false
     else begin
       x := !x + dx;
       y := !y + dy

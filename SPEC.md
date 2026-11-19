@@ -78,6 +78,17 @@ test/
   test_game_state.ml
   test_engine.ml
   test_worker.ml
+
+bench/
+  bench.ml
+  dashboard.html
+  results.json / results.js
+  README.md
+
+docs/
+  ALGORITHMS.md
+
+README.md
 ```
 
 ### Build graph
@@ -86,7 +97,7 @@ test/
   Modules: `Piece`, `Board`, `Int16`, `Ledger`, `Move`, `Move_validator`,
   `Move_processor`, `Game_state`, `Move_request`, `Move_engine`,
   `State_worker`.
-- `protocol` is a separate library with `ppx_deriving_yojson`.
+- `protocol` is a separate dependency-free library.
   It remains independent of `sim_map_lib`, so the WASM client does not link
   the server-side world representation.
 - `client` is a WASM executable using `brr` and `protocol`.
@@ -249,6 +260,8 @@ type position = { board : board_pos; square : square_pos }
 - `world_x`, `world_y`, `position_of_world`: checked absolute conversion.
 - `get`, `set`, `clear`: O(1), no record or array allocation beyond the
   supplied position.
+- `get_world ~x ~y`: direct absolute-world read for hot paths such as sliding
+  path checks; does not construct a position record.
 - `get_board`: returns a fresh 64-element array copy.
 - `set_board`: requires exactly 64 elements.
 - `clear_board`: zeroes 64 squares.
@@ -702,7 +715,8 @@ type submit_error =
   - `Worker_stopped` if no longer accepting;
   - `Queue_full` if depth ≥ capacity;
   - otherwise creates a pending Lwt promise, enqueues an item with an enqueue
-    timestamp, increments depth, broadcasts, and returns the promise.
+    timestamp, increments depth, schedules a coalesced deferred notification,
+    and returns the promise.
 - The promise resolves only after processing.
 - `stop` stops accepting, lets queued work finish, and returns the finished
   promise.
@@ -833,10 +847,8 @@ Rejection codes:
 All multi-byte fields are little-endian. Packed `int64` values are transmitted
 as bytes, never as JavaScript `Number`.
 
-### 13.5 Legacy
-
-`Protocol.Types.client_msg` (`Move`, `Cast_ray`, JSON) remains defined but is
-unused by the server.
+The legacy JSON `client_msg` type has been removed; the protocol library no
+longer depends on `ppx_deriving_yojson`.
 
 ---
 
@@ -1068,6 +1080,7 @@ These are deliberate and are not conventional chess:
 - Empty-piece errors.
 - Board first/last world indices.
 - First/last square reads/writes/clears.
+- `get_world` and checked `get` agree.
 - Bounds errors, board copies, set_board length checks.
 - Row-major `iter_board`, occupied-only `iter`.
 - Standard board contents, unique IDs across boards, copies.
@@ -1121,6 +1134,7 @@ These are deliberate and are not conventional chess:
 - Castling flag and both pieces moved.
 - Promotion flag and preserved ID.
 - Consecutive sequence values.
+- Small-capacity ledger wraparound: latest/next/oldest and retained events.
 
 ### `test_worker`
 
@@ -1150,12 +1164,31 @@ These are deliberate and are not conventional chess:
   perspective.
 - No check/checkmate/win detection.
 - The worker is an Lwt task in the networking domain, not a dedicated Domain.
-- The old JSON `client_msg` definition remains unused.
 - `Protocol.Types` has no `.mli`; its implementation is the interface.
 
 ---
 
-## 20. Operational commands
+## 20. Benchmarks and engineering notes
+
+- `bench/bench.ml` runs the speed suite; `dune exec bench/bench.exe`.
+- `bench/dashboard.html` is a dependency-free static dashboard reading
+  `bench/results.js`.
+- The suite covers board indexing/reads, packed pieces, protocol codecs,
+  validation path variants, processing prepare/apply, ledger operations, the
+  full engine, the worker and startup phases.
+- `docs/ALGORITHMS.md` explains the algorithm choices, complexity, benchmark
+  methodology, test evidence and formal-verification opportunities.
+
+Example relative results on the benchmark machine: raw board indexing ~2.6 ns,
+checked indexing ~6.2 ns; checked board read ~14.4 ns vs direct world read
+~11.5 ns; a 127-square sliding path ~1,797 ns with record construction vs
+~887 ns with direct world reads; ledger append ~15 ns; full engine process
+~180 ns; Lwt worker round trip ~1.8 µs. See `bench/results.json` for the
+current run.
+
+---
+
+## 21. Operational commands
 
 ```bash
 cd /home/james/Work/sim-map
@@ -1174,7 +1207,7 @@ The server listens on `http://localhost:8080`.
 
 ---
 
-## 21. Git history (implementation milestones)
+## 22. Git history (implementation milestones)
 
 ```
 ae25f8a Add authoritative state, serialised move engine, and request/response protocol

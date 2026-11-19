@@ -12,21 +12,27 @@ let count_board board bp =
 
 let () =
   let state = Game_state.create () in
+  let with_ledger f =
+    Game_state.with_state state (fun ~board:_ ~ledger ~sequence ->
+        (sequence, f ledger))
+  in
+  let with_board f =
+    Game_state.with_state state (fun ~board ~ledger:_ ~sequence ->
+        (sequence, f board))
+  in
   check "sequence starts at zero" (Game_state.sequence state = 0L);
   check "ledger latest starts at zero"
-    (Ledger.latest_seq (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) = 0L);
+    (Ledger.latest_seq (with_ledger Fun.id) = 0L);
   check "ledger next starts at one"
-    (Ledger.next_seq (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) = 1L);
-  check "ledger oldest"
-    (Ledger.oldest_seq (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) = 1L);
-  check "no first event"
-    (Ledger.get_event (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) 1L = None);
+    (Ledger.next_seq (with_ledger Fun.id) = 1L);
+  check "ledger oldest" (Ledger.oldest_seq (with_ledger Fun.id) = 1L);
+  check "no first event" (Ledger.get_event (with_ledger Fun.id) 1L = None);
 
   Game_state.initialise state;
-  let ledger = Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger)) in
+  let ledger = with_ledger Fun.id in
   check "ledger latest after initialisation" (Ledger.latest_seq ledger = 0L);
   check "ledger next after initialisation" (Ledger.next_seq ledger = 1L);
-  let board = Game_state.with_state state (fun ~board ~ledger:_ ~sequence -> (sequence, board)) in
+  let board = with_board Fun.id in
   check "32m occupied" (Board.occupied_count board = 32_000_000);
   check "sequence still zero" (Game_state.sequence state = 0L);
 
@@ -40,7 +46,6 @@ let () =
     (fun bp -> check "32 pieces per corner" (count_board board bp = 32))
     corners;
 
-  let b0 = { Board.board_x = 0; board_y = 0 } in
   let black_rook = Board.get board (pos 0 0 0 0) in
   let black_king = Board.get board (pos 0 0 4 0) in
   let white_pawn = Board.get board (pos 0 0 0 6) in
@@ -93,5 +98,4 @@ let () =
     (Piece.id (Board.get board (pos 0 0 0 0)) = 1l);
   check "last board id formula"
     (Piece.id (Board.get board (pos 999 999 7 7)) = 32_000_000l);
-  ignore b0;
   Printf.printf "All Game_state initialisation tests passed.\n"

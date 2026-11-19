@@ -1,0 +1,787 @@
+# Algorithms and Engineering Notes
+
+This document explains the main data structures and algorithms in the
+implementation, why they were chosen, how they are measured, and what is
+already established by tests versus what could be established by formal
+verification.
+
+It is intentionally implementation-facing. The API specification lives in
+`SPEC.md`; benchmark mechanics and the dashboard live in `bench/`.
+
+---
+
+## 1. Performance goals
+
+The system is designed around four constraints:
+
+1. A fixed, large world: 1,000,000 boards of 64 squares.
+2. A dense starting population: 32,000,000 pieces.
+3. A move-processing path that should not allocate per-square or per-piece
+   objects.
+4. A single authoritative writer so that transactional invariants do not need
+   locks around individual board operations.
+
+The implementation therefore prefers flat arrays, packed 64-bit values,
+circular buffers and a serialised state owner over object graphs and
+fine-grained locking.
+
+The expected resident working set is approximately:
+
+| Allocation | Bytes |
+|---|---:|
+| Board: 64,000,000 × `int64` | 512,000,000 |
+| Ledger: 1,048,576 × 16 | 16,777,216 |
+| Total core state | 528,777,216 (~504 MiB) |
+
+Measured process RSS after startup and benchmarks is around 520–525 MiB,
+including the OCaml runtime and benchmark allocations.
+
+---
+
+## 2. Packed pieces
+
+### Representation
+
+`Piece.t` is one `int64`. Zero means empty. A non-empty piece stores:
+
+| Bits | Field |
+|---:|---|
+| 0–24 | Piece ID |
+| 25–28 | Piece type (1–7) |
+| 29 | White |
+| 30 | Just double moved |
+| 31 | King killer |
+| 32 | King pawner |
+| 33 | Queen killer |
+| 34 | Queen pawner |
+| 35 | Adopted killer |
+| 36 | Captured a different type |
+| 37–38 | Reserved |
+| 39 | Adopted |
+| 40–51 | Move count |
+| 52–63 | Capture count |
+
+### Why this is effective
+
+- One piece is one machine word, not a heap object with an ID field, type,
+  colour, nine booleans and two counters.
+- The board is therefore a flat array of values with no pointer chasing.
+- Metadata travels with the piece automatically. Moving a piece is copying
+  one `int64`; it does not require updating parallel arrays.
+- Equality and emptiness tests are single-word comparisons.
+- The representation is compact enough that 32,000,000 pieces fit in the same
+  512 MB board allocation.
+
+### Correctness argument
+
+The fields occupy disjoint bit ranges. `create` writes only the ID, type and
+colour fields and rejects invalid IDs. All metadata updates use masks that
+clear exactly one field before writing it. Therefore:
+
+- updates cannot corrupt neighbouring fields;
+- ID, type and colour are preserved by metadata updates;
+- `promote` changes only the type field;
+- counters saturate at `0xFFF` rather than wrapping;
+- the all-zero value is reserved for empty and cannot be produced by `create`.
+
+The implementation is exercised by tests for every exposed bit field,
+counter saturation at the high end (including capture-count bits 52–63), and
+promotion metadata preservation. This is not yet a machine-checked proof; the
+bit-level lemmas are simple enough to formalise directly (Section 13).
+
+---
+
+## 3. Dense world and indexing
+
+### Representation
+
+The world is one `Bigarray.Array1` of 64,000,000 `int64` values with C layout.
+`Board.t` is abstract; callers never receive the raw Bigarray.
+
+Coordinates:
+
+- board coordinates: `board_x`, `board_y` in `0..999`;
+- square coordinates: `x`, `y` in `0..7`;
+- `y = 0` is the top row.
+
+The authoritative index formula is:
+
+```
+board_id = board_y * 1000 + board_x
+index    = board_id * 64 + y * 8 + x
+```
+
+Equivalently:
+
+```
+index = ((board_y * 1000 + board_x) * 64) + (y * 8 + x)
+```
+
+Absolute world coordinates are:
+
+```
+world_x = board_x * 8 + x
+world_y = board_y * 8 + y
+```
+
+Both lie in `0..7999`.
+
+### Why this is effective
+
+- One allocation, fixed address, predictable memory layout.
+- O(1) square access with one integer calculation.
+- No per-board arrays, no per-piece objects, no pointer indirection.
+- Board traversal is sequential memory access, which is cache-friendly.
+- The same geometry gives every piece an absolute position for movement and
+  cross-board rules without a separate board lookup.
+
+### Index bijection
+
+`board_y * 1000 + board_x` maps `(0..999, 0..999)` bijectively onto
+`0..999,999`. Multiplying by 64 and adding `y * 8 + x` maps each board’s 64
+squares bijectively onto its 64-slot block. The ranges are disjoint and cover
+`0..63,999,999`. Therefore `index` is a bijection between valid positions and
+world slots.
+
+`Board.in_bounds` is the non-raising validation used by the validator and
+engine. Internal operations can use `Board.get_world` by absolute
+coordinates, avoiding construction of a position record.
+
+### Standard initialisation and ID uniqueness
+
+For one board:
+
+```
+piece_id = board_id * 32 + slot + 1
+```
+
+where `slot` is 0–31 in the fixed order:
+
+1. black back rank (0–7);
+2. black pawns (8–15);
+3. white pawns (16–23);
+4. white back rank (24–31).
+
+This gives each board the ID interval `[board_id*32 + 1, board_id*32 + 32]`.
+Different boards have disjoint intervals, so IDs are globally unique. The
+maximum is `999,999*32 + 32 = 32,000,000`, which is below
+`2^25 - 1 = 33,554,431`.
+
+The initialiser writes directly into the Board’s Bigarray. On the first call
+the board was already zero-filled by `Board.create`, so it uses
+`~clear:false`; subsequent calls clear each board first.
+
+Measured initialisation of all 1,000,000 boards is roughly 0.3–0.5 seconds on
+the benchmark machine, depending on process state.
+
+---
+
+## 4. Move representation and classification
+
+`Move.t` contains only:
+
+```ocaml
+type t = { src : Board.position; dst : Board.position }
+```
+
+It contains no piece ID, colour, type or cached metadata. The move validator
+looks up the source and destination in the board when it needs those
+properties. This keeps the domain move small and avoids stale duplicated
+state.
+
+The validator returns a classification as part of `move_info`:
+
+```ocaml
+type move_kind =
+  | Normal
+  | Castle of { rook_src : Board.position; rook_dst : Board.position }
+  | En_passant of { captured_pos : Board.position }
+```
+
+This eliminates a second, independent classification in the processor. The
+processor applies exactly the positions that validation checked. The engine can
+also compute ledger flags directly from the classification rather than
+re-inferring move type.
+
+`Move_processor.prepare` produces a plan of clears and writes without touching
+the board; `apply_plan` commits it. Splitting preparation from commit is what
+makes the transaction safety argument in Section 6 possible.
+
+---
+
+## 5. Move validation
+
+### Absolute-coordinate geometry
+
+Validation first converts both endpoints to absolute world coordinates. This
+makes all pieces use the same geometry across board boundaries.
+
+- maximum displacement: 128 squares on either axis;
+- `|dx|`, `|dy|` computed once;
+- sliding path checks walk intermediate absolute squares;
+- two-square pawn moves check the one intermediate square;
+- knights jump;
+- normal king moves may not leave their 8×8 board;
+- castling and en passant are special-cased from geometry.
+
+### Sliding path optimisation
+
+The original path check constructed a `Board.position` record for every
+intermediate square and called `Board.get`, which revalidated the position.
+
+The implementation now walks absolute coordinates and calls
+`Board.get_world ~x ~y`, which:
+
+- avoids constructing a record per step;
+- avoids board/square validation and index recomputation through position
+  fields;
+- still validates absolute-world bounds.
+
+Benchmark comparison on a 127-square queen path:
+
+| Variant | ns/path |
+|---|---:|
+| position record + checked get | ~1,797 |
+| absolute `get_world` | ~887 |
+
+The production validator uses the second form. The path is O(number of
+intermediate squares); this benchmark deliberately uses a long path to expose
+the difference.
+
+### Normal move rules
+
+- **Pawn**: one or two forward squares, one diagonal capture; direction
+  depends on colour; double move requires `move_count = 0`; forward destination
+  must be empty; diagonal destination must be an enemy; intermediate square of
+  a double move must be empty.
+- **Knight**: `(1,2)` or `(2,1)`.
+- **Bishop**: equal absolute axes, non-zero; intermediate squares empty.
+- **Rook**: exactly one axis changes; intermediate squares empty.
+- **Queen / promoted pawn**: bishop or rook geometry; intermediates empty.
+- **King**: at most one square on each axis and same board.
+
+### Cross-board captures
+
+If the destination is occupied by an enemy on a different board, the captured
+piece must have `move_count > 0`. Otherwise validation returns
+`Cross_board_capture`. This mirrors the original implementation.
+
+### Special moves
+
+**Castling** is inferred from a king moving exactly two squares horizontally.
+The validator computes the rook source and destination from the original
+offsets, requires an unmoved same-colour rook and an empty path, and returns
+`Castle { rook_src; rook_dst }`.
+
+**En passant** is inferred from a pawn moving one square diagonally into an
+empty square. The captured pawn must be an enemy pawn at
+`(src_world_x + dx, src_world_y)` with `just_double_moved = true`. The
+validator returns that exact captured position.
+
+There is no check/checkmate/turn validation, matching the original game.
+
+### En-passant flag lifetime
+
+The original implementation clears `just_double_moved` when that pawn next
+moves; other pieces’ moves do not expire it, because the game has no turns in
+the conventional sense. The implementation preserves that semantics and tests
+both:
+
+- a double move sets the flag;
+- a subsequent move by the same pawn clears it;
+- the same en-passant geometry is rejected when the flag is clear and accepted
+  when set.
+
+---
+
+## 6. Transactional move application
+
+### Preparation and commit
+
+`Move_processor.prepare`:
+
+1. reads the moving and captured pieces from the board;
+2. computes the final moving metadata;
+3. computes any rook/king or en-passant positions from `move_kind`;
+4. returns a plan of square clears and square writes.
+
+It performs no writes.
+
+`Move_processor.apply_plan` writes the plan.
+
+### Engine pipeline
+
+`Move_engine.process` performs:
+
+1. empty-source check;
+2. expected-piece-ID check (`Stale_piece` on mismatch);
+3. validator call;
+4. event construction;
+5. `Ledger.validate_event` before any board write;
+6. sequence-limit check;
+7. `Move_processor.prepare` before any board write;
+8. `apply_plan`;
+9. ledger append;
+10. sequence update through `Game_state.with_state`;
+11. read the updated moving piece for the response.
+
+The order is deliberate. All operations that can fail as ordinary validation
+happen before the first board write. Ledger append is prevalidated. If an
+unexpected exception occurs after a write, the state worker treats the process
+as failed rather than reporting an ordinary rejection. There is no attempt to
+continue with a partially committed board.
+
+### Why one writer
+
+A single owner removes the need for:
+
+- per-square locks;
+- lock ordering rules;
+- atomic board/ledger/sequence updates across independent locks;
+- concurrent-mutation races in piece metadata.
+
+Validation and application are synchronous inside the worker. This is a
+deliberate trade-off: one core processes moves, but the invariants are simple
+and the measured engine path is about 180 ns per accepted move (including
+validation, application, event append and sequence update on the benchmark
+machine).
+
+### Ownership
+
+`Game_state` no longer exposes direct board/ledger getters or a public sequence
+setter. The engine uses the internal `with_state` callback, which commits the
+returned sequence after the callback succeeds. The server only reads
+`sequence` and `occupied_count`.
+
+This is an OCaml module-boundary convention rather than a kernel-enforced
+capability. A future version can split the trusted transaction code into a
+private library or use a capability token/abstract writer if stronger
+enforcement is desired.
+
+---
+
+## 7. Ledger
+
+### Layout
+
+Two `int64` Bigarrays, each with a power-of-two capacity:
+
+- `moves`: source position (26 bits) + destination position (26 bits);
+- `metadata`: moved piece ID (25) + captured piece ID (25) + flags (14).
+
+A position is:
+
+- bits 0–19: board ID (`board_y * 1000 + board_x`);
+- bits 20–25: square ID (`y * 8 + x`).
+
+Event size is exactly 16 bytes.
+
+### Circular addressing
+
+```
+index = seq land (capacity - 1)
+```
+
+`head_seq` is the next sequence to assign. `oldest_seq` is the oldest retained
+sequence. On append, after writing:
+
+```
+head_seq = head_seq + 1
+if head_seq - oldest_seq > capacity then oldest_seq = oldest_seq + 1
+```
+
+The readable interval is `[oldest_seq, head_seq)`.
+
+### Why this is effective
+
+- Fixed memory: a million events cost 16 MiB.
+- O(1) append, no per-event heap allocation, no linked-list traversal.
+- Sequential writes until wrap, then predictable reuse.
+- Sequence numbers are implicit in the array position, so they cost no storage
+  in each event.
+- Two adjacent Bigarray writes are cache-friendly.
+
+### Sequence semantics
+
+`latest_seq` is the most recently committed sequence (`head_seq - 1`);
+`next_seq` is the next sequence to assign (`head_seq`). `Game_state` starts
+the ledger at `next_seq = 1`, so the first accepted move has sequence 1 while
+the game sequence starts at 0.
+
+`Ledger.clear` is not exposed. A running game’s sequence cannot be reset
+through the public ledger API.
+
+### Correctness sketch
+
+For every retained sequence `s`:
+
+- `oldest_seq ≤ s < head_seq`;
+- `s land mask` was written by the append that assigned `s`;
+- it cannot have been overwritten by a later append before `s + capacity`,
+  because the oldest pointer advances only when the head oldest distance
+  exceeds capacity.
+
+The engine additionally checks that the ledger’s returned sequence equals the
+game’s expected next sequence. Tests verify:
+- first sequence 1;
+- rejected moves do not append;
+- accepted moves append exactly one event;
+- castling/en-passant/promotion flags and captured IDs;
+- sequence continuity.
+
+A unit test for wraparound with a small capacity would strengthen this
+invariant; it is a good candidate for the next test pass or a QCheck model.
+
+---
+
+## 8. State worker and concurrency
+
+### Model
+
+One Lwt task owns `Game_state`. All WebSocket handlers call:
+
+```ocaml
+State_worker.submit worker request
+```
+
+which:
+
+1. checks stopped/failed state;
+2. checks bounded queue capacity;
+3. enqueues an item with enqueue timestamp;
+4. schedules a deferred notification;
+5. returns a promise resolved only after processing.
+
+The worker loop:
+
+- waits on an `Lwt_condition` when the queue is empty;
+- takes the oldest item when work exists;
+- runs `Move_engine.process` synchronously;
+- wakes the item’s promise;
+- processes up to 64 queued requests before yielding with `Lwt.pause`;
+- waits on the condition as soon as the queue is empty.
+
+Notification is coalesced through a `notification_pending` flag. A burst of
+submissions produces one deferred wakeup rather than one Lwt task per
+submission. This is both cheaper and makes the queue-full behaviour
+observable: a burst can fill the bound before the worker is scheduled.
+
+The worker drains a bounded batch (64) before yielding. This keeps the
+scheduler responsive while avoiding a scheduler round trip per request when
+the queue is already populated.
+
+### Why this model
+
+The current phase deliberately uses the simpler Lwt single-owner model rather
+than a separate OCaml Domain:
+
+- no cross-domain promise manipulation;
+- no unsafe access to the mutable world across domains;
+- no synchronization bugs while the game engine is still evolving;
+- all transactions stay synchronous and short.
+
+The cost is that the worker shares the networking domain. The design leaves a
+clean transition: a future worker can use a thread-safe mailbox and a safe
+handoff back to Lwt, changing only `State_worker`, not `Move_engine` or
+`Game_state`.
+
+### FIFO and backpressure
+
+The queue is a bounded FIFO. `submit` returns `Queue_full` immediately when
+capacity is reached. Accepted requests are processed in order. The worker does
+not perform network I/O, file I/O or client waits inside a transaction.
+
+Tests cover concurrent submissions, same-piece races (one accepted, one
+rejected), full-queue rejection, and shutdown with pending work.
+
+---
+
+## 9. Wire protocol efficiency
+
+### Move encoding
+
+Instead of source and destination positions (26 + 26 = 52 bits, 8 bytes), the
+move wire stores:
+
+- source position: 26 bits;
+- signed `dx`: 9 bits;
+- signed `dy`: 9 bits.
+
+That is 44 used bits in 6 bytes.
+
+The destination is reconstructed in absolute coordinates:
+
+```
+dst_world_x = src_world_x + dx
+dst_world_y = src_world_y + dy
+```
+
+Because the game limits deltas to ±128, nine signed bits are sufficient.
+Nine-bit two’s-complement represents `-256..255`; the codec rejects values
+outside `-128..128` and rejects destinations outside the world.
+
+This reduces the move portion from 8 bytes to 6. The request is 14 bytes:
+
+| Bytes | Field |
+|---|---|
+| 0–5 | move |
+| 6–9 | expected piece ID |
+| 10–13 | request ID |
+
+Responses are fixed 26-byte records, including status, request ID, sequence,
+updated moving piece, captured piece ID and rejection code. Packed `int64`
+values are transmitted as little-endian bytes and never converted to
+JavaScript `Number`.
+
+### Why fixed widths
+
+- Predictable decoding: no varints, no length prefixes per field.
+- Easy to validate length before exposing anything to the state worker.
+- Compact enough to fit in one WebSocket frame.
+- No JSON parsing or allocation on the server move path.
+- No dependence on JavaScript numeric precision for 64-bit values.
+
+Protocol tests cover ±128 boundaries, 129 rejection, round trips, request IDs,
+responses and malformed lengths. The client and server share the same
+`Protocol.Types` module, so the layouts cannot drift independently.
+
+---
+
+## 10. Client rendering and local state
+
+- Canvas backing store: 512×512, 64 px squares.
+- Board background is rendered once to an offscreen canvas.
+- All 12 piece sprites are rendered once into a 6×2 atlas.
+- A redraw is one background blit plus at most 64 sprite blits; no per-pixel
+  CPU loop and no continuous render loop.
+- Redraws are coalesced into a single pending `requestAnimationFrame`.
+- Drag operations only mark the canvas dirty; pointer events do not draw
+  synchronously.
+
+The client tracks piece IDs using the same deterministic allocation formula as
+the server. Normal moves are optimistic and store undo bytes/IDs; rejected
+moves restore them. Castling and en passant are not applied optimistically:
+the client waits for acceptance, then applies the local king+rook or
+pawn+captured-pawn update. This avoids optimistic special-move divergence.
+
+Client RTT metrics use `performance.now()` and a FIFO of send timestamps. With
+cross-origin isolation (COOP/COEP headers) Chrome exposes a finer clock
+(5 µs in the measured environment); without it the browser quantises the
+clock. The display reports the measured resolution.
+
+---
+
+## 11. Benchmarks
+
+The benchmark suite is `bench/bench.ml`; the dashboard is
+`bench/dashboard.html`.
+
+Run:
+
+```bash
+dune exec bench/bench.exe
+```
+
+This writes:
+
+- `bench/results.json` — machine-readable results;
+- `bench/results.js` — the same data for the static dashboard.
+
+Open `bench/dashboard.html` directly in a browser. Each benchmark groups
+variants, scales bars so the fastest variant is full width, and shows ns/op and
+operations per second.
+
+### Methodology
+
+- Timing uses `Mtime_clock.now_ns`, a monotonic clock.
+- Microbenchmarks warm up, then take the median of three timed repetitions.
+- Inputs and arrays are precomputed outside the timed loop where possible.
+- Single-shot startup measurements are labelled and shown in milliseconds.
+- Results include commit, OCaml version, CPU model and process RSS.
+- Core allocations are kept alive during measurement; the benchmark process
+  RSS is included in the report.
+
+### Current results (example run, AMD Ryzen 7 250)
+
+Machine-specific numbers, useful for relative comparisons:
+
+| Benchmark | Variant | ns/op |
+|---|---:|---:|
+| Board index | checked | ~6.0 |
+| Board index | raw arithmetic | ~2.6 |
+| Board read | checked position | ~13.6 |
+| Board read | `get_world` | ~10.9 |
+| Piece create | packed int64 | ~7.8 |
+| Piece inspect | id/type/flags | ~10.0 |
+| Piece metadata | immutable flags | ~16.7 |
+| Protocol move | encode/decode | ~24 / ~19 |
+| Protocol request | encode/decode | ~59 / ~39 |
+| Validation path | record + checked get | ~1,830 |
+| Validation path | `get_world` | ~880 |
+| Processing prepare | queen long move | ~15 |
+| Processing `apply_plan` | queen long move | ~26 |
+| Ledger append | 1M circular | ~14 |
+| Ledger event read | decoded | ~14 |
+| Engine process | full move | ~181 |
+| Worker submit/process | sequential awaiter | ~1,958 |
+| Worker submit/process | pipelined 4,000 | ~1,311 |
+
+Startup single-shot on the same run:
+
+- allocation: ~42 ms (512 MB board + 16 MB ledger);
+- full world initialisation: ~296 ms;
+- occupied scan verification: ~145 ms.
+
+The path and read comparisons demonstrate why the `get_world` fast path was
+introduced: it removes per-square record allocation and repeated position
+validation from sliding movement.
+
+### Extending the suite
+
+Add a `run_bench` call with a new group/name. To compare two algorithms, use
+the same group and name with different `variant` labels; the dashboard renders
+them as bars and scales them against the fastest result.
+
+Useful future comparisons:
+
+- `Piece.create` versus a precomputed template path for initialisation;
+- list-based processor plans versus fixed-record plans;
+- checked versus unchecked board indexing in engine hot paths;
+- Lwt worker versus a dedicated-domain worker;
+- JSON versus binary protocol (the current binary path is already the
+  production path);
+- different ledger capacities and wrap policies;
+- startup initialisation with and without clearing.
+
+---
+
+## 12. Testing and evidence
+
+The current test suite is in `test/` and runs with `dune runtest`.
+
+It covers:
+
+- all exposed Piece bit fields and saturation;
+- Board boundaries, copies, iteration and standard initialisation;
+- exhaustive 32,000,000-piece ID uniqueness over a fully initialised world;
+- move geometry, path blocking, castling, en passant and promotion;
+- classification consistency between validator and processor;
+- en-passant flag expiry;
+- rejected transactions leaving board, ledger and sequence unchanged;
+- accepted transactions appending exactly one event and advancing sequence;
+- ledger event metadata and flags;
+- protocol round trips and invalid lengths/IDs/deltas;
+- worker FIFO, same-piece races, queue-full and shutdown with pending work;
+- client rollback behaviour was also exercised manually in headless Chromium.
+
+What is tested is not the same as a formal proof. The strongest evidence today
+is structural invariants enforced by construction plus targeted tests and
+benchmarks.
+
+---
+
+## 13. Formal verification opportunities
+
+The pure data-structure core is small enough for machine-checked proofs. Good
+targets, in increasing cost:
+
+### 13.1 Bit-field lemmas (Coq, Lean or Why3)
+
+Prove for `Piece`:
+
+- field ranges are disjoint;
+- `create` produces a nonzero value for every valid input;
+- all setters preserve fields other than the target;
+- counters saturate without carry into adjacent fields;
+- `promote` preserves ID and all metadata.
+
+This is mostly bit-vector arithmetic and is well suited to SMT-backed tools
+or Coq’s `Z`/`N` bitvector libraries.
+
+### 13.2 Index and ID bijections
+
+Prove:
+
+- `index` is a bijection from valid positions to `0..63,999,999`;
+- `board_id * 32 + slot + 1` is injective over all valid boards and slots;
+- the maximum ID is below `2^25`;
+- world-coordinate conversion round-trips.
+
+These are short arithmetic proofs.
+
+### 13.3 Ledger invariant (TLA+ or Coq)
+
+Model the state as `(moves, metadata, head, oldest, capacity)` and prove:
+
+- retained sequence intervals are contiguous;
+- every readable sequence’s slot contains the event written for it;
+- append never makes the readable interval exceed capacity;
+- sequence advances exactly once per accepted event;
+- a rejected request transitions the abstract state identically.
+
+TLA+ is a natural fit for the queue/ownership model; Coq or Lean is a better
+fit for the array-index arithmetic.
+
+### 13.4 Transaction atomicity (TLA+)
+
+Model board, ledger and sequence as one abstract state with a single writer.
+Prove the atomic transaction either leaves all three unchanged (rejection) or
+updates all three exactly once (acceptance). The current implementation
+achieves this by construction: prepare first, then write board, append ledger,
+then set sequence. A TLA+ model would document and check the intended
+interleavings, especially around worker failure.
+
+### 13.5 Protocol exactness
+
+Prove the source+delta encoding is a bijection on moves with
+`|dx|,|dy| ≤ 128`:
+
+- encode/decode round-trips source and destination;
+- signed 9-bit representation covers the allowed range;
+- out-of-range deltas are rejected.
+
+This is another small bit-vector proof; QCheck property tests are a useful
+lighter-weight complement.
+
+### 13.6 Property-based testing and fuzzing
+
+Before formal proofs, QCheck or Crowbar can provide high-value coverage:
+
+- random piece fields: setter/accessor round trips and field isolation;
+- random valid positions: index/world conversion round trips;
+- random board states: validator/processor never leave a partially updated
+  board when validation is used in the correct order;
+- random wire bytes: decoder never raises, rejects malformed lengths safely;
+- random concurrent request sequences: exactly one response per request, FIFO
+  order, sequence continuity, no duplicate accepted moves;
+- ledger wraparound with small capacities: sequence/event invariants.
+
+These are cheaper to implement than full proofs and would strengthen the
+existing suite immediately.
+
+### 13.7 What is not claimed
+
+The current code has no machine-checked formal proof. The document describes
+proof obligations and test evidence. The single-owner Lwt worker is also not
+yet a multi-domain concurrent system; any proof of a future domain handoff
+must include that handoff and the response mailbox.
+
+---
+
+## 14. Design trade-offs and what would change next
+
+- **Dense board vs piece list**: dense wins for O(1) square lookup and fixed
+  memory, at the cost of initialising 64M slots. Sparse worlds would favour a
+  piece index/map, but the game is intentionally fully populated at startup.
+- **Packed piece vs record**: packed wins memory, allocation and copying;
+  debugging is harder and bit-level changes require care.
+- **Single writer vs locks**: single writer wins simplicity and removes
+  contention from every square; it caps move throughput to one core. The
+  measured engine path is fast enough that networking dominates at current
+  scale.
+- **Lwt worker vs Domain**: Lwt is simpler and safe today; a dedicated domain
+  is a later performance experiment and must solve handoff correctly.
+- **Binary protocol vs JSON**: binary wins size and parsing on the move path;
+  it requires explicit versioning and shared codecs.
+- **Circular ledger vs append-only history**: circular wins bounded memory;
+  replay beyond the retained window is impossible by design.
