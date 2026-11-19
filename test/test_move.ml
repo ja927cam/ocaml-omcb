@@ -87,6 +87,7 @@ let test_pawn () =
   let pawn = place Piece.Pawn true 0 0 4 6 in
   let info = apply (move (pos 0 0 4 6) (pos 0 0 4 4)) in
   check "pawn double no capture" (Piece.is_empty info.captured_piece);
+  check "pawn classification" (info.kind = Move_validator.Normal);
   check "pawn double source empty" (Piece.is_empty (piece_at 0 0 4 6));
   let moved = piece_at 0 0 4 4 in
   check "pawn double id" (Piece.id moved = Piece.id pawn);
@@ -206,6 +207,11 @@ let test_king () =
   let rook = place Piece.Rook true 0 0 7 7 in
   let info = expect_legal (move (pos 0 0 4 7) (pos 0 0 6 7)) in
   check "castle no capture" (Piece.is_empty info.captured_piece);
+  (match info.kind with
+   | Move_validator.Castle { rook_src; rook_dst } ->
+     check "castle rook source" (rook_src = pos 0 0 7 7);
+     check "castle rook destination" (rook_dst = pos 0 0 5 7)
+   | _ -> failwith "FAIL: castle not classified as Castle");
   Move_processor.apply world info;
   check "castle king square" (Piece.id (piece_at 0 0 6 7) = Piece.id king);
   check "castle rook square" (Piece.id (piece_at 0 0 5 7) = Piece.id rook);
@@ -268,9 +274,9 @@ let test_cross_board_capture () =
 
   reset ();
   let _ = place Piece.Rook true 0 0 0 0 in
-  ignore (expect_legal (move (pos 0 0 0 0) (pos 4 0 4 0)));
+  ignore (expect_legal (move (pos 0 0 0 0) (pos 16 0 0 0)));
   expect_illegal Invalid_geometry
-    (move (pos 0 0 0 0) (pos 4 0 5 0))
+    (move (pos 0 0 0 0) (pos 16 0 1 0))
 
 let test_en_passant () =
   reset ();
@@ -279,6 +285,11 @@ let test_en_passant () =
   put captured 0 0 3 3;
   let info = apply (move (pos 0 0 4 3) (pos 0 0 3 2)) in
   check "en passant captured piece" (Piece.id info.captured_piece = Piece.id captured);
+  (match info.kind with
+   | Move_validator.En_passant { captured_pos } ->
+     check "en passant captured square"
+       (captured_pos = pos 0 0 3 3)
+   | _ -> failwith "FAIL: en passant not classified as En_passant");
   check "en passant captured square empty" (Piece.is_empty (piece_at 0 0 3 3));
   check "en passant destination" (not (Piece.is_empty (piece_at 0 0 3 2)));
   check "en passant capture count" (Piece.capture_count (piece_at 0 0 3 2) = 1);
@@ -370,6 +381,49 @@ let test_capture_metadata () =
   check "adopted killer" (Piece.adopted_killer moved);
   check "same type captured" (not (Piece.has_captured_other_type moved))
 
+let test_expired_double_move_flag () =
+  reset ();
+  let white = place Piece.Pawn true 0 0 4 3 in
+  let _black = place Piece.Pawn false 0 0 3 3 in
+  (* Flag false: the same geometrical en passant is rejected. *)
+  expect_illegal Invalid_special_move
+    (move (pos 0 0 3 3) (pos 0 0 4 4));
+  (* Flag true: the same move is accepted. *)
+  put (Piece.with_just_double_moved white true) 0 0 4 3;
+  let info = expect_legal (move (pos 0 0 3 3) (pos 0 0 4 4)) in
+  (match info.kind with
+   | Move_validator.En_passant { captured_pos } ->
+     check "expiry control captured square" (captured_pos = pos 0 0 4 3)
+   | _ -> failwith "FAIL: expected en passant");
+
+  (* A double-move flag expires when the pawn next moves. *)
+  reset ();
+  let pawn = place Piece.Pawn true 0 0 0 6 in
+  ignore (apply (move (pos 0 0 0 6) (pos 0 0 0 4)));
+  check "expiry double flag set" (Piece.just_double_moved pawn
+                                 || Piece.just_double_moved (piece_at 0 0 0 4));
+  ignore (apply (move (pos 0 0 0 4) (pos 0 0 0 3)));
+  check "expiry flag cleared"
+    (not (Piece.just_double_moved (piece_at 0 0 0 3)));
+  let _black = place Piece.Pawn false 0 0 1 3 in
+  expect_illegal Invalid_special_move
+    (move (pos 0 0 1 3) (pos 0 0 0 4))
+
+let test_prepare_does_not_mutate () =
+  reset ();
+  let rook = place Piece.Rook true 0 0 4 4 in
+  let pawn = place Piece.Pawn false 0 0 7 4 in
+  let info = expect_legal (move (pos 0 0 4 4) (pos 0 0 7 4)) in
+  let plan = Move_processor.prepare world info in
+  check "prepare leaves source"
+    (Piece.id (piece_at 0 0 4 4) = Piece.id rook);
+  check "prepare leaves destination"
+    (Piece.id (piece_at 0 0 7 4) = Piece.id pawn);
+  Move_processor.apply_plan world plan;
+  check "commit source empty" (Piece.is_empty (piece_at 0 0 4 4));
+  check "commit destination"
+    (Piece.id (piece_at 0 0 7 4) = Piece.id rook)
+
 let test_illegal_does_not_modify () =
   reset ();
   let rook = place Piece.Rook true 0 0 4 4 in
@@ -391,5 +445,7 @@ let () =
   test_en_passant ();
   test_promotion ();
   test_capture_metadata ();
+  test_expired_double_move_flag ();
+  test_prepare_does_not_mutate ();
   test_illegal_does_not_modify ();
   Printf.printf "All Move, validator, and processor tests passed.\n"

@@ -8,6 +8,44 @@ let empty = '\000'
 
 type drag = { from : int; piece : char; x : float; y : float }
 
+type normal_undo = {
+  src : int;
+  dst : int;
+  src_piece : char;
+  dst_piece : char;
+  src_id : int32;
+  dst_id : int32;
+}
+
+type castle_info = {
+  king_src : int;
+  king_dst : int;
+  rook_src : int;
+  rook_dst : int;
+  king_piece : char;
+  rook_piece : char;
+  king_id : int32;
+  rook_id : int32;
+}
+
+type en_passant_info = {
+  src : int;
+  dst : int;
+  captured : int;
+  pawn_piece : char;
+  pawn_id : int32;
+}
+
+type special_action =
+  | Castle of castle_info
+  | En_passant of en_passant_info
+
+type pending_action =
+  | Normal of normal_undo
+  | Special of special_action
+
+type pending = { request_id : int32; action : pending_action }
+
 (* Glyphs for pawn, knight, bishop, rook, queen, king. *)
 let piece_glyphs =
   [| "\xe2\x99\x9f"; "\xe2\x99\x9e"; "\xe2\x99\x9d";
@@ -129,6 +167,7 @@ let main () =
   let board_x = ref 0 in
   let board_y = ref 0 in
   let drag = ref None in
+  let pending : pending option ref = ref None in
   let ws = ref None in
   let next_request_id = ref 0l in
   let needs_draw = ref true in
@@ -202,7 +241,7 @@ let main () =
       (Ev.Mouse.client_y m -. !origin_y) *. !scale_y )
   in
 
-  let send_move ~expected_piece_id src dst =
+  let send_move ~request_id ~expected_piece_id src dst =
     match !ws with
     | Some socket
       when Brr_io.Websocket.ready_state socket
@@ -215,8 +254,6 @@ let main () =
           y = sq / 8;
         }
       in
-      let request_id = !next_request_id in
-      next_request_id := Int32.succ request_id;
       let request =
         {
           Protocol.Types.request_id;
@@ -234,8 +271,44 @@ let main () =
           (Char.code (Bytes.unsafe_get data i))
       done;
       Metrics.sent ();
-      Brr_io.Websocket.send_array_buffer socket buffer
-    | _ -> ()
+      Brr_io.Websocket.send_array_buffer socket buffer;
+      true
+    | _ -> false
+  in
+
+  let restore_normal (u : normal_undo) =
+    let b = !board and ids = !piece_ids in
+    Bytes.unsafe_set b u.src u.src_piece;
+    Bytes.unsafe_set b u.dst u.dst_piece;
+    ids.(u.src) <- u.src_id;
+    ids.(u.dst) <- u.dst_id
+  in
+
+  let apply_castle (c : castle_info) =
+    let in_range i = i >= 0 && i < 64 in
+    if in_range c.king_src && in_range c.king_dst
+       && in_range c.rook_src && in_range c.rook_dst
+    then begin
+      let b = !board and ids = !piece_ids in
+      Bytes.unsafe_set b c.king_src empty;
+      Bytes.unsafe_set b c.rook_src empty;
+      Bytes.unsafe_set b c.king_dst c.king_piece;
+      Bytes.unsafe_set b c.rook_dst c.rook_piece;
+      ids.(c.king_src) <- 0l;
+      ids.(c.rook_src) <- 0l;
+      ids.(c.king_dst) <- c.king_id;
+      ids.(c.rook_dst) <- c.rook_id
+    end
+  in
+
+  let apply_en_passant (e : en_passant_info) =
+    let b = !board and ids = !piece_ids in
+    Bytes.unsafe_set b e.src empty;
+    Bytes.unsafe_set b e.captured empty;
+    Bytes.unsafe_set b e.dst e.pawn_piece;
+    ids.(e.src) <- 0l;
+    ids.(e.captured) <- 0l;
+    ids.(e.dst) <- e.pawn_id
   in
 
   let load_board x y =
@@ -244,20 +317,23 @@ let main () =
     board_x := x;
     board_y := y;
     drag := None;
+    pending := None;
     request_draw ()
   in
 
   let on_pointer_down ev =
-    update_layout ();
-    let x, y = to_board ev in
-    match square_at x y with
-    | Some sq ->
-      let piece = Bytes.unsafe_get !board sq in
-      if piece <> empty then begin
-        drag := Some { from = sq; piece; x; y };
-        request_draw ()
-      end
-    | None -> ()
+    if !pending = None then begin
+      update_layout ();
+      let x, y = to_board ev in
+      match square_at x y with
+      | Some sq ->
+        let piece = Bytes.unsafe_get !board sq in
+        if piece <> empty then begin
+          drag := Some { from = sq; piece; x; y };
+          request_draw ()
+        end
+      | None -> ()
+    end
   in
 
   let on_pointer_move ev =
@@ -276,14 +352,88 @@ let main () =
       let x, y = to_board ev in
       (match square_at x y with
        | Some sq when sq <> d.from ->
-         let expected_piece_id = !piece_ids.(d.from) in
-         let b = !board in
-         Bytes.unsafe_set b d.from empty;
-         Bytes.unsafe_set b sq d.piece;
-         let ids = !piece_ids in
-         ids.(sq) <- expected_piece_id;
-         ids.(d.from) <- 0l;
-         send_move ~expected_piece_id d.from sq
+         let b = !board and ids = !piece_ids in
+         let dx = (sq mod 8) - (d.from mod 8) in
+         let dy = (sq / 8) - (d.from / 8) in
+         let request_id = !next_request_id in
+         next_request_id := Int32.succ request_id;
+         let expected_piece_id = ids.(d.from) in
+         let is_castle =
+           (d.piece = 'k' || d.piece = 'K') && abs dx = 2 && dy = 0
+         in
+         let is_en_passant =
+           (d.piece = 'p' || d.piece = 'P') && abs dx = 1
+           && Bytes.unsafe_get b sq = empty
+         in
+         let action =
+           if is_castle then begin
+             let row = d.from / 8 in
+             let src_x = d.from mod 8 and dst_x = sq mod 8 in
+             let rook_src_x = src_x + if dx = 2 then 3 else -4 in
+             let rook_dst_x = dst_x + if dx = 2 then -1 else 1 in
+             let rook_src = (row * 8) + rook_src_x in
+             let rook_dst = (row * 8) + rook_dst_x in
+             let in_range i = i >= 0 && i < 64 in
+             Some
+               (Special
+                  (Castle
+                     {
+                       king_src = d.from;
+                       king_dst = sq;
+                       rook_src;
+                       rook_dst;
+                       king_piece = d.piece;
+                       rook_piece =
+                         (if in_range rook_src then Bytes.unsafe_get b rook_src
+                          else empty);
+                       king_id = expected_piece_id;
+                       rook_id = if in_range rook_src then ids.(rook_src) else 0l;
+                     }))
+           end
+           else if is_en_passant then begin
+             let captured = ((d.from / 8) * 8) + (sq mod 8) in
+             Some
+               (Special
+                  (En_passant
+                     {
+                       src = d.from;
+                       dst = sq;
+                       captured;
+                       pawn_piece = d.piece;
+                       pawn_id = expected_piece_id;
+                     }))
+           end
+           else begin
+             let undo =
+               {
+                 src = d.from;
+                 dst = sq;
+                 src_piece = d.piece;
+                 dst_piece = Bytes.unsafe_get b sq;
+                 src_id = ids.(d.from);
+                 dst_id = ids.(sq);
+               }
+             in
+             Bytes.unsafe_set b d.from empty;
+             Bytes.unsafe_set b sq d.piece;
+             ids.(sq) <- expected_piece_id;
+             ids.(d.from) <- 0l;
+             Some (Normal undo)
+           end
+         in
+         (match action with
+          | None -> ()
+          | Some action ->
+            pending := Some { request_id; action };
+            if
+              not
+                (send_move ~request_id ~expected_piece_id d.from sq)
+            then begin
+              (match action with
+               | Normal undo -> restore_normal undo
+               | Special _ -> ());
+              pending := None
+            end)
        | _ -> ());
       drag := None;
       request_draw ()
@@ -357,6 +507,21 @@ let main () =
            if Tarray.Buffer.byte_length data > 0 then begin
              let view = Tarray.Data_view.of_buffer data in
              let accepted = Tarray.Data_view.get_uint8 view 0 <> 0 in
+             (match !pending with
+              | None -> ()
+              | Some p ->
+                ignore p.request_id;
+                pending := None;
+                if accepted then
+                  (match p.action with
+                   | Normal _ -> ()
+                   | Special (Castle c) -> apply_castle c
+                   | Special (En_passant e) -> apply_en_passant e)
+                else
+                  (match p.action with
+                   | Normal undo -> restore_normal undo
+                   | Special _ -> ());
+                request_draw ());
              Metrics.received ();
              Console.(
                log

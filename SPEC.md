@@ -108,7 +108,7 @@ test/
 | Board coordinates | `board_x`, `board_y` in `0..999` |
 | Square coordinates | `x`, `y` in `0..7`, `y = 0` is the top row / rank 8 |
 | Absolute world size | 8,000 x 8,000 |
-| Maximum move distance per axis | 36 |
+| Maximum move distance per axis | 128 |
 | Piece ID width | 25 bits |
 | Piece ID maximum | 33,554,431 |
 | Ledger capacity | 1,048,576 events |
@@ -334,11 +334,17 @@ type rejection =
   | Cross_board_capture
   | Invalid_special_move
 
+type move_kind =
+  | Normal
+  | Castle of { rook_src : Board.position; rook_dst : Board.position }
+  | En_passant of { captured_pos : Board.position }
+
 type move_info = {
   moving_piece : Piece.t;
   captured_piece : Piece.t;
   src : Board.position;
   dst : Board.position;
+  kind : move_kind;
 }
 
 type result = Legal of move_info | Illegal of rejection
@@ -354,7 +360,7 @@ type result = Legal of move_info | Illegal of rejection
 4. `src = dst` → `Invalid_geometry`.
 5. Read the destination piece. Same colour → `Invalid_destination`.
 6. Compute absolute `dx`, `dy`.
-7. `|dx| > 36` or `|dy| > 36` → `Invalid_geometry`.
+7. `|dx| > 128` or `|dy| > 128` → `Invalid_geometry`.
 8. Dispatch:
    - king with `|dx| = 2` and `dy = 0` → castling validation;
    - pawn with `|dx| = 1` and empty destination → en-passant validation;
@@ -438,8 +444,12 @@ Triggered by: pawn, `|dx| = 1`, empty destination.
 
 ## 8. `Move_processor`
 
-`apply board move_info` assumes the move came from `Legal`. It never validates
-and returns no result.
+`prepare board move_info` computes every updated piece and affected position
+without writing. `apply_plan` performs the writes; `apply` is their
+composition. The engine calls `prepare`, builds/validates the ledger event, then
+calls `apply_plan`, so no ordinary validation can fail after the first board
+write. `move_info.kind` supplies the castling rook positions or en-passant
+captured square; the processor never reclassifies the move.
 
 ### Normal move
 
@@ -535,7 +545,8 @@ Ledger-level engine flags:
 - `oldest_seq` is the oldest retained sequence.
 - `create_ledger ?next_seq capacity` defaults `next_seq = 0`.
 - `Game_state` uses `next_seq = 1`, so its first accepted event is sequence 1.
-- `latest_seq` returns `head_seq` (the next sequence).
+- `latest_seq` is the most recently committed sequence (`head_seq - 1`).
+- `next_seq` is `head_seq`, the sequence the next append will return.
 - `oldest_seq` returns the oldest retained sequence, or `head_seq` when empty.
 - `contains seq` is `oldest_seq <= seq < head_seq`.
 
@@ -561,7 +572,7 @@ Append is single-writer and does not allocate.
 - `get_range start end`: start inclusive, end exclusive. Returns `None` if
   start is older than the retained window, end is beyond the head, or
   start > end. It returns an allocated array of decoded events.
-- `clear`: resets both sequence positions to zero.
+`Ledger.clear` is not exposed: a running ledger sequence cannot be reset.
 
 `move_event.flags` is `Int16.t`; the underlying value is the 14-bit field.
 
@@ -585,11 +596,15 @@ The representation is private in the `.mli`.
   - sequence = 0.
 - `initialise`:
   - iterates all 1,000,000 board coordinates;
-  - calls `Board.initialise_standard_position`;
+  - on the first call (fresh zero-filled board) uses
+    `Board.initialise_standard_position ~clear:false`;
+  - later calls clear each board first;
   - leaves sequence at 0 and ledger empty.
-- Accessors: `board`, `ledger`, `sequence`, `set_sequence`, `occupied_count`.
-  `board`/`ledger`/`set_sequence` are internal to the engine/worker by
-  convention.
+- Public accessors: `sequence` (read-only) and `occupied_count`.
+- Controlled internal interface: `with_state`, which passes the board, ledger
+  and current sequence to a callback and commits the returned sequence. The
+  move engine is the sole production user; direct board/ledger accessors and a
+  public `set_sequence` do not exist.
 
 ### Startup verification
 
@@ -728,7 +743,7 @@ type metrics = {
 }
 ```
 
-Timing uses `Unix.gettimeofday` converted to nanoseconds.
+Timing uses the monotonic `Mtime_clock.now_ns` clock from `mtime.clock.os`.
 
 ---
 
@@ -751,37 +766,38 @@ Timing uses `Unix.gettimeofday` converted to nanoseconds.
 `position_to_int`/`position_of_int`, and a 4-byte little-endian
 `position_to_bytes`/`position_of_bytes`.
 
-### 13.2 Move codec — 5 bytes
+### 13.2 Move codec — 6 bytes
 
-The wire no longer sends a destination position. It sends source plus signed
+The wire does not send a destination position. It sends source plus signed
 displacements.
 
 | Bits | Field |
 |---:|---|
 | 0–25 | Source position |
-| 26–32 | `dx`, signed 7-bit two’s complement |
-| 33–39 | `dy`, signed 7-bit two’s complement |
+| 26–34 | `dx`, signed 9-bit two’s complement |
+| 35–43 | `dy`, signed 9-bit two’s complement |
+| 44–47 | Unused |
 
-Little-endian across 5 bytes.
+Little-endian across 6 bytes.
 
 - Deltas are in absolute world squares.
 - `move_to_bytes`:
   - rejects positions outside the 8,000 x 8,000 world;
-  - rejects `|dx| > 36` or `|dy| > 36`.
+  - rejects `|dx| > 128` or `|dy| > 128`.
 - `move_of_bytes`:
   - requires exactly 5 bytes;
   - reconstructs destination from absolute source + delta;
-  - rejects invalid source, deltas outside ±36, and destinations outside the
+  - rejects invalid source, deltas outside ±128, and destinations outside the
     world;
   - returns `move option`.
 
-### 13.3 Move request — 13 bytes
+### 13.3 Move request — 14 bytes
 
 | Bytes | Field |
 |---|---|
-| 0–4 | 5-byte move |
-| 5–8 | Expected piece ID, int32 little-endian |
-| 9–12 | Request ID, int32 little-endian |
+| 0–5 | 6-byte move |
+| 6–9 | Expected piece ID, int32 little-endian |
+| 10–13 | Request ID, int32 little-endian |
 
 Decoder requires exactly 13 bytes, a valid move, and an expected piece ID in
 `1..33,554,431`. Otherwise returns `None`.
@@ -841,11 +857,11 @@ worker startup, and total startup.
 Measured on the implementation machine:
 
 ```
-allocation: 0.066 s
-initialisation: 0.496 s
-verification: 0.153 s
-total: 0.714 s
-RSS: ~518 MB
+allocation: 0.065 s
+initialisation: 0.439 s
+verification: 0.157 s
+total: 0.660 s
+RSS: ~520 MB
 ```
 
 ### Middleware
@@ -868,7 +884,7 @@ This enables a higher-resolution browser timer for RTT metrics.
 ### WebSocket handler
 
 1. Receive a binary frame.
-2. Decode 13-byte request.
+2. Decode 14-byte request.
 3. On decode failure: reply with a 0-request-ID rejected response
    (`Invalid_request`).
 4. Convert wire positions to `Board.position`.
@@ -944,13 +960,24 @@ On a local move:
 - Pointer coordinates are converted from client coordinates using a bounding
   rect snapshot taken at drag start.
 
+### Optimistic updates and rejection handling
+
+- At most one move is in flight; new drags are ignored until the response.
+- A normal move is applied locally immediately. Its previous source and
+  destination bytes and piece IDs are saved.
+- If the server rejects a normal move, those bytes and IDs are restored.
+- Castling and en passant are detected geometrically and are not applied
+  optimistically. If accepted, the client applies the king+rook or
+  pawn+captured-pawn update; if rejected, the board is untouched.
+- Loading a different board discards any pending request.
+
 ### Networking
 
 - Connect to `ws://` or `wss://` + host + `/ws`.
 - Binary type: `arraybuffer`.
 - Request ID counter is a client-side `int32` counter.
-- Builds a 13-byte request:
-  - 5-byte source+delta move;
+- Builds a 14-byte request:
+  - 6-byte source+delta move;
   - expected piece ID;
   - request ID.
 - Sends an `ArrayBuffer`.
@@ -987,7 +1014,8 @@ These are deliberate and are not conventional chess:
 
 - Pieces move in absolute world coordinates and may cross board boundaries
   freely.
-- Maximum displacement per axis is 36 world squares.
+- The project uses a maximum displacement of 128 world squares per axis
+  (the original implementation used 36).
 - Capturing a piece on a different board is only allowed if the captured
   piece’s move count is greater than zero.
 - Normal king moves may not cross board boundaries; castling uses the absolute offsets above.
@@ -997,7 +1025,8 @@ These are deliberate and are not conventional chess:
 - Pawns may double-move whenever their move count is zero; there is no
   starting-rank restriction.
 - En passant captures the pawn at `(source_x + dx, source_y)` if it has
-  `just_double_moved`.
+  `just_double_moved`. The flag expires when that pawn next moves; moves by
+  other pieces do not clear it, matching the original implementation.
 - En passant has no cross-board capture restriction.
 - Promotion occurs only at the absolute top/bottom world edges (white row 0,
   black row 7999), not at individual board edges.
@@ -1021,7 +1050,7 @@ These are deliberate and are not conventional chess:
 7. Only the state worker mutates the authoritative board after startup.
 8. A move transaction never yields or performs network I/O.
 9. The wire move is source + signed deltas; the destination is reconstructed
-   exactly under the ±36 rule.
+   exactly under the ±128 rule.
 10. Client and server use the same piece-ID allocation formula.
 
 ---
@@ -1054,6 +1083,11 @@ These are deliberate and are not conventional chess:
 - Kingside/queenside castling; moved pieces and blocked paths.
 - Cross-board capture with moved/unmoved targets.
 - Same-board and cross-board en passant.
+- Move classification (`Normal`, `Castle` with rook positions, `En_passant`
+  with captured square).
+- En-passant flag expiry: a double-move flag cleared by the pawn's next move
+  cannot permit en passant; the same geometry with the flag set is legal.
+- `Move_processor.prepare` leaves the board untouched; `apply_plan` writes.
 - White/black promotion, including capture metadata.
 - Killer/adopted/captured-different-type flags.
 - Illegal moves leaving the board unchanged.
@@ -1061,7 +1095,7 @@ These are deliberate and are not conventional chess:
 ### `test_protocol`
 
 - Source+delta move round trips.
-- ±36 boundary and rejection of 37.
+- ±128 boundary and rejection of 129.
 - Out-of-world positions.
 - Request round trip and invalid piece IDs.
 - Response round trip for accepted and rejected.
@@ -1093,9 +1127,10 @@ These are deliberate and are not conventional chess:
 - Two concurrent submissions processed FIFO with sequences 1 and 2.
 - Stale request rejected without sequence advancement.
 - Metrics counters and queue depth.
+- Two concurrent requests for the same piece: exactly one accepted, one
+  rejected, sequence advances once.
+- Queue-full rejection with capacity one.
 - Shutdown processes an already accepted pending request.
-- Existing queue-full branch is implemented but is not covered by an automated
-  test; it is checked synchronously in `submit` against depth/capacity.
 
 ---
 
@@ -1104,17 +1139,17 @@ These are deliberate and are not conventional chess:
 - No client snapshots or initial board downloads from the server.
 - No spatial subscriptions, broadcasting, or event replay.
 - No reconnect/resume.
-- No client reconciliation or rollback. The client applies moves locally and
-  updates its IDs optimistically; rejected moves do not revert the local board.
-- Special moves (castling, en passant) are not applied locally by the client,
-  so local and authoritative boards can diverge until snapshots exist.
+- Normal moves are applied optimistically and rolled back on rejection.
+  Castling and en passant are not applied optimistically: the client waits for
+  acceptance and then applies the local king+rook or pawn+captured-pawn move.
+- No snapshots, so accepted promotions are not reflected in the client glyph
+  and client/server divergence after special moves is not repaired.
 - No persistence.
 - No authentication or authorisation.
 - No turn validation; either colour can move any piece from the client’s
   perspective.
 - No check/checkmate/win detection.
 - The worker is an Lwt task in the networking domain, not a dedicated Domain.
-- Queue-full behaviour exists but is not exercised by an automated stress test.
 - The old JSON `client_msg` definition remains unused.
 - `Protocol.Types` has no `.mli`; its implementation is the interface.
 

@@ -6,18 +6,27 @@ type rejection =
   | Cross_board_capture
   | Invalid_special_move
 
+type move_kind =
+  | Normal
+  | Castle of {
+      rook_src : Board.position;
+      rook_dst : Board.position;
+    }
+  | En_passant of { captured_pos : Board.position }
+
 type move_info = {
   moving_piece : Piece.t;
   captured_piece : Piece.t;
   src : Board.position;
   dst : Board.position;
+  kind : move_kind;
 }
 
 type result =
   | Legal of move_info
   | Illegal of rejection
 
-let max_move_distance = 36
+let max_move_distance = 128
 
 let abs_int x = if x < 0 then -x else x
 
@@ -43,8 +52,8 @@ let path_clear t (src : Board.position) (dst : Board.position) =
   done;
   !clear
 
-let legal moving captured src dst =
-  Legal { moving_piece = moving; captured_piece = captured; src; dst }
+let legal kind moving captured src dst =
+  Legal { moving_piece = moving; captured_piece = captured; src; dst; kind }
 
 let same_colour a b = Piece.is_white a = Piece.is_white b
 
@@ -71,7 +80,9 @@ let validate_castle t (move : Move.t) moving =
         let rook_dst_x = dst_x + if dx = 2 then -1 else 1 in
         if not (world_in_bounds rook_dst_x src_y) then
           Illegal Invalid_special_move
-        else legal moving Piece.empty src dst
+        else
+          let rook_dst = Board.position_of_world ~x:rook_dst_x ~y:src_y in
+          legal (Castle { rook_src; rook_dst }) moving Piece.empty src dst
 
 let validate_en_passant t (move : Move.t) moving =
   let src = move.src and dst = move.dst in
@@ -93,7 +104,7 @@ let validate_en_passant t (move : Move.t) moving =
         || same_colour captured moving
         || not (Piece.just_double_moved captured)
       then Illegal Invalid_special_move
-      else legal moving captured src dst
+      else legal (En_passant { captured_pos }) moving captured src dst
 
 let validate_pawn t (move : Move.t) ~dx ~dy moving ~captured =
   let adx = abs_int dx and ady = abs_int dy in
@@ -107,7 +118,7 @@ let validate_pawn t (move : Move.t) ~dx ~dy moving ~captured =
   else if ady = 2 && (adx <> 0 || Piece.move_count moving <> 0) then
     Illegal Invalid_geometry
   else if not (path_clear t move.src move.dst) then Illegal Blocked_path
-  else legal moving captured move.src move.dst
+  else legal Normal moving captured move.src move.dst
 
 let validate_normal t (move : Move.t) moving ~dx ~dy ~captured =
   if
@@ -121,25 +132,25 @@ let validate_normal t (move : Move.t) moving ~dx ~dy ~captured =
     | Piece.Pawn -> validate_pawn t move ~dx ~dy moving ~captured
     | Piece.Knight ->
       if (adx = 1 && ady = 2) || (adx = 2 && ady = 1) then
-        legal moving captured move.src move.dst
+        legal Normal moving captured move.src move.dst
       else Illegal Invalid_geometry
     | Piece.Bishop ->
       if adx <> ady || adx = 0 then Illegal Invalid_geometry
       else if not (path_clear t move.src move.dst) then Illegal Blocked_path
-      else legal moving captured move.src move.dst
+      else legal Normal moving captured move.src move.dst
     | Piece.Rook ->
       if (adx = 0) = (ady = 0) then Illegal Invalid_geometry
       else if not (path_clear t move.src move.dst) then Illegal Blocked_path
-      else legal moving captured move.src move.dst
+      else legal Normal moving captured move.src move.dst
     | Piece.Queen | Piece.Promoted_pawn ->
       let diagonal = adx = ady && adx > 0 in
       let straight = (adx = 0) <> (ady = 0) in
       if not (diagonal || straight) then Illegal Invalid_geometry
       else if not (path_clear t move.src move.dst) then Illegal Blocked_path
-      else legal moving captured move.src move.dst
+      else legal Normal moving captured move.src move.dst
     | Piece.King ->
       if adx <= 1 && ady <= 1 && not (boards_differ move.src move.dst) then
-        legal moving captured move.src move.dst
+        legal Normal moving captured move.src move.dst
       else Illegal Invalid_geometry
 
 let validate t (move : Move.t) =

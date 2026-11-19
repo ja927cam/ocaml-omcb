@@ -88,8 +88,9 @@ val occupied_count : t -> int
 val copy : t -> t
 (** [copy t] is an independent copy of the world. *)
 
-val initialise_standard_position : t -> board_pos -> unit
-(** Put the standard starting position on one board, first clearing it.
+val initialise_standard_position : ?clear:bool -> t -> board_pos -> unit
+(** Put the standard starting position on one board. [clear] defaults to
+    [true]; pass [~clear:false] only when the board is known to be empty.
     Piece IDs are assigned as [board_id * 32 + slot], with slot [1..32], so
     they are unique across the whole world.
     @raise Invalid_argument if [p] is out of range. *)

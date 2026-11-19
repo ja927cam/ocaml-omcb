@@ -1,53 +1,17 @@
-let abs_int x = if x < 0 then -x else x
+type plan = {
+  clears : Board.position list;
+  sets : (Board.position * Piece.t) list;
+}
 
-let is_castle (info : Move_validator.move_info) =
-  Piece.piece_type info.moving_piece = Piece.King
-  && abs_int (Board.world_x info.dst - Board.world_x info.src) = 2
-  && Board.world_y info.dst = Board.world_y info.src
-
-let is_en_passant board (info : Move_validator.move_info) =
-  Piece.piece_type info.moving_piece = Piece.Pawn
-  && abs_int (Board.world_x info.dst - Board.world_x info.src) = 1
-  && Piece.is_empty (Board.get board info.dst)
-
-let apply_castle board (info : Move_validator.move_info) =
-  let src = info.src and dst = info.dst in
-  let src_x = Board.world_x src in
-  let y = Board.world_y src in
-  let dx = Board.world_x dst - src_x in
-  let rook_src_x = src_x + if dx = 2 then 3 else -4 in
-  let rook_dst_x = Board.world_x dst + if dx = 2 then -1 else 1 in
-  let rook_src = Board.position_of_world ~x:rook_src_x ~y:y in
-  let rook_dst = Board.position_of_world ~x:rook_dst_x ~y:y in
-  let rook = Board.get board rook_src in
-  let king = Piece.increment_move_count info.moving_piece in
-  let rook = Piece.increment_move_count rook in
-  Board.clear board src;
-  Board.clear board rook_src;
-  Board.set board dst king;
-  Board.set board rook_dst rook
-
-let apply_en_passant board (info : Move_validator.move_info) =
-  let captured_pos =
-    Board.position_of_world ~x:(Board.world_x info.dst) ~y:(Board.world_y info.src)
-  in
-  let moving =
-    info.moving_piece
-    |> Piece.increment_move_count
-    |> Piece.increment_capture_count
-    |> fun p -> Piece.with_just_double_moved p false
-  in
-  Board.clear board info.src;
-  Board.clear board captured_pos;
-  Board.set board info.dst moving
-
-let apply_normal board (info : Move_validator.move_info) =
+let normal_plan (info : Move_validator.move_info) =
   let dy = Board.world_y info.dst - Board.world_y info.src in
   let moving =
     match Piece.piece_type info.moving_piece with
     | Piece.Pawn ->
+      (* Original semantics: the flag survives until this pawn next moves;
+         moves by other pieces do not expire it. *)
       let p =
-        Piece.with_just_double_moved info.moving_piece (abs_int dy = 2)
+        Piece.with_just_double_moved info.moving_piece (abs dy = 2)
       in
       if
         (Piece.is_white p && Board.world_y info.dst = 0)
@@ -94,10 +58,39 @@ let apply_normal board (info : Move_validator.move_info) =
         Piece.with_has_captured_other_type moving true
       else moving
   in
-  Board.clear board info.src;
-  Board.set board info.dst moving
+  { clears = [ info.src ]; sets = [ (info.dst, moving) ] }
 
-let apply board (info : Move_validator.move_info) =
-  if is_castle info then apply_castle board info
-  else if is_en_passant board info then apply_en_passant board info
-  else apply_normal board info
+let en_passant_plan (info : Move_validator.move_info) captured_pos =
+  let moving =
+    info.moving_piece
+    |> Piece.increment_move_count
+    |> Piece.increment_capture_count
+    |> fun p -> Piece.with_just_double_moved p false
+  in
+  {
+    clears = [ info.src; captured_pos ];
+    sets = [ (info.dst, moving) ];
+  }
+
+let castle_plan board (info : Move_validator.move_info) rook_src rook_dst =
+  let rook = Board.get board rook_src in
+  let king = Piece.increment_move_count info.moving_piece in
+  let rook = Piece.increment_move_count rook in
+  {
+    clears = [ info.src; rook_src ];
+    sets = [ (info.dst, king); (rook_dst, rook) ];
+  }
+
+let prepare board (info : Move_validator.move_info) =
+  match info.kind with
+  | Move_validator.Normal -> normal_plan info
+  | Move_validator.Castle { rook_src; rook_dst } ->
+    castle_plan board info rook_src rook_dst
+  | Move_validator.En_passant { captured_pos } ->
+    en_passant_plan info captured_pos
+
+let apply_plan board plan =
+  List.iter (fun p -> Board.clear board p) plan.clears;
+  List.iter (fun (p, piece) -> Board.set board p piece) plan.sets
+
+let apply board info = apply_plan board (prepare board info)

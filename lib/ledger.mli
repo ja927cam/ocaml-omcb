@@ -21,6 +21,10 @@ val create_ledger : ?next_seq:int64 -> int -> t
 val create : int -> t
 val capacity : t -> int
 val latest_seq : t -> int64
+(** The most recently committed sequence number, or [next_seq - 1] when the
+    ledger is empty. *)
+
+val next_seq : t -> int64
 (** The sequence number that the next append will return. *)
 
 val oldest_seq : t -> int64
@@ -37,6 +41,10 @@ val unpack_move : packed_move -> position * position
 val pack_metadata : int32 -> int32 -> int -> int64
 val unpack_metadata : int64 -> int32 * int32 * int
 
+val validate_event : packed_move -> int32 -> int32 -> int -> unit
+(** Validate an event before any board mutation.
+    @raise Invalid_argument if a field does not fit its bit width. *)
+
 val append : t -> packed_move -> int32 -> int32 -> int -> int64
 (** [append ledger move moved_id captured_id flags] returns the event's
     sequence number. @raise Invalid_argument if a field does not fit its bit
@@ -44,4 +52,3 @@ val append : t -> packed_move -> int32 -> int32 -> int -> int64
 
 val get_event : t -> int64 -> move_event option
 val get_range : t -> int64 -> int64 -> move_event array option
-val clear : t -> unit

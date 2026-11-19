@@ -34,7 +34,7 @@ let expect_rejected expected = function
 
 let () =
   let state = Game_state.create () in
-  let board = Game_state.board state in
+  let board = Game_state.with_state state (fun ~board ~ledger:_ ~sequence -> (sequence, board)) in
   let b0 = { Board.board_x = 0; board_y = 0 } in
   let b1 = { Board.board_x = 1; board_y = 0 } in
 
@@ -49,10 +49,10 @@ let () =
   check "accepted request id" (accepted.request_id = 10l);
   check "first sequence" (accepted.sequence = 1L);
   check "sequence advanced" (Game_state.sequence state = 1L);
-  check "ledger head" (Ledger.latest_seq (Game_state.ledger state) = 2L);
+  check "ledger head" (Ledger.next_seq (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) = 2L);
   check "source empty" (Piece.is_empty (Board.get board (pos 0 0 4 6)));
   check "destination" (Piece.id (Board.get board (pos 0 0 4 4)) = Piece.id pawn);
-  (match Ledger.get_event (Game_state.ledger state) 1L with
+  (match Ledger.get_event (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) 1L with
    | None -> failwith "missing ledger event 1"
    | Some event ->
      check "event moved id" (event.moved_piece_id = Piece.id pawn);
@@ -69,7 +69,7 @@ let () =
           (Int32.succ (Piece.id stale_piece))));
   check "stale sequence unchanged" (Game_state.sequence state = 1L);
   check "stale ledger unchanged"
-    (Ledger.latest_seq (Game_state.ledger state) = 2L);
+    (Ledger.next_seq (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) = 2L);
   check "stale board unchanged"
     (Piece.id (Board.get board (pos 1 0 1 6)) = Piece.id stale_piece);
 
@@ -79,14 +79,14 @@ let () =
   place board 1 0 4 4 rook;
   place board 1 0 4 5 blocker;
   let before_sequence = Game_state.sequence state in
-  let before_ledger = Ledger.latest_seq (Game_state.ledger state) in
+  let before_ledger = Ledger.next_seq (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) in
   expect_rejected
     (Move_engine.Invalid_move Move_validator.Blocked_path)
     (Move_engine.process state
        (move_request 12l (pos 1 0 4 4) (pos 1 0 4 6) (Piece.id rook)));
   check "invalid sequence unchanged" (Game_state.sequence state = before_sequence);
   check "invalid ledger unchanged"
-    (Ledger.latest_seq (Game_state.ledger state) = before_ledger);
+    (Ledger.next_seq (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) = before_ledger);
   check "invalid board source" (Piece.id (Board.get board (pos 1 0 4 4)) = Piece.id rook);
   check "invalid board blocker"
     (Piece.id (Board.get board (pos 1 0 4 5)) = Piece.id blocker);
@@ -105,7 +105,7 @@ let () =
   in
   check "capture sequence" (capture.sequence = 2L);
   check "capture id" (Piece.id capture.captured_piece = Piece.id black_knight);
-  (match Ledger.get_event (Game_state.ledger state) 2L with
+  (match Ledger.get_event (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) 2L with
    | None -> failwith "missing ledger event 2"
    | Some event ->
      check "ledger captured" (event.captured_piece_id = Piece.id black_knight));
@@ -124,7 +124,7 @@ let () =
   check "en passant captured" (Piece.id ep.captured_piece = Piece.id epc);
   check "en passant destination empty"
     (Piece.is_empty (Board.get board (pos 0 0 3 3)));
-  (match Ledger.get_event (Game_state.ledger state) 3L with
+  (match Ledger.get_event (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) 3L with
    | None -> failwith "missing ledger event 3"
    | Some event ->
      check "en passant flag"
@@ -144,7 +144,7 @@ let () =
   in
   check "castle king" (Piece.id (Board.get board (pos 0 0 6 7)) = Piece.id king);
   check "castle rook" (Piece.id (Board.get board (pos 0 0 5 7)) = Piece.id rook2);
-  (match Ledger.get_event (Game_state.ledger state) 4L with
+  (match Ledger.get_event (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) 4L with
    | None -> failwith "missing ledger event 4"
    | Some event ->
      check "castle flag"
@@ -162,7 +162,7 @@ let () =
   check "promotion id" (Piece.id promoted.moved_piece = Piece.id promo);
   check "promotion type"
     (Piece.piece_type promoted.moved_piece = Piece.Promoted_pawn);
-  (match Ledger.get_event (Game_state.ledger state) 5L with
+  (match Ledger.get_event (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) 5L with
    | None -> failwith "missing ledger event 5"
    | Some event ->
      check "promotion flag"

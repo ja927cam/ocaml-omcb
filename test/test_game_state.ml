@@ -13,15 +13,22 @@ let count_board board bp =
 let () =
   let state = Game_state.create () in
   check "sequence starts at zero" (Game_state.sequence state = 0L);
-  check "ledger starts empty" (Ledger.latest_seq (Game_state.ledger state) = 1L);
-  check "ledger oldest" (Ledger.oldest_seq (Game_state.ledger state) = 1L);
-  check "no first event" (Ledger.get_event (Game_state.ledger state) 1L = None);
+  check "ledger latest starts at zero"
+    (Ledger.latest_seq (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) = 0L);
+  check "ledger next starts at one"
+    (Ledger.next_seq (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) = 1L);
+  check "ledger oldest"
+    (Ledger.oldest_seq (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) = 1L);
+  check "no first event"
+    (Ledger.get_event (Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger))) 1L = None);
 
   Game_state.initialise state;
-  let board = Game_state.board state in
+  let ledger = Game_state.with_state state (fun ~board:_ ~ledger ~sequence -> (sequence, ledger)) in
+  check "ledger latest after initialisation" (Ledger.latest_seq ledger = 0L);
+  check "ledger next after initialisation" (Ledger.next_seq ledger = 1L);
+  let board = Game_state.with_state state (fun ~board ~ledger:_ ~sequence -> (sequence, board)) in
   check "32m occupied" (Board.occupied_count board = 32_000_000);
   check "sequence still zero" (Game_state.sequence state = 0L);
-  check "ledger still empty" (Ledger.latest_seq (Game_state.ledger state) = 1L);
 
   let corners =
     [ { Board.board_x = 0; board_y = 0 };

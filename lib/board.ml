@@ -141,9 +141,9 @@ let back_rank =
   [| Piece.Rook; Piece.Knight; Piece.Bishop; Piece.Queen; Piece.King;
      Piece.Bishop; Piece.Knight; Piece.Rook |]
 
-let initialise_standard_position t bp =
+let initialise_standard_position ?(clear = true) t bp =
   let bid = board_id bp in
-  clear_board t bp;
+  if clear then clear_board t bp;
   let base = bid * squares_per_board in
   let next_id = ref ((bid * 32) + 1) in
   let put x y piece_type is_white =

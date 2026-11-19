@@ -1,7 +1,7 @@
 (library
  (name sim_map_lib)
  (wrapped false)
- (libraries lwt.unix)
+ (libraries lwt.unix mtime.clock.os)
  (modules
   piece
   board

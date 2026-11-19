@@ -25,7 +25,7 @@ let accepted_sequence = function
 
 let () =
   let state = Game_state.create () in
-  let board = Game_state.board state in
+  let board = Game_state.with_state state (fun ~board ~ledger:_ ~sequence -> (sequence, board)) in
   let p0 = piece Piece.Pawn true in
   let p1 = piece Piece.Pawn true in
   place board 0 0 0 6 p0;
@@ -62,26 +62,67 @@ let () =
    | _ -> failwith "expected Stale_piece");
   check "stale sequence unchanged" (Game_state.sequence state = 2L);
 
+  (* Two concurrent requests for the same piece: only the first can win. *)
+  let p3 = piece Piece.Rook true in
+  place board 0 0 4 4 p3;
+  let same_a =
+    State_worker.submit worker
+      (request 4l (pos 0 0 4 4) (pos 0 0 4 5) (Piece.id p3))
+  in
+  let same_b =
+    State_worker.submit worker
+      (request 5l (pos 0 0 4 4) (pos 0 0 4 5) (Piece.id p3))
+  in
+  let same_results = Lwt_main.run (Lwt.all [ same_a; same_b ]) in
+  check "same piece one accepted"
+    (match List.nth same_results 0 with
+     | Ok (Move_engine.Accepted accepted) -> accepted.sequence = 3L
+     | _ -> false);
+  check "same piece one rejected"
+    (match List.nth same_results 1 with
+     | Ok (Move_engine.Rejected _) -> true
+     | _ -> false);
+  check "same piece sequence once" (Game_state.sequence state = 3L);
+
   let metrics = State_worker.metrics worker in
-  check "metrics processed" (metrics.requests_processed = 3L);
-  check "metrics rejected" (metrics.requests_rejected = 1L);
+  check "metrics processed" (metrics.requests_processed = 5L);
+  check "metrics rejected" (metrics.requests_rejected = 2L);
   check "metrics queue depth" (metrics.queue_depth = 0);
   check "metrics capacity" (metrics.queue_capacity = 8);
   Lwt_main.run (State_worker.stop worker);
 
-  (* Stopping with an accepted request pending still processes it. *)
+  (* Bounded queue rejects the second request when capacity is one. *)
   let p4 = piece Piece.Knight true in
   place board 0 0 6 6 p4;
+  let limited = State_worker.start ~config:{ queue_capacity = 1 } state in
+  let first =
+    State_worker.submit limited
+      (request 6l (pos 0 0 6 6) (pos 0 0 7 4) (Piece.id p4))
+  in
+  let second =
+    State_worker.submit limited
+      (request 7l (pos 0 0 7 4) (pos 0 0 6 2) (Piece.id p4))
+  in
+  check "queue full"
+    (match Lwt_main.run second with
+     | Error State_worker.Queue_full -> true
+     | _ -> false);
+  ignore (Lwt_main.run first);
+  Lwt_main.run (State_worker.stop limited);
+
+  (* Stopping with an accepted request pending still processes it. *)
+  let p5 = piece Piece.Knight true in
+  place board 0 0 6 2 p5;
   let worker = State_worker.start ~config:{ queue_capacity = 8 } state in
   let pending =
     State_worker.submit worker
-      (request 6l (pos 0 0 6 6) (pos 0 0 7 4) (Piece.id p4))
+      (request 8l (pos 0 0 6 2) (pos 0 0 5 4) (Piece.id p5))
   in
   let stopped = State_worker.stop worker in
   let result, () = Lwt_main.run (Lwt.both pending stopped) in
   check "pending processed on stop"
     (match result with
-     | Ok (Move_engine.Accepted accepted) -> accepted.request_id = 6l
+     | Ok (Move_engine.Accepted accepted) -> accepted.request_id = 8l
      | _ -> false);
 
   Printf.printf "All State_worker tests passed.\n"

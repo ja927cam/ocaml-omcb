@@ -61,7 +61,8 @@ let create_ledger ?(next_seq = 0L) capacity =
 
 let create capacity = create_ledger capacity
 let capacity t = t.capacity
-let latest_seq t = t.head_seq
+let next_seq t = t.head_seq
+let latest_seq t = Int64.pred t.head_seq
 let oldest_seq t = t.oldest_seq
 
 let contains t seq =
@@ -121,15 +122,18 @@ let valid_piece_id id =
   let v = Int64.of_int32 id in
   Int64.compare v 0L >= 0 && Int64.compare v piece_id_mask <= 0
 
-let append t move moved_piece_id captured_piece_id flags =
+let validate_event move moved_piece_id captured_piece_id flags =
   if Int64.compare move 0L < 0 || Int64.compare move move_mask > 0 then
-    invalid_arg "Ledger.append: move does not fit in 52 bits";
+    invalid_arg "Ledger.validate_event: move does not fit in 52 bits";
   if not (valid_piece_id moved_piece_id) then
-    invalid_arg "Ledger.append: moved piece ID does not fit in 25 bits";
+    invalid_arg "Ledger.validate_event: moved piece ID does not fit in 25 bits";
   if not (valid_piece_id captured_piece_id) then
-    invalid_arg "Ledger.append: captured piece ID does not fit in 25 bits";
+    invalid_arg "Ledger.validate_event: captured piece ID does not fit in 25 bits";
   if flags < 0 || flags > max_flags then
-    invalid_arg "Ledger.append: flags do not fit in 14 bits";
+    invalid_arg "Ledger.validate_event: flags do not fit in 14 bits"
+
+let append t move moved_piece_id captured_piece_id flags =
+  validate_event move moved_piece_id captured_piece_id flags;
   let seq = t.head_seq in
   let index = Int64.to_int (Int64.logand seq (Int64.of_int t.mask)) in
   let metadata = pack_metadata moved_piece_id captured_piece_id flags in
@@ -167,7 +171,3 @@ let get_range t start_seq end_seq =
            let seq = Int64.add start_seq (Int64.of_int i) in
            let index = Int64.to_int (Int64.logand seq (Int64.of_int t.mask)) in
            event_at t index))
-
-let clear t =
-  t.head_seq <- 0L;
-  t.oldest_seq <- 0L

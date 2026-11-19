@@ -1,10 +1,16 @@
-(** Apply a move that has already been validated.
+(** Prepared board updates for a validated move.
 
-    Validation and application are deliberately separate. [apply] assumes the
-    move came from {!Move_validator.Legal}; it never validates and never
-    reports failure. A rejected move must not be passed here. *)
+    [prepare] reads the board and computes every updated value without writing
+    anything. [apply_plan] performs the writes. This lets the engine validate
+    all commit data before the first board mutation. *)
+
+type plan
+
+val prepare : Board.t -> Move_validator.move_info -> plan
+(** Compute all updated values and affected positions. Does not mutate. *)
+
+val apply_plan : Board.t -> plan -> unit
+(** Apply a previously prepared plan. *)
 
 val apply : Board.t -> Move_validator.move_info -> unit
-(** [apply board info] removes the moving piece from its source, removes any
-    captured piece, places the moving piece on the destination, and updates
-    move/capture counters and metadata. *)
+(** Convenience: [apply board info = apply_plan board (prepare board info)]. *)

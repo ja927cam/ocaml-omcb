@@ -11,7 +11,7 @@ let same_position a b =
 
 let roundtrip name m =
   let bytes = move_to_bytes m in
-  check (name ^ " length") (Bytes.length bytes = 5);
+  check (name ^ " length") (Bytes.length bytes = 6);
   match move_of_bytes bytes with
   | None -> failwith ("FAIL: " ^ name ^ " decoded to None")
   | Some decoded ->
@@ -29,21 +29,21 @@ let () =
     (same_position (position_of_int (position_to_int p)) p);
 
   roundtrip "same board" (move (pos 0 0 4 6) (pos 0 0 4 4));
-  roundtrip "positive max delta" (move (pos 0 0 0 0) (pos 4 0 4 0));
-  roundtrip "negative max delta" (move (pos 4 0 4 0) (pos 0 0 0 0));
-  roundtrip "diagonal max delta" (move (pos 0 0 0 0) (pos 4 0 4 4));
+  roundtrip "positive max delta" (move (pos 0 0 0 0) (pos 16 0 0 0));
+  roundtrip "negative max delta" (move (pos 16 0 0 0) (pos 0 0 0 0));
+  roundtrip "diagonal max delta" (move (pos 0 0 0 0) (pos 16 16 0 0));
   roundtrip "cross-board" (move (pos 7 3 5 2) (pos 7 4 1 6));
   roundtrip "world edge" (move (pos 998 999 7 7) (pos 999 999 5 3));
 
-  expect_invalid "delta over 36" (fun () ->
-      move_to_bytes (move (pos 0 0 0 0) (pos 4 0 5 0)));
-  expect_invalid "negative delta over 36" (fun () ->
-      move_to_bytes (move (pos 4 0 5 0) (pos 0 0 0 0)));
+  expect_invalid "delta over 128" (fun () ->
+      move_to_bytes (move (pos 0 0 0 0) (pos 16 0 1 0)));
+  expect_invalid "negative delta over 128" (fun () ->
+      move_to_bytes (move (pos 16 0 1 0) (pos 0 0 0 0)));
   expect_invalid "board outside world" (fun () ->
       move_to_bytes (move (pos 1000 0 0 0) (pos 1000 0 0 1)));
 
   check "short frame rejected" (move_of_bytes (Bytes.create 4) = None);
-  check "long frame rejected" (move_of_bytes (Bytes.create 6) = None);
+  check "long frame rejected" (move_of_bytes (Bytes.create 7) = None);
 
   let request =
     {
@@ -53,7 +53,7 @@ let () =
     }
   in
   let request_bytes = move_request_to_bytes request in
-  check "request length" (Bytes.length request_bytes = 13);
+  check "request length" (Bytes.length request_bytes = 14);
   (match move_request_of_bytes request_bytes with
    | None -> failwith "request decoded to None"
    | Some decoded ->

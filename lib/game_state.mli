@@ -14,17 +14,19 @@ val initialise : t -> unit
     Piece IDs are [board_id * 32 + slot + 1]. The sequence stays zero and the
     ledger remains empty. *)
 
-val board : t -> Board.t
-(** The board. Internal: only the state worker should use this after startup. *)
-
-val ledger : t -> Ledger.t
-(** The ledger. Internal: only the state worker should use this. *)
-
 val sequence : t -> int64
 (** Last committed event sequence (zero before any move). *)
 
-val set_sequence : t -> int64 -> unit
-(** Internal: advance the committed sequence. *)
-
 val occupied_count : t -> int
 (** Number of occupied squares, for startup verification and tests. *)
+
+val with_state :
+  t ->
+  (board:Board.t ->
+   ledger:Ledger.t ->
+   sequence:int64 ->
+   int64 * 'a) ->
+  'a
+(** Internal transaction interface: provides the board/ledger and the current
+    sequence, and commits the returned sequence afterwards. Only the move
+    engine and test setup should use this. *)

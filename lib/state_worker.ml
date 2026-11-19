@@ -45,8 +45,7 @@ type t = {
 
 let default_config = { queue_capacity = 4096 }
 
-let now_ns () =
-  Int64.of_float (Unix.gettimeofday () *. 1_000_000_000.)
+let now_ns () = Mtime_clock.now_ns ()
 
 let finish t =
   if not t.finished_done then begin
@@ -142,7 +141,12 @@ let submit t request =
       { request; promise = resolver; enqueued_ns = now_ns () }
       t.queue;
     t.depth <- t.depth + 1;
-    Lwt_condition.broadcast t.condition ();
+    (* Notify after yielding so a burst of submits can fill the queue before
+       the worker starts processing. *)
+    Lwt.async (fun () ->
+        Lwt.pause () >>= fun () ->
+        Lwt_condition.broadcast t.condition ();
+        Lwt.return_unit);
     promise
   end
 

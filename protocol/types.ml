@@ -10,10 +10,11 @@ type move = {
   dst : position;
 }
 
-(* Wire format (little-endian, 5 bytes = 40 bits):
+(* Wire format (little-endian, 6 bytes = 48 bits):
      bits  0..25  source position
-     bits 26..32  dx (7-bit signed, -36..36)
-     bits 33..39  dy (7-bit signed, -36..36)
+     bits 26..34  dx (9-bit signed, -128..128)
+     bits 35..43  dy (9-bit signed, -128..128)
+     bits 44..47  unused
 
    A position is packed into 26 bits:
      bits  0..9   board_x   (10 bits)
@@ -26,8 +27,8 @@ type move = {
 
 let world_boards = 1000
 let world_size = world_boards * 8
-let max_delta = 36
-let move_bytes = 5
+let max_delta = 128
+let move_bytes = 6
 
 let position_to_int p =
   (p.board_x land 0x3ff)
@@ -69,7 +70,7 @@ let position_to_bytes p =
 
 let position_of_bytes b = position_of_int (get_u32_le b 0)
 
-let sign7 v = if v >= 64 then v - 128 else v
+let sign9 v = if v >= 256 then v - 512 else v
 
 let move_to_bytes m =
   if not (position_in_world m.src && position_in_world m.dst) then
@@ -77,13 +78,13 @@ let move_to_bytes m =
   let dx = world_x m.dst - world_x m.src in
   let dy = world_y m.dst - world_y m.src in
   if dx < -max_delta || dx > max_delta || dy < -max_delta || dy > max_delta
-  then invalid_arg "Protocol.Types.move_to_bytes: delta exceeds 36 squares";
+  then invalid_arg "Protocol.Types.move_to_bytes: delta exceeds 128 squares";
   let packed =
     Int64.logor
       (Int64.of_int (position_to_int m.src))
       (Int64.logor
-         (Int64.shift_left (Int64.of_int (dx land 0x7f)) 26)
-         (Int64.shift_left (Int64.of_int (dy land 0x7f)) 33))
+         (Int64.shift_left (Int64.of_int (dx land 0x1ff)) 26)
+         (Int64.shift_left (Int64.of_int (dy land 0x1ff)) 35))
   in
   let b = Bytes.create move_bytes in
   for i = 0 to move_bytes - 1 do
@@ -111,12 +112,12 @@ let move_of_bytes b =
         (Int64.to_int (Int64.logand !packed 0x3FFFFFFL))
     in
     let dx =
-      Int64.logand (Int64.shift_right_logical !packed 26) 0x7FL
-      |> Int64.to_int |> sign7
+      Int64.logand (Int64.shift_right_logical !packed 26) 0x1FFL
+      |> Int64.to_int |> sign9
     in
     let dy =
-      Int64.logand (Int64.shift_right_logical !packed 33) 0x7FL
-      |> Int64.to_int |> sign7
+      Int64.logand (Int64.shift_right_logical !packed 35) 0x1FFL
+      |> Int64.to_int |> sign9
     in
     if
       (not (position_in_world src))
@@ -140,11 +141,11 @@ let move_of_bytes b =
               };
           }
 
-(* {2 Move requests (13 bytes)}
+(* {2 Move requests (14 bytes)}
 
-   byte  0..4   move (5-byte codec above)
-   byte  5..8   expected piece ID (int32, little-endian)
-   byte  9..12  request ID (int32, little-endian) *)
+   byte  0..5   move (6-byte codec above)
+   byte  6..9   expected piece ID (int32, little-endian)
+   byte 10..13  request ID (int32, little-endian) *)
 
 type move_request = {
   request_id : int32;
@@ -152,7 +153,7 @@ type move_request = {
   move : move;
 }
 
-let request_bytes = 13
+let request_bytes = 14
 let max_piece_id = 0x1FFFFFFl
 
 let get_i32_le b off =
@@ -202,8 +203,8 @@ let move_request_to_bytes request =
   let b = Bytes.create request_bytes in
   let move = move_to_bytes request.move in
   Bytes.blit move 0 b 0 move_bytes;
-  set_i32_le b 5 request.expected_piece_id;
-  set_i32_le b 9 request.request_id;
+  set_i32_le b 6 request.expected_piece_id;
+  set_i32_le b 10 request.request_id;
   b
 
 let move_request_of_bytes b =
@@ -212,12 +213,12 @@ let move_request_of_bytes b =
     match move_of_bytes (Bytes.sub b 0 move_bytes) with
     | None -> None
     | Some move ->
-      let expected_piece_id = get_i32_le b 5 in
+      let expected_piece_id = get_i32_le b 6 in
       if not (valid_piece_id expected_piece_id) then None
       else
         Some
           {
-            request_id = get_i32_le b 9;
+            request_id = get_i32_le b 10;
             expected_piece_id;
             move;
           }
