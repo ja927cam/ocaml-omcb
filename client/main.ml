@@ -3,7 +3,7 @@ open Brr_canvas
 
 let board_px = 512
 let cell_px = 64
-let max_coord = 1000
+let max_coord = 999
 let empty = '\000'
 
 type drag = { from : int; piece : char; x : float; y : float }
@@ -199,9 +199,10 @@ let main () =
       in
       let move = { Protocol.Types.src = position src; dst = position dst } in
       let data = Protocol.Types.move_to_bytes move in
-      let buffer = Tarray.Buffer.create 8 in
+      let len = Bytes.length data in
+      let buffer = Tarray.Buffer.create len in
       let bytes = Tarray.uint8_of_buffer buffer |> Tarray.to_bigarray1 in
-      for i = 0 to 7 do
+      for i = 0 to len - 1 do
         Bigarray.Array1.unsafe_set bytes i
           (Char.code (Bytes.unsafe_get data i))
       done;

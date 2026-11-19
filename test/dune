@@ -1,3 +1,7 @@
 (tests
  (names test_piece_board test_move)
  (libraries sim_map_lib))
+
+(test
+ (name test_protocol)
+ (libraries protocol))

@@ -17,7 +17,7 @@ let () =
       Dream.get "/**" (Dream.static "_build/default/client");
     ];
 
-    (* 3. WebSocket endpoint for game packets (binary moves: 8 bytes) *)
+    (* 3. WebSocket endpoint for game packets (binary moves: 5 bytes) *)
     Dream.get "/ws" (fun _req ->
       (* [~close:false]: Dream 1.0.0~alpha8 busy-loops when it closes a
          WebSocket whose peer has already gone away. The peer's close frame
@@ -27,8 +27,9 @@ let () =
           match%lwt Dream.receive socket with
           | Some data ->
               let move =
-                if String.length data = 8
-                then Some (Protocol.Types.move_of_bytes (Bytes.of_string data))
+                if String.length data = 5
+                then
+                  Protocol.Types.move_of_bytes (Bytes.of_string data)
                 else None
               in
               let accepted =
