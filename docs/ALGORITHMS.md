@@ -768,7 +768,63 @@ must include that handoff and the response mailbox.
 
 ---
 
-## 14. Design trade-offs and what would change next
+### 13.8 Proof obligation matrix
+
+| Obligation | Current evidence | Cheapest next step |
+|---|---|---|
+| Piece fields are disjoint and setters preserve them | By construction; field tests | QCheck exhaustive bit tests |
+| Counters saturate without carry | Unit tests at 4095 | Bit-vector proof |
+| `create` never returns zero | Validation + tests | Simple exhaustive proof |
+| Position/index is a bijection | Arithmetic argument; boundary tests | Coq/Lean arithmetic proof |
+| Board world conversion round-trips | Tests at boundaries | Property test |
+| Initial piece IDs are unique | Exhaustive test over 32M IDs | Arithmetic injectivity proof |
+| Ledger wrap retains exactly the recent window | Small-capacity wrap test; runtime checks | TLA+ / Coq array invariant |
+| Sequence and ledger agree | Engine tests and runtime assertion | TLA+ transaction model |
+| Rejected move changes nothing | Engine tests | Model-based property test |
+| Accepted move changes all three exactly once | Engine tests; prepare/commit order | TLA+ transaction model |
+| Wire move round-trips exactly for ±128 | Protocol tests | SMT/bit-vector proof |
+| Queue is FIFO and bounded | Worker tests | TLA+ queue model |
+| Only the worker mutates state | Module-boundary convention | Capability token or private library |
+
+The code currently has no machine-checked proof. The table distinguishes what
+is established by construction, by tests, and what remains a proof
+opportunity.
+
+---
+
+## 14. Efficiency audit by module
+
+| Module | Cost | Notes |
+|---|---|---|
+| `Piece` | O(1), word-sized | No per-piece heap object; masking updates are branch-light |
+| `Board` | O(1) square access; O(64M) scans | Dense Bigarray; `get_world` avoids record construction on hot paths |
+| `Move` | O(1) | Two positions; no cached metadata |
+| `Move_validator` | O(path length) for sliders; O(1) otherwise | No allocation in path traversal after `get_world`; `move_info` allocates one record |
+| `Move_processor` | O(1) plus small plan allocation | Computes all writes before mutating; plan lists are the main avoidable allocation |
+| `Ledger` | O(1) append/read; O(k) range | Two adjacent `int64` writes; range decoding allocates an event array |
+| `Game_state` | O(1) access; O(64M) initialisation/scan | Single ownership; no per-move locking |
+| `Move_engine` | O(1) plus validation/path/ledger | Measured ~190 ns per accepted move on the benchmark machine |
+| `State_worker` | O(1) enqueue; O(batch) drain | Bounded queue; one Lwt task; coalesced notification; batch of 64 before yielding |
+| `Protocol.Types` | O(1) | 6-byte moves, 14-byte requests, binary; no JSON on the move path |
+| Client renderer | O(visible pieces) per dirty frame | Offscreen board and piece atlas; no continuous loop |
+| Client network | O(1) per request | One in-flight move; rollback or deferred special application |
+
+The largest remaining performance costs are architectural, not arithmetic:
+
+1. the Lwt worker shares the network scheduler; a dedicated Domain would
+   reduce response latency/overhead under load but requires a safe handoff;
+2. the protocol and worker allocate small request/plan/promise structures per
+   move; batching or pooling could reduce allocator pressure;
+3. `get_range` and snapshot-style reads allocate decoded arrays;
+4. startup writes 32M pieces and scans 64M slots for verification (verification
+   is optional outside tests).
+
+These are deliberately not changed in this phase; each is measurable with the
+benchmark suite.
+
+---
+
+## 15. Design trade-offs and what would change next
 
 - **Dense board vs piece list**: dense wins for O(1) square lookup and fixed
   memory, at the cost of initialising 64M slots. Sparse worlds would favour a
