@@ -1,0 +1,4 @@
+(library
+ (name sim_map_lib)
+ (wrapped false)
+ (modules piece board))
