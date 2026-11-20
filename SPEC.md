@@ -79,6 +79,7 @@ test/
   test_game_state.ml
   test_engine.ml
   test_worker.ml
+  client_snapshot_test.js
 
 bench/
   bench.ml
@@ -620,6 +621,10 @@ The representation is private in the `.mli`.
   and current sequence to a callback and commits the returned sequence. The
   move engine is the sole production user; direct board/ledger accessors and a
   public `set_sequence` do not exist.
+- `snapshot_board t ~board_x ~board_y`: returns a 64-element copy of one board
+  in row-major order. Empty squares are `Piece.empty`; every packed piece field
+  is preserved. Invalid coordinates raise. It does not modify the board,
+  ledger or sequence.
 
 ### Startup verification
 
@@ -702,6 +707,7 @@ type submit_error =
   | Queue_full
   | Worker_stopped
   | Worker_failed
+  | Invalid_request
 ```
 
 ### Lifecycle
@@ -719,6 +725,12 @@ type submit_error =
   - otherwise creates a pending Lwt promise, enqueues an item with an enqueue
     timestamp, increments depth, schedules a coalesced deferred notification,
     and returns the promise.
+- `submit_snapshot worker ~board_x ~board_y` enqueues a snapshot request into
+  the same FIFO queue and resolves with a 64-element copy. Invalid coordinates
+  return `Invalid_request`. Snapshots count towards queue capacity.
+- The same worker also processes moves and snapshots without yielding inside
+  either operation; a snapshot observes a complete move or a complete
+  pre-move state, never a partial board.
 - The promise resolves only after processing.
 - `stop` stops accepting, lets queued work finish, and returns the finished
   promise.
@@ -851,6 +863,36 @@ Rejection codes:
 All multi-byte fields are little-endian. Packed `int64` values are transmitted
 as bytes, never as JavaScript `Number`.
 
+### 13.5 Snapshot request — 9 bytes
+
+| Bytes | Field | Encoding |
+|---|---|---|
+| 0 | Message type | `0x02` |
+| 1–4 | Request ID | int32 little-endian |
+| 5–6 | Board X | uint16 little-endian |
+| 7–8 | Board Y | uint16 little-endian |
+
+The decoder requires exactly 9 bytes, message type `0x02`, and coordinates in
+`0..999`. Otherwise it returns `None`.
+
+### 13.6 Snapshot response — 521 bytes
+
+| Bytes | Field | Encoding |
+|---|---|---|
+| 0 | Status | 1 success, 0 failure |
+| 1–4 | Request ID | int32 little-endian |
+| 5–6 | Board X | uint16 little-endian |
+| 7–8 | Board Y | uint16 little-endian |
+| 9–520 | Board contents | 64 packed int64 pieces, row-major |
+
+A failed response has status 0 and zero-filled board contents. The response
+length is distinct from the 26-byte move response, so the client can dispatch
+on length.
+
+Codec functions: `snapshot_request_to_bytes`, `snapshot_request_of_bytes`,
+`snapshot_response_to_bytes`, `snapshot_response_of_bytes`. They depend only on
+`Protocol.Types`, not `Game_state` or `Board`.
+
 The legacy JSON `client_msg` type has been removed; the protocol library no
 longer depends on `ppx_deriving_yojson`.
 
@@ -900,17 +942,18 @@ This enables a higher-resolution browser timer for RTT metrics.
 ### WebSocket handler
 
 1. Receive a binary frame.
-2. Decode 14-byte request.
-3. On decode failure: reply with a 0-request-ID rejected response
-   (`Invalid_request`).
-4. Convert wire positions to `Board.position`.
-5. `Move_request.create`.
-6. On structural failure: reply rejected with the wire request ID.
-7. `State_worker.submit`.
-8. Await the result.
-9. Encode a 26-byte response.
-10. Send it as a binary frame.
-11. Repeat.
+2. Dispatch on length:
+   - 14 bytes → move request;
+   - 9 bytes → snapshot request;
+   - anything else → rejection / invalid request.
+3. For a move: decode, convert positions, create `Move_request`, submit to the
+   worker, await the result, encode a 26-byte response.
+4. For a snapshot: decode, call `State_worker.submit_snapshot`, await the
+   64-piece board, encode a 521-byte response.
+5. Snapshot decode failures produce a status-0 521-byte response.
+6. Worker errors produce the corresponding move rejection or snapshot failure.
+7. Send the response as a binary frame and continue on the same connection.
+8. Never read the board directly in the handler.
 
 Worker errors become rejection codes 9–11 with the originating request ID.
 
@@ -940,16 +983,15 @@ frame is sufficient; the handler returns on `Dream.receive = None`.
 
 ### Board and piece IDs
 
-The client’s local board is the standard starting position.
+The client does not generate a standard starting position. On startup and on
+every board selection it clears the local board, increments a selection
+generation, and requests a 9-byte snapshot from the server.
 
-`make_piece_ids board_x board_y` mirrors the server formula:
-
-```
-base = (board_y * 1000 + board_x) * 32 + 1
-```
-
-IDs are assigned in the same slot order as the server: black back rank, black
-pawns, white pawns, white back rank.
+The 521-byte response carries 64 packed pieces. The client decodes each
+piece's ID, type and colour, uses the server type for the glyph (promoted
+pawns use the queen glyph), and stores the decoded IDs for subsequent move
+requests. Responses are matched by request ID and generation; stale or failed
+snapshots do not overwrite the selected board.
 
 On a local move:
 
@@ -961,7 +1003,8 @@ On a local move:
 ### Board selector
 
 - Two number inputs: `board-x`, `board-y`, each `0..999`.
-- Input changes regenerate the local standard board and piece IDs.
+- Input changes clear the local board, increment the generation, and request a
+  fresh authoritative snapshot.
 - `change` clamps and rewrites invalid values.
 
 ### Drag and drop
@@ -969,8 +1012,9 @@ On a local move:
 - `pointerdown`: find a square; if occupied, begin a drag with the piece and
   cursor position.
 - `pointermove` on `window`: update the cursor and redraw.
-- `pointerup` on `window`: if inside the board and not the source, update the
-  local board and IDs, then send a move request.
+- `pointerup` on `window`: if the current board snapshot is loaded and the
+  destination is valid, handle the move according to its classification and
+  send a move request.
 - `pointercancel`: cancel the drag.
 - Highlight source in yellow and the hovered target in green.
 - Pointer coordinates are converted from client coordinates using a bounding
@@ -1003,8 +1047,9 @@ On a local move:
   - 0 → “move rejected”.
 - Calls `Metrics.received` for every response.
 
-No reconnect or snapshot reconciliation is implemented; local handling is
-limited to per-request rollback and accepted special-move application.
+No reconnect or event replay is implemented. Snapshot loading is one-shot per
+board selection; local handling is limited to per-request rollback and accepted
+special-move application.
 
 ### Metrics
 
@@ -1112,6 +1157,8 @@ These are deliberate and are not conventional chess:
 
 ### `test_protocol`
 
+- Snapshot request/response round trips, all 64 pieces, empty squares, 521-byte length and maximum coordinates.
+- Invalid snapshot coordinates and frame lengths.
 - Source+delta move round trips.
 - ±128 boundary and rejection of 129.
 - Out-of-world positions.
@@ -1121,6 +1168,10 @@ These are deliberate and are not conventional chess:
 
 ### `test_game_state`
 
+- Snapshot of untouched and modified boards, row-major ordering and empty squares.
+- Snapshot after capture, castling, en passant and promotion (engine tests).
+- Snapshot does not modify board, ledger or sequence.
+- Invalid snapshot coordinates.
 - Full 1,000,000-board initialisation.
 - 32,000,000 occupied squares.
 - 32 pieces on all four corner boards.
@@ -1143,6 +1194,8 @@ These are deliberate and are not conventional chess:
 
 ### `test_worker`
 
+- Snapshot before/after move, snapshot followed by move, FIFO ordering and queue capacity.
+- Shutdown processes a queued snapshot.
 - Two concurrent submissions processed FIFO with sequences 1 and 2.
 - Stale request rejected without sequence advancement.
 - Metrics counters and queue depth.
@@ -1155,14 +1208,15 @@ These are deliberate and are not conventional chess:
 
 ## 19. Known limitations / explicitly out of scope
 
-- No client snapshots or initial board downloads from the server.
 - No spatial subscriptions, broadcasting, or event replay.
 - No reconnect/resume.
 - Normal moves are applied optimistically and rolled back on rejection.
   Castling and en passant are not applied optimistically: the client waits for
   acceptance and then applies the local king+rook or pawn+captured-pawn move.
-- No snapshots, so accepted promotions are not reflected in the client glyph
-  and client/server divergence after special moves is not repaired.
+- Snapshot loading is one-board-at-a-time; there are no spatial subscriptions
+  or live updates, so a board can become stale after another client moves.
+- Client promotion rendering uses the server snapshot type; an optimistic local
+  promotion is not re-glyphed until a snapshot/reload.
 - No persistence.
 - No authentication or authorisation.
 - No turn validation; either colour can move any piece from the client’s
@@ -1179,8 +1233,8 @@ These are deliberate and are not conventional chess:
 - `bench/dashboard.html` is a dependency-free static dashboard reading
   `bench/results.js`.
 - The suite covers board indexing/reads, packed pieces, protocol codecs,
-  validation path variants, processing prepare/apply, ledger operations, the
-  full engine, the worker and startup phases.
+  validation path variants, processing prepare/apply, ledger operations,
+  snapshots, the full engine, the worker and startup phases.
 - `docs/ALGORITHMS.md` explains the algorithm choices, complexity, benchmark
   methodology, test evidence and formal-verification opportunities.
 

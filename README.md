@@ -1,8 +1,8 @@
 # One Million Chessboards — OCaml
 
 Server-authoritative world of 1,000 × 1,000 chessboards (64,000,000 squares,
-32,000,000 starting pieces), with a WASM/Brr client and binary WebSocket
-protocol.
+32,000,000 starting pieces), with server-loaded board snapshots, a WASM/Brr
+client and a binary WebSocket protocol.
 
 ## Build and run
 
@@ -10,6 +10,12 @@ protocol.
 dune build
 dune runtest
 _build/default/server/server.exe
+```
+
+With the server running, the browser snapshot integration test can be run with:
+
+```bash
+node test/client_snapshot_test.js
 ```
 
 The server initialises the complete world at startup and listens on

@@ -492,8 +492,16 @@ The queue is a bounded FIFO. `submit` returns `Queue_full` immediately when
 capacity is reached. Accepted requests are processed in order. The worker does
 not perform network I/O, file I/O or client waits inside a transaction.
 
+The same queue also accepts snapshot requests. `submit_snapshot` enqueues a
+board coordinate pair; the worker calls `Game_state.snapshot_board`, which
+copies 64 packed pieces from the Bigarray. Because both request types share
+the FIFO and the worker never yields inside a transaction, a snapshot observes
+either the state before a move or the state after it, never a partially applied
+move. Snapshots count towards queue capacity and are covered by shutdown tests.
+
 Tests cover concurrent submissions, same-piece races (one accepted, one
-rejected), full-queue rejection, and shutdown with pending work.
+rejected), full-queue rejection, snapshot ordering and shutdown with pending
+moves or snapshots.
 
 ---
 
@@ -534,6 +542,14 @@ updated moving piece, captured piece ID and rejection code. Packed `int64`
 values are transmitted as little-endian bytes and never converted to
 JavaScript `Number`.
 
+Snapshot messages are intentionally distinct. The request is 9 bytes: one
+message-type byte (0x02), request ID, board X and board Y as uint16. The
+response is 521 bytes: status, request ID, board coordinates, then 64 packed
+int64 pieces in row-major order. A failed snapshot has status 0 and zero board
+contents. Dispatch on the server and client is by frame length: 14 and 26 for
+moves, 9 and 521 for snapshots. The snapshot codecs live in `Protocol.Types` and
+do not depend on the board implementation.
+
 ### Why fixed widths
 
 - Predictable decoding: no varints, no length prefixes per field.
@@ -559,11 +575,18 @@ responses and malformed lengths. The client and server share the same
 - Drag operations only mark the canvas dirty; pointer events do not draw
   synchronously.
 
-The client tracks piece IDs using the same deterministic allocation formula as
-the server. Normal moves are optimistic and store undo bytes/IDs; rejected
-moves restore them. Castling and en passant are not applied optimistically:
-the client waits for acceptance, then applies the local king+rook or
-pawn+captured-pawn update. This avoids optimistic special-move divergence.
+The client does not invent a starting position. Selecting a board sends a
+9-byte snapshot request and clears the local board. The 521-byte response is
+matched by request ID and a per-selection generation counter; stale responses
+are discarded. The client decodes each packed piece’s ID, type and colour,
+uses the server type to choose the glyph (including promoted pawns), and uses
+the decoded IDs for subsequent moves. A failed snapshot does not install an
+empty board, and moves are blocked until the selected snapshot loads.
+
+Normal moves are optimistic and store undo bytes/IDs; rejected moves restore
+them. Castling and en passant are not applied optimistically: the client waits
+for acceptance, then applies the local king+rook or pawn+captured-pawn update.
+This avoids optimistic special-move divergence.
 
 Client RTT metrics use `performance.now()` and a FIFO of send timestamps. With
 cross-origin isolation (COOP/COEP headers) Chrome exposes a finer clock
@@ -608,30 +631,32 @@ Machine-specific numbers, useful for relative comparisons:
 
 | Benchmark | Variant | ns/op |
 |---|---:|---:|
-| Board index | checked | ~6.0 |
+| Board index | checked | ~6.2 |
 | Board index | raw arithmetic | ~2.6 |
-| Board read | checked position | ~13.6 |
-| Board read | `get_world` | ~10.9 |
-| Piece create | packed int64 | ~7.8 |
-| Piece inspect | id/type/flags | ~10.0 |
-| Piece metadata | immutable flags | ~16.7 |
-| Protocol move | encode/decode | ~24 / ~19 |
-| Protocol request | encode/decode | ~59 / ~39 |
-| Validation path | record + checked get | ~1,830 |
-| Validation path | `get_world` | ~880 |
+| Board read | checked position | ~14.5 |
+| Board read | `get_world` | ~12.8 |
+| Piece create | packed int64 | ~9.2 |
+| Piece inspect | id/type/flags | ~12.3 |
+| Piece metadata | immutable flags | ~20.3 |
+| Protocol move | encode/decode | ~29 / ~22 |
+| Protocol request | encode/decode | ~66 / ~50 |
+| Validation path | record + checked get | ~1,930 |
+| Validation path | `get_world` | ~916 |
 | Processing prepare | queen long move | ~15 |
-| Processing `apply_plan` | queen long move | ~26 |
-| Ledger append | 1M circular | ~14 |
-| Ledger event read | decoded | ~14 |
+| Processing `apply_plan` | queen long move | ~25 |
+| Ledger append | 1M circular | ~16 |
+| Ledger event read | decoded | ~15 |
+| Snapshot board | 64-piece copy | ~301 |
 | Engine process | full move | ~181 |
-| Worker submit/process | sequential awaiter | ~1,958 |
-| Worker submit/process | pipelined 4,000 | ~1,311 |
+| Worker submit/process | sequential awaiter | ~2,108 |
+| Worker submit/process | pipelined 4,000 | ~2,172 |
+| Worker snapshot | pipelined 4,000 | ~4,572 |
 
 Startup single-shot on the same run:
 
-- allocation: ~42 ms (512 MB board + 16 MB ledger);
-- full world initialisation: ~296 ms;
-- occupied scan verification: ~145 ms.
+- allocation: ~49 ms (512 MB board + 16 MB ledger);
+- full world initialisation: ~327 ms;
+- occupied scan verification: ~172 ms.
 
 The path and read comparisons demonstrate why the `get_world` fast path was
 introduced: it removes per-square record allocation and repeated position
@@ -674,6 +699,9 @@ It covers:
 - small-capacity ledger wraparound and sequence retention;
 - protocol round trips and invalid lengths/IDs/deltas;
 - worker FIFO, same-piece races, queue-full and shutdown with pending work;
+- snapshots before/after moves, queue capacity and shutdown;
+- snapshot protocol round trips, 64-piece ordering, empty squares and invalid coordinates;
+- a browser snapshot integration test (random board, move, switch away/back, reload);
 - client rollback behaviour was also exercised manually in headless Chromium.
 
 What is tested is not the same as a formal proof. The strongest evidence today
@@ -786,6 +814,7 @@ must include that handoff and the response mailbox.
 | Accepted move changes all three exactly once | Engine tests; prepare/commit order | TLA+ transaction model |
 | Wire move round-trips exactly for ±128 | Protocol tests | SMT/bit-vector proof |
 | Queue is FIFO and bounded | Worker tests | TLA+ queue model |
+| Snapshot returns an exact 64-piece copy | Tests for all special moves; row-major checks | Array-copy proof |
 | Only the worker mutates state | Module-boundary convention | Capability token or private library |
 
 The code currently has no machine-checked proof. The table distinguishes what
@@ -806,7 +835,8 @@ opportunity.
 | `Ledger` | O(1) append/read; O(k) range | Two adjacent `int64` writes; range decoding allocates an event array |
 | `Game_state` | O(1) access; O(64M) initialisation/scan | Single ownership; no per-move locking |
 | `Move_engine` | O(1) plus validation/path/ledger | Measured ~190 ns per accepted move on the benchmark machine |
-| `State_worker` | O(1) enqueue; O(batch) drain | Bounded queue; one Lwt task; coalesced notification; batch of 64 before yielding |
+| `State_worker` | O(1) enqueue; O(batch) drain; snapshot O(64) | Bounded queue; one Lwt task; coalesced notification; batch of 64 before yielding |
+| `Snapshot` | O(64) copy | 64 packed int64 values; no view escapes; processed inside the worker |
 | `Protocol.Types` | O(1) | 6-byte moves, 14-byte requests, binary; no JSON on the move path |
 | Client renderer | O(visible pieces) per dirty frame | Offscreen board and piece atlas; no continuous loop |
 | Client network | O(1) per request | One in-flight move; rollback or deferred special application |

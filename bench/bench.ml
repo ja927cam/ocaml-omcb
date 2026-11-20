@@ -384,6 +384,20 @@ let bench_ledger () =
       done)
 
 (* ------------------------------------------------------------------------- *)
+(* Snapshots                                                                 *)
+(* ------------------------------------------------------------------------- *)
+
+let bench_snapshot state =
+  run_bench ~group:"Snapshot" ~name:"board" ~variant:"64-piece copy"
+    ~iterations:1_000_000 (fun n ->
+      for _ = 1 to n do
+        let board =
+          Game_state.snapshot_board state ~board_x:0 ~board_y:0
+        in
+        sink := !sink + Array.length board
+      done)
+
+(* ------------------------------------------------------------------------- *)
 (* Engine and worker                                                         *)
 (* ------------------------------------------------------------------------- *)
 
@@ -460,6 +474,27 @@ let bench_engine state board =
   add_result ~group:"Worker" ~name:"throughput" ~variant:"pipelined 4,000"
     ~iterations:burst ~total_ns:total ~single:true
     ~note:"burst queued, queue capacity 4,096";
+  ignore (Lwt_main.run (State_worker.stop worker));
+
+  (* Snapshot burst through the same queue. *)
+  let worker = State_worker.start ~config:{ queue_capacity = 4096 } state in
+  let snapshots = 4000 in
+  let requests =
+    Array.init snapshots (fun i ->
+        State_worker.submit_snapshot worker ~board_x:(i mod 1000)
+          ~board_y:0)
+  in
+  let started = now_ns () in
+  let responses = Lwt_main.run (Lwt.all (Array.to_list requests)) in
+  let total = Int64.sub (now_ns ()) started in
+  List.iter
+    (function
+      | Ok board when Array.length board = 64 -> ()
+      | _ -> failwith "snapshot burst failed")
+    responses;
+  add_result ~group:"Worker" ~name:"snapshot throughput"
+    ~variant:"pipelined 4,000" ~iterations:snapshots ~total_ns:total
+    ~single:true ~note:"64-piece copy per request";
   ignore (Lwt_main.run (State_worker.stop worker))
 
 (* ------------------------------------------------------------------------- *)
@@ -498,6 +533,7 @@ let () =
   bench_protocol ();
   bench_validation_and_processing board;
   bench_ledger ();
+  bench_snapshot state;
   bench_engine state board;
 
   let generated = timestamp () in
