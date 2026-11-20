@@ -178,4 +178,36 @@ let () =
   check "snapshot response wrong length"
     (Protocol.Types.snapshot_response_of_bytes (Bytes.create 520) = None);
 
+  (* Wire framing: every response is padded to 4096 bytes so Dream flushes. *)
+  let wire_move =
+    Protocol.Types.wire_response_to_bytes
+      (Protocol.Types.Wire_move accepted_response)
+  in
+  check "wire move length"
+    (Bytes.length wire_move = Protocol.Types.wire_response_bytes);
+  check "wire move kind"
+    (Char.code (Bytes.get wire_move 0) = Protocol.Types.wire_kind_move);
+  (match Protocol.Types.wire_response_of_bytes wire_move with
+   | Some (Protocol.Types.Wire_move r) ->
+     check "wire move id" (r.request_id = accepted_response.request_id);
+     check "wire move sequence" (r.sequence = accepted_response.sequence)
+   | _ -> failwith "wire move decoded incorrectly");
+  let wire_snapshot =
+    Protocol.Types.wire_response_to_bytes
+      (Protocol.Types.Wire_snapshot snap_response)
+  in
+  check "wire snapshot length"
+    (Bytes.length wire_snapshot = Protocol.Types.wire_response_bytes);
+  (match Protocol.Types.wire_response_of_bytes wire_snapshot with
+   | Some (Protocol.Types.Wire_snapshot r) ->
+     check "wire snapshot id" (r.request_id = snap_response.request_id);
+     check "wire snapshot board" (r.board.(1) = snap_response.board.(1))
+   | _ -> failwith "wire snapshot decoded incorrectly");
+  check "wire short frame rejected"
+    (Protocol.Types.wire_response_of_bytes (Bytes.create 4095) = None);
+  check "wire wrong kind rejected"
+    (let b = Bytes.copy wire_move in
+     Bytes.set b 0 (Char.chr 99);
+     Protocol.Types.wire_response_of_bytes b = None);
+
   Printf.printf "All protocol move codec tests passed.\n"

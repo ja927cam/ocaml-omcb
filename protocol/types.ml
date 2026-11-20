@@ -247,6 +247,11 @@ type response = {
 
 let response_bytes = 26
 
+(* Fixed-size wire frames; see wire_response_to_bytes below. *)
+let wire_response_bytes = 4096
+let wire_kind_move = 1
+let wire_kind_snapshot = 2
+
 let rejection_none = 0
 let rejection_stale_piece = 1
 let rejection_empty_source = 2
@@ -396,3 +401,40 @@ let snapshot_response_of_bytes b : snapshot_response option =
           status;
           board;
         }
+
+(* {2 WebSocket response framing}
+
+   Dream 1.0.0~alpha8 buffers WebSocket writes until 4096 bytes accumulate.
+   A move acknowledgement is only 26 bytes, so it could sit in the buffer while
+   the client waits for it before sending anything else. Every response is
+   therefore carried in a fixed 4096-byte frame: a one-byte kind followed by
+   the encoded response and zero padding. This makes each send cross Dream's
+   flush threshold immediately, at the cost of some padding on the wire. *)
+
+type wire_response =
+  | Wire_move of response
+  | Wire_snapshot of snapshot_response
+
+let wire_response_to_bytes response =
+  let kind, payload =
+    match response with
+    | Wire_move response -> (wire_kind_move, response_to_bytes response)
+    | Wire_snapshot response ->
+      (wire_kind_snapshot, snapshot_response_to_bytes response)
+  in
+  let bytes = Bytes.make wire_response_bytes '\000' in
+  Bytes.set bytes 0 (Char.chr kind);
+  Bytes.blit payload 0 bytes 1 (Bytes.length payload);
+  bytes
+
+let wire_response_of_bytes bytes =
+  if Bytes.length bytes <> wire_response_bytes then None
+  else
+    match Char.code (Bytes.get bytes 0) with
+    | kind when kind = wire_kind_move ->
+      response_of_bytes (Bytes.sub bytes 1 response_bytes)
+      |> Option.map (fun response -> Wire_move response)
+    | kind when kind = wire_kind_snapshot ->
+      snapshot_response_of_bytes (Bytes.sub bytes 1 snapshot_response_bytes)
+      |> Option.map (fun response -> Wire_snapshot response)
+    | _ -> None

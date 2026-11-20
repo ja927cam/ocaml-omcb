@@ -161,15 +161,17 @@ let handle_socket worker socket =
       let%lwt response = response_lwt in
       Lwt.catch
         (fun () ->
-          let bytes =
+          let wire_response =
             match response with
-            | `Move response -> Protocol.Types.response_to_bytes response
-            | `Snapshot response ->
-              Protocol.Types.snapshot_response_to_bytes response
+            | `Move response -> Protocol.Types.Wire_move response
+            | `Snapshot response -> Protocol.Types.Wire_snapshot response
           in
+          let bytes = Protocol.Types.wire_response_to_bytes wire_response in
           let%lwt () = send_bytes socket bytes in
           loop ())
-        (fun _ -> Lwt.return_unit)
+        (fun exn ->
+          Printf.eprintf "ws send failed: %s\n%!" (Printexc.to_string exn);
+          Lwt.return_unit)
   in
   loop ()
 
@@ -204,6 +206,5 @@ let () =
          Dream.get "/**" (Dream.static "_build/default/client");
        ];
        Dream.get "/ws" (fun _req ->
-         Dream.websocket ~close:false (fun socket ->
-           handle_socket worker socket));
+         Dream.websocket (fun socket -> handle_socket worker socket));
      ]

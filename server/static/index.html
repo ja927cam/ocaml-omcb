@@ -69,14 +69,14 @@
 <body>
   <canvas id="game"></canvas>
   <div id="board-picker">
-    <label for="board-x">board x</label>
+    <label for="board-x">centre x</label>
     <input id="board-x" type="number" min="0" max="999" step="1" value="0"
            inputmode="numeric">
-    <label for="board-y">board y</label>
+    <label for="board-y">centre y</label>
     <input id="board-y" type="number" min="0" max="999" step="1" value="0"
            inputmode="numeric">
   </div>
-  <div id="rtt"></div>
+  <div id="rtt">drag empty space to pan &middot; drag a piece to move</div>
   <script src="/static/main.bc.wasm.js"></script>
 </body>
 </html>
