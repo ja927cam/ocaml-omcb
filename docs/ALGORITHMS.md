@@ -544,19 +544,25 @@ JavaScript `Number`.
 
 Snapshot messages are intentionally distinct. The request is 9 bytes: one
 message-type byte (0x02), request ID, board X and board Y as uint16. The
-response is 521 bytes: status, request ID, board coordinates, then 64 packed
-int64 pieces in row-major order. A failed snapshot has status 0 and zero board
-contents. Dispatch on the server and client is by frame length: 14 and 26 for
-moves, 9 and 521 for snapshots. The snapshot codecs live in `Protocol.Types` and
-do not depend on the board implementation.
+response payload is 521 bytes: status, request ID, board coordinates, then 64
+packed int64 pieces in row-major order. A failed snapshot has status 0 and zero
+board contents. Requests dispatch by length (14 move, 9 snapshot). Every server
+response is carried in a fixed 4096-byte wire frame with a kind byte (`1` move,
+`2` snapshot) and zero padding. The padding is a workaround for Dream
+1.0.0~alpha8, which buffers WebSocket writes until 4096 bytes accumulate: a
+26-byte acknowledgement can otherwise wait forever while the client waits for
+it before sending more requests. The snapshot and move codecs live in
+`Protocol.Types` and do not depend on the board implementation.
 
 ### Why fixed widths
 
 - Predictable decoding: no varints, no length prefixes per field.
 - Easy to validate length before exposing anything to the state worker.
-- Compact enough to fit in one WebSocket frame.
+- Compact payloads: 26-byte move responses and 521-byte snapshot payloads.
 - No JSON parsing or allocation on the server move path.
 - No dependence on JavaScript numeric precision for 64-bit values.
+- The fixed 4096-byte wire frame makes the pinned Dream version flush each
+  response; the padding is transport-only and ignored by the codecs.
 
 Protocol tests cover ±128 boundaries, 129 rejection, round trips, request IDs,
 responses and malformed lengths. The client and server share the same
@@ -564,36 +570,62 @@ responses and malformed lengths. The client and server share the same
 
 ---
 
-## 10. Client rendering and local state
+## 10. Client grid, rendering and local state
 
-- Canvas backing store: 512×512, 64 px squares.
-- Board background is rendered once to an offscreen canvas.
-- All 12 piece sprites are rendered once into a 6×2 atlas.
-- A redraw is one background blit plus at most 64 sprite blits; no per-pixel
-  CPU loop and no continuous render loop.
-- Redraws are coalesced into a single pending `requestAnimationFrame`.
-- Drag operations only mark the canvas dirty; pointer events do not draw
-  synchronously.
+The client is a WASM/Brr canvas application. It renders a 1000 x 1000 world of
+boards, not a single board:
 
-The client does not invent a starting position. Selecting a board sends a
-9-byte snapshot request and clears the local board. The 521-byte response is
-matched by request ID and a per-selection generation counter; stale responses
-are discarded. The client decodes each packed piece’s ID, type and colour,
-uses the server type to choose the glyph (including promoted pawns), and uses
-the decoded IDs for subsequent moves. A failed snapshot does not install an
-empty board, and moves are blocked until the selected snapshot loads.
+- Canvas backing store: 512 x 512. Each board occupies 168 x 168 backing
+  pixels (21 px per square), so roughly 3.05 boards fit across. The nine
+  boards in the centre 3 x 3 are fully visible, with partial edge boards.
+- `view_left` and `view_top` hold floating-point board coordinates at the
+  canvas origin, clamped to the world. Dragging empty space pans; a drag that
+  starts on a piece moves that piece instead.
+- Board squares are drawn for all boards intersecting the viewport. Pieces are
+  drawn only for loaded boards. A dirty flag coalesces redraws into one
+  `requestAnimationFrame`; there is no continuous render loop.
+- All 12 piece sprites are rendered once into a 6 x 2 atlas. A redraw is a
+  loop over visible squares plus at most 64 sprite blits per loaded board.
 
-Normal moves are optimistic and store undo bytes/IDs; rejected moves restore
-them. Castling and en passant are not applied optimistically: the client waits
-for acceptance, then applies the local king+rook or pawn+captured-pawn update.
-This avoids optimistic special-move divergence.
+### Snapshot cache
+
+- Boards are stored in a hash table keyed by `board_y * 1000 + board_x`.
+- The retained window is 25 x 25 boards around the camera centre. Boards
+  outside it are evicted and their pending requests forgotten.
+- On each camera change the client queues the visible boards plus a one-board
+  margin, then the rest of the window lazily. The queue is rebuilt from the
+  current camera so stale queued boards are not requested.
+- At most one snapshot request is in flight. Sequential requests avoid a lost
+  write-acknowledgement path in Dream's stream pipe when many responses are
+  queued. A 25-board window is still cheap over loopback.
+- Responses are matched by request ID and board key; stale or evicted
+  responses are ignored. A failed snapshot leaves the board unloaded and does
+  not install an empty board.
+- Each loaded board costs about 320 bytes (64 piece bytes plus 64 int32 IDs),
+  so a full 625-board cache is roughly 200 KiB.
+
+### Moves
+
+- A drag must start and end on the same loaded board. Cross-board drags are
+  cancelled and send nothing.
+- Normal moves are optimistic and save undo bytes/IDs; rejected moves restore
+  them. Castling and en passant are applied only after acceptance.
+- At most one move is in flight. Navigation and new drags are blocked while it
+  is pending; `data-move-pending` on `<body>` exposes the state.
+- The drag and render path never allocates a board copy.
+
+### Networking
+
+- Requests: 9-byte snapshot, 14-byte move.
+- Responses: 4096-byte wire frames with a kind byte. The client dispatches on
+  the kind and parses the first 26 or 521 bytes.
+- The WebSocket is closed on `beforeunload` so reloads shut down cleanly.
+- No reconnect or event replay is implemented.
 
 Client RTT metrics use `performance.now()` and a FIFO of send timestamps. With
 cross-origin isolation (COOP/COEP headers) Chrome exposes a finer clock
 (5 µs in the measured environment); without it the browser quantises the
 clock. The display reports the measured resolution.
-
----
 
 ## 11. Benchmarks
 
@@ -640,6 +672,7 @@ Machine-specific numbers, useful for relative comparisons:
 | Piece metadata | immutable flags | ~20.3 |
 | Protocol move | encode/decode | ~29 / ~22 |
 | Protocol request | encode/decode | ~66 / ~50 |
+| Protocol wire response | encode/decode | ~1,231 / ~102 |
 | Validation path | record + checked get | ~1,930 |
 | Validation path | `get_world` | ~916 |
 | Processing prepare | queen long move | ~15 |
@@ -657,6 +690,10 @@ Startup single-shot on the same run:
 - allocation: ~49 ms (512 MB board + 16 MB ledger);
 - full world initialisation: ~327 ms;
 - occupied scan verification: ~172 ms.
+
+The wire-response encode figure includes allocating and zero-filling the
+4,096-byte frame that forces Dream to flush each WebSocket response. That is
+transport overhead, not part of the 26-byte move or 521-byte snapshot codecs.
 
 The path and read comparisons demonstrate why the `get_world` fast path was
 introduced: it removes per-square record allocation and repeated position
@@ -701,7 +738,9 @@ It covers:
 - worker FIFO, same-piece races, queue-full and shutdown with pending work;
 - snapshots before/after moves, queue capacity and shutdown;
 - snapshot protocol round trips, 64-piece ordering, empty squares and invalid coordinates;
-- a browser snapshot integration test (random board, move, switch away/back, reload);
+- a browser grid integration test: nine visible boards, a one-board pan,
+  the 25 x 25 cache bound, move persistence across board switches and reload,
+  and cross-board drag cancellation;
 - client rollback behaviour was also exercised manually in headless Chromium.
 
 What is tested is not the same as a formal proof. The strongest evidence today

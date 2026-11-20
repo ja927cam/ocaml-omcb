@@ -270,6 +270,37 @@ let bench_protocol () =
         match Protocol.Types.move_request_of_bytes request_bytes with
         | None -> failwith "request decode failed"
         | Some r -> sink := !sink + Int32.to_int r.request_id
+      done);
+  let response =
+    {
+      Protocol.Types.request_id = 42l;
+      status = Protocol.Types.Accepted;
+      sequence = 1L;
+      moved_piece = 0x1234567890L;
+      captured_piece_id = 0l;
+      rejection = 0;
+    }
+  in
+  run_bench ~group:"Protocol" ~name:"wire response encode"
+    ~variant:"4096-byte frame" ~iterations:100_000 (fun n ->
+      for _ = 1 to n do
+        let wire =
+          Protocol.Types.wire_response_to_bytes
+            (Protocol.Types.Wire_move response)
+        in
+        sink := !sink + Bytes.length wire
+      done);
+  let wire =
+    Protocol.Types.wire_response_to_bytes
+      (Protocol.Types.Wire_move response)
+  in
+  run_bench ~group:"Protocol" ~name:"wire response decode"
+    ~variant:"4096-byte frame" ~iterations:100_000 (fun n ->
+      for _ = 1 to n do
+        match Protocol.Types.wire_response_of_bytes wire with
+        | Some (Protocol.Types.Wire_move r) ->
+          sink := !sink + Int32.to_int r.request_id
+        | _ -> failwith "wire response decode failed"
       done)
 
 (* ------------------------------------------------------------------------- *)

@@ -896,13 +896,34 @@ The decoder requires exactly 9 bytes, message type `0x02`, and coordinates in
 | 7–8 | Board Y | uint16 little-endian |
 | 9–520 | Board contents | 64 packed int64 pieces, row-major |
 
-A failed response has status 0 and zero-filled board contents. The response
-length is distinct from the 26-byte move response, so the client can dispatch
-on length.
+A failed response has status 0 and zero-filled board contents.
 
 Codec functions: `snapshot_request_to_bytes`, `snapshot_request_of_bytes`,
 `snapshot_response_to_bytes`, `snapshot_response_of_bytes`. They depend only on
 `Protocol.Types`, not `Game_state` or `Board`.
+
+### 13.7 Wire response framing — 4096 bytes
+
+Dream 1.0.0~alpha8 buffers WebSocket writes until 4096 bytes have accumulated.
+A 26-byte move acknowledgement can therefore wait indefinitely when the client
+has stopped sending requests until it arrives. Every server response is carried
+in a fixed 4096-byte binary frame:
+
+| Bytes | Field |
+|---|---|
+| 0 | Kind: `1` move response, `2` snapshot response |
+| 1..26 or 1..521 | The encoded response |
+| Rest | Zero padding |
+
+`wire_response_to_bytes` and `wire_response_of_bytes` in `Protocol.Types` build
+and validate these frames. Each send crosses the 4096-byte threshold, so Dream
+flushes it immediately. The 521-byte snapshot payload and 26-byte move payload
+remain unchanged for codec tests and benchmarks.
+
+The client keeps at most **one** snapshot request in flight. Dream's stream
+pipe can lose a write acknowledgement when many responses are queued, which
+stalls a connection; strictly sequential snapshots avoid that path while still
+loading a 25 x 25 cache quickly over a loopback connection.
 
 The legacy JSON `client_msg` type has been removed; the protocol library no
 longer depends on `ppx_deriving_yojson`.
@@ -958,24 +979,30 @@ This enables a higher-resolution browser timer for RTT metrics.
    - 9 bytes → snapshot request;
    - anything else → rejection / invalid request.
 3. For a move: decode, convert positions, create `Move_request`, submit to the
-   worker, await the result, encode a 26-byte response.
+   worker, await the result, encode a move response.
 4. For a snapshot: decode, call `State_worker.submit_snapshot`, await the
-   64-piece board, encode a 521-byte response.
-5. Snapshot decode failures produce a status-0 521-byte response.
+   64-piece board, encode a snapshot response.
+5. Wrap the response in the fixed 4096-byte wire frame (kind + payload) and
+   send it, so Dream flushes immediately.
+6. Snapshot decode failures produce a status-0 snapshot response.
 6. Worker errors produce the corresponding move rejection or snapshot failure.
-7. Send the response as a binary frame and continue on the same connection.
+7. Continue reading on the same connection after the send resolves.
 8. Never read the board directly in the handler.
 
 Worker errors become rejection codes 9–11 with the originating request ID.
 
-If sending fails because the client disconnected, the error is swallowed.
-A move that has already committed is never rolled back.
+If sending fails because the client disconnected, the error is logged and the
+handler returns. A move that has already committed is never rolled back.
 
-### Dream close workaround
+### Dream buffering and close workarounds
 
-The route uses `Dream.websocket ~close:false`. Dream 1.0.0~alpha8 busy-loops
-when it closes a socket whose peer has already disconnected. The peer’s close
-frame is sufficient; the handler returns on `Dream.receive = None`.
+- Every response is a 4096-byte wire frame so Dream’s 4096-byte WebSocket
+  buffer flushes on each send.
+- The client sends snapshots strictly sequentially (one outstanding) to avoid
+  a lost write-acknowledgement path in Dream’s stream pipe.
+- The client closes the WebSocket on `beforeunload`, so a reload sends a close
+  frame before the old page disappears. Dream’s default close handling is used;
+  `~close:false` is no longer needed.
 
 ---
 
@@ -983,84 +1010,88 @@ frame is sufficient; the handler returns on `Dream.receive = None`.
 
 ### Rendering
 
-- Canvas backing size: 512 x 512, 64 px squares.
-- CSS scales the canvas to fit the viewport with a square aspect ratio.
-- Board background is rendered once into an offscreen canvas.
-- Piece glyphs are rendered once into a 6 x 2 offscreen atlas:
-  pawn, knight, bishop, rook, queen, king; white and black rows.
-- Redraws use the atlas and one background blit.
+- Canvas backing size: 512 x 512.
+- The world contains 1000 x 1000 boards. Each board is 168 x 168 backing
+  pixels (21 px per square), so about 3.05 boards fit across. At any camera
+  position the nine boards in the 3 x 3 centre are fully visible, with slivers
+  of the boards at the edges.
+- Board squares are drawn for every board intersecting the viewport. Pieces
+  are drawn only for loaded boards, so an unloaded board shows an empty grid
+  rather than invented pieces.
+- Piece glyphs are rendered once into a 6 x 2 offscreen atlas: pawn, knight,
+  bishop, rook, queen, king; white and black rows.
 - Rendering is dirty-flag driven: at most one `requestAnimationFrame` is
   pending. No continuous render loop.
+- The exact camera position is published as `data-view-left` and
+  `data-view-top` on `<body>` for diagnostics and tests.
 
-### Board and piece IDs
+### Camera and panning
 
-The client does not generate a standard starting position. On startup and on
-every board selection it clears the local board, increments a selection
-generation, and requests a 9-byte snapshot from the server.
+- `view_left` and `view_top` are floating-point board coordinates at the
+  canvas origin, clamped to `0 .. 1000 - visible_boards`.
+- Dragging empty space with the left button pans; any drag that does not start
+  on a piece pans. A middle/right button always pans.
+- Panning updates the camera immediately, requests snapshots for the new
+  visible margin, and writes the rounded centre back to the `centre x` and
+  `centre y` inputs on release.
+- `select_center bx by` clamps the camera so the requested board is centred
+  and requests the surrounding cache.
 
-The 521-byte response carries 64 packed pieces. The client decodes each
-piece's ID, type and colour, uses the server type for the glyph (promoted
-pawns use the queen glyph), and stores the decoded IDs for subsequent move
-requests. Responses are matched by request ID and generation; stale or failed
-snapshots do not overwrite the selected board.
+### Snapshot cache
 
-On a local move:
+- A `Hashtbl` keyed by `board_y * 1000 + board_x` stores loaded boards:
+  64 piece glyphs, 64 piece IDs, a loaded flag and an optional pending request
+  ID.
+- Only boards within 25 x 25 of the view centre are retained. Boards outside
+  that window are evicted, and their pending requests are forgotten.
+- On every camera change the client requests the visible boards plus a
+  one-board margin, then the rest of the retained window lazily. The request
+  queue is rebuilt from the current camera, so stale queued boards are not
+  requested.
+- At most one snapshot request is outstanding at a time. Responses are matched
+  by request ID and board key; stale or evicted responses are ignored.
+- A failed snapshot leaves the board unloaded and does not install an empty
+  board. It will be retried after the next camera change.
+- Each loaded board holds about 320 bytes (64 piece bytes plus 64 int32 IDs),
+  so a full 625-board cache is roughly 200 KiB.
 
-- `expected_piece_id` is the source square’s tracked ID;
-- the destination ID is overwritten with it;
-- the source ID becomes 0;
-- the board bytes move as before.
+### Moves
 
-### Board selector
+- `pointerdown` on a loaded board's occupied square starts a piece drag.
+- `pointerup` on the same board sends a move if the destination differs. A
+  cross-board drag is cancelled and sends nothing.
+- The move wire format is unchanged: a 14-byte request containing the world
+  source position, signed 9-bit deltas, expected piece ID and request ID.
+- Normal moves are optimistic: source and destination bytes/IDs are saved and
+  restored on rejection.
+- Castling and en passant are detected geometrically and applied only after
+  acceptance. A rejected special move leaves the board untouched.
+- At most one move is in flight. While it is pending, navigation inputs and
+  new drags are ignored; `data-move-pending` on `<body>` reflects the state.
 
-- Two number inputs: `board-x`, `board-y`, each `0..999`.
-- Input changes clear the local board, increment the generation, and request a
-  fresh authoritative snapshot.
+### Centre selector
+
+- Two number inputs: `board-x`, `board-y`, each `0..999`, labelled
+  `centre x` / `centre y`.
+- Input changes centre the camera on that board and request its cache.
 - `change` clamps and rewrites invalid values.
-
-### Drag and drop
-
-- `pointerdown`: find a square; if occupied, begin a drag with the piece and
-  cursor position.
-- `pointermove` on `window`: update the cursor and redraw.
-- `pointerup` on `window`: if the current board snapshot is loaded and the
-  destination is valid, handle the move according to its classification and
-  send a move request.
-- `pointercancel`: cancel the drag.
-- Highlight source in yellow and the hovered target in green.
-- Pointer coordinates are converted from client coordinates using a bounding
-  rect snapshot taken at drag start.
-
-### Optimistic updates and rejection handling
-
-- At most one move is in flight; new drags are ignored until the response.
-- A normal move is applied locally immediately. Its previous source and
-  destination bytes and piece IDs are saved.
-- If the server rejects a normal move, those bytes and IDs are restored.
-- Castling and en passant are detected geometrically and are not applied
-  optimistically. If accepted, the client applies the king+rook or
-  pawn+captured-pawn update; if rejected, the board is untouched.
-- Loading a different board discards any pending request.
+- The inputs are also updated after panning, so they always reflect the
+  rounded camera centre.
 
 ### Networking
 
 - Connect to `ws://` or `wss://` + host + `/ws`.
 - Binary type: `arraybuffer`.
-- Request ID counter is a client-side `int32` counter.
-- Builds a 14-byte request:
-  - 6-byte source+delta move;
-  - expected piece ID;
-  - request ID.
-- Sends an `ArrayBuffer`.
-- Receives 26-byte responses.
-- Reads the status byte:
-  - 1 → “move accepted”;
-  - 0 → “move rejected”.
-- Calls `Metrics.received` for every response.
-
-No reconnect or event replay is implemented. Snapshot loading is one-shot per
-board selection; local handling is limited to per-request rollback and accepted
-special-move application.
+- Request ID counter is a client-side `int32` counter shared by snapshot and
+  move requests.
+- Snapshot requests are 9 bytes; move requests are 14 bytes.
+- Server responses are fixed 4096-byte wire frames with a kind byte (`1` move,
+  `2` snapshot). The client dispatches on the kind and parses the first 26 or
+  521 bytes.
+- Movement/rollback dispatch reads the status byte: 1 accepted, 0 rejected.
+- Calls `Metrics.received` for every move response.
+- Closes the WebSocket on `beforeunload` so page reloads shut down cleanly.
+- No reconnect, subscriptions or event replay is implemented.
 
 ### Metrics
 
@@ -1175,6 +1206,8 @@ These are deliberate and are not conventional chess:
 - Out-of-world positions.
 - Request round trip and invalid piece IDs.
 - Response round trip for accepted and rejected.
+- Wire response framing: 4096-byte length, kind byte, move/snapshot round trip,
+  wrong length and wrong kind.
 - Wrong frame lengths.
 
 ### `test_game_state`
@@ -1224,8 +1257,14 @@ These are deliberate and are not conventional chess:
 - Normal moves are applied optimistically and rolled back on rejection.
   Castling and en passant are not applied optimistically: the client waits for
   acceptance and then applies the local king+rook or pawn+captured-pawn move.
-- Snapshot loading is one-board-at-a-time; there are no spatial subscriptions
-  or live updates, so a board can become stale after another client moves.
+- The client keeps a 25 x 25 snapshot cache and pans a 3 x 3-board viewport.
+  There are no spatial subscriptions or live updates, so a cached board can
+  become stale after another client moves.
+- Cross-board piece drags are cancelled; a move must start and end on the same
+  board.
+- Server responses are padded to 4096 bytes to work around Dream 1.0.0~alpha8
+  WebSocket buffering, so small acknowledgements use more bandwidth than their
+  logical 26-byte payload.
 - Client promotion rendering uses the server snapshot type; an optimistic local
   promotion is not re-glyphed until a snapshot/reload.
 - No persistence.
