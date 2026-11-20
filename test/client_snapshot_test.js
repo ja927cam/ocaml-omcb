@@ -5,11 +5,12 @@
  * Requires the game server at http://localhost:8080, Node with fetch/WebSocket,
  * and chromium on PATH. It spawns its own headless browser.
  *
- * The client shows a pannable 3x3-board viewport (about nine boards) and caches
- * at most a 25x25 board window around the selected centre. This test checks
- * that neighbouring boards render together, that dragging empty space pans the
- * map, that only nearby boards are requested, and that moves stay authoritative
- * across board switches and reloads.
+ * The client renders the world full-screen at 168 px per board, so a 3x3
+ * region is fully visible with more boards at the edges. It caches at most a
+ * 25x25 board window around the centre.
+ * This test checks nine visible boards, one-board camera pans in both
+ * directions, the cache bound, move persistence across pans and a cache
+ * eviction, and that cross-board drags are cancelled.
  */
 
 const { spawn } = require("child_process");
@@ -19,10 +20,8 @@ const path = require("path");
 
 const CDP_PORT = 9223 + Math.floor(Math.random() * 500);
 const SERVER = "http://localhost:8080/";
-const CANVAS = 512;
 const BOARD_SCALE = 168;
 const CELL = BOARD_SCALE / 8;
-const VISIBLE_BOARDS = CANVAS / BOARD_SCALE;
 // Pick a fresh board each run: moves are authoritative and persist on the
 // long-running test server.
 const BOARD = {
@@ -151,7 +150,7 @@ async function main() {
       };
     })();`;
     await send("Page.addScriptToEvaluateOnNewDocument", { source: hook });
-    await send("Page.navigate", { url: SERVER });
+    await send("Page.navigate", { url: `${SERVER}?x=${BOARD.x}&y=${BOARD.y}` });
     await sleep(1500);
 
     const readView = async () =>
@@ -161,41 +160,17 @@ async function main() {
         )
       );
 
-    const centredView = (x, y) => ({
-      left: Math.max(0, Math.min(1000 - VISIBLE_BOARDS, x + 0.5 - VISIBLE_BOARDS / 2)),
-      top: Math.max(0, Math.min(1000 - VISIBLE_BOARDS, y + 0.5 - VISIBLE_BOARDS / 2)),
-    });
-
-    // Inputs are ignored while a move is in flight, so retry until the camera
-    // actually reaches the requested centre and the board is rendered.
-    const setCentre = async (x, y, ready, message) => {
-      const deadline = Date.now() + 6000;
-      const expected = centredView(x, y);
-      while (Date.now() < deadline) {
-        await evaluate(`(() => {
-          const x = document.getElementById('board-x');
-          const y = document.getElementById('board-y');
-          x.value = '${x}'; x.dispatchEvent(new Event('input', {bubbles:true}));
-          y.value = '${y}'; y.dispatchEvent(new Event('input', {bubbles:true}));
-        })()`);
-        await sleep(120);
-        const view = await readView();
-        if (
-          Math.abs(view.left - expected.left) < 0.01 &&
-          Math.abs(view.top - expected.top) < 0.01 &&
-          (await ready())
-        ) {
-          return;
-        }
-      }
-      const state = await evaluate(
-        "JSON.stringify({x: document.getElementById('board-x').value, y: document.getElementById('board-y').value, pending: document.body.dataset.movePending, requests: window.__snapshotRequests.length})"
+    const readCanvas = async () =>
+      JSON.parse(
+        await evaluate(
+          "JSON.stringify({width: document.getElementById('game').width, height: document.getElementById('game').height, rect: document.getElementById('game').getBoundingClientRect()})"
+        )
       );
-      fail(`${message} (${state})`);
-    };
 
-    // Measure the centre of a square using the client's published viewport, so
-    // sub-pixel panning does not misalign the sample.
+    const coordsText = () => evaluate("document.getElementById('coords').textContent");
+
+    // Count pixels that are neither square colour inside a small inset of the
+    // cell: board squares are flat #f0d9b5 / #b58863, so anything else is ink.
     const piecePixels = async (boardX, boardY, col, row) =>
       evaluate(`(() => {
         const canvas = document.getElementById('game');
@@ -206,8 +181,6 @@ async function main() {
         const x = (${boardX} - left) * ${BOARD_SCALE} + ${col} * ${CELL} + inset;
         const y = (${boardY} - top) * ${BOARD_SCALE} + ${row} * ${CELL} + inset;
         const data = ctx.getImageData(Math.round(x), Math.round(y), Math.round(${CELL}) - inset * 2, Math.round(${CELL}) - inset * 2).data;
-        // Count pixels that are neither square colour: board squares are flat
-        // #f0d9b5 / #b58863, so anything else is piece ink.
         let count = 0;
         for (let i = 0; i < data.length; i += 4) {
           const r = data[i], g = data[i+1], b = data[i+2];
@@ -222,17 +195,13 @@ async function main() {
       send("Input.dispatchMouseEvent", { type, x: point.x, y: point.y, ...extra });
 
     const canvasPoint = async (boardX, boardY, col, row) => {
-      const info = JSON.parse(
-        await evaluate(`JSON.stringify({
-          left: parseFloat(document.body.dataset.viewLeft),
-          top: parseFloat(document.body.dataset.viewTop),
-          rect: document.getElementById('game').getBoundingClientRect(),
-        })`)
-      );
-      const scale = info.rect.width / CANVAS;
+      const info = await readCanvas();
+      const view = await readView();
+      const scaleX = info.rect.width / info.width;
+      const scaleY = info.rect.height / info.height;
       return {
-        x: info.rect.left + ((boardX - info.left) * BOARD_SCALE + (col + 0.5) * CELL) * scale,
-        y: info.rect.top + ((boardY - info.top) * BOARD_SCALE + (row + 0.5) * CELL) * scale,
+        x: info.rect.left + ((boardX - view.left) * BOARD_SCALE + (col + 0.5) * CELL) * scaleX,
+        y: info.rect.top + ((boardY - view.top) * BOARD_SCALE + (row + 0.5) * CELL) * scaleY,
       };
     };
 
@@ -244,19 +213,47 @@ async function main() {
       await mouse("mouseMoved", end, { button: "left", buttons: 1 });
       await sleep(120);
       await mouse("mouseReleased", end, { button: "left", clickCount: 1, buttons: 0 });
-      await sleep(700);
+      await sleep(500);
     };
 
-    await setCentre(BOARD.x, BOARD.y,
+    // Move the camera by dx/dy boards by dragging an empty square. Positive x
+    // moves the camera east, which drags the content west.
+    const panCamera = async (dx, dy = 0) => {
+      const before = await readView();
+      const info = await readCanvas();
+      const centreX = Math.floor(before.left + (info.width / BOARD_SCALE) / 2);
+      const centreY = Math.floor(before.top + (info.height / BOARD_SCALE) / 2);
+      const start = await canvasPoint(centreX, centreY, 3, 4);
+      const scaleX = info.rect.width / info.width;
+      const scaleY = info.rect.height / info.height;
+      const end = {
+        x: start.x - dx * BOARD_SCALE * scaleX,
+        y: start.y - dy * BOARD_SCALE * scaleY,
+      };
+      await mouse("mousePressed", start, { button: "left", clickCount: 1, buttons: 1 });
+      await sleep(80);
+      await mouse("mouseMoved", end, { button: "left", buttons: 1 });
+      await sleep(120);
+      await mouse("mouseReleased", end, { button: "left", clickCount: 1, buttons: 0 });
+      const expectedLeft = Math.max(0, Math.min(1000 - info.width / BOARD_SCALE, before.left + dx));
+      const expectedTop = Math.max(0, Math.min(1000 - info.height / BOARD_SCALE, before.top + dy));
+      await waitFor(async () => {
+        const view = await readView();
+        return Math.abs(view.left - expectedLeft) < 0.05 && Math.abs(view.top - expectedTop) < 0.05;
+      }, `panning to camera (${expectedLeft}, ${expectedTop}) failed`);
+    };
+
+    await waitFor(
       async () => (await piecePixels(BOARD.x, BOARD.y, 4, 6)) > 20,
-      "e2 pawn was not rendered from the server snapshot");
+      "e2 pawn was not rendered from the initial query centre"
+    );
 
     if ((await evaluate("window.__snapshotRequests.length")) === 0) {
       fail("the client sent no snapshot requests");
     }
 
-    // Ignore the initial (0, 0) window: the cache bound applies from the
-    // moment the test navigates to its chosen centre.
+    // Ignore the initial window while the camera settles: the cache bound is
+    // checked from the moment the requested centre is established.
     await evaluate("window.__snapshotRequests = []");
 
     // Nine fully visible boards: the centre board and its eight neighbours.
@@ -270,6 +267,10 @@ async function main() {
     if ((await piecePixels(BOARD.x, BOARD.y, 4, 4)) > 5) {
       fail("e4 was not empty before the move");
     }
+    if ((await coordsText()) !== `(${BOARD.x}, ${BOARD.y})`) {
+      fail(`coordinates overlay showed ${await coordsText()}`);
+    }
+
     // Move a pawn on the centre board.
     await drag({ boardX: BOARD.x, boardY: BOARD.y, col: 4, row: 6 },
       { boardX: BOARD.x, boardY: BOARD.y, col: 4, row: 4 });
@@ -280,57 +281,49 @@ async function main() {
     if ((await piecePixels(BOARD.x, BOARD.y, 4, 6)) > 5) {
       fail("e2 was not cleared after the move");
     }
-
-    await setCentre(BOARD.x + 1, BOARD.y,
-      async () => (await piecePixels(BOARD.x + 1, BOARD.y, 4, 6)) > 20,
-      "the neighbouring board did not appear");
-    if ((await piecePixels(BOARD.x + 1, BOARD.y, 4, 4)) > 5) {
-      fail("a different board inherited the move");
-    }
-    await setCentre(BOARD.x, BOARD.y,
-      async () => (await piecePixels(BOARD.x, BOARD.y, 4, 4)) > 20,
-      "returning to the board lost the committed move");
-
-    // Dragging empty space pans by exactly one board. The centre board (with
-    // the moved e4 pawn) slides one board to the right of the canvas.
-    const beforePanMoveCount = await evaluate("window.__moveRequests.length");
-    const beforePan = await readView();
-    const panStart = await canvasPoint(BOARD.x, BOARD.y, 3, 4);
-    const canvasScale = JSON.parse(
-      await evaluate("JSON.stringify(document.getElementById('game').getBoundingClientRect())")
-    ).width / CANVAS;
-    const panDistance = BOARD_SCALE * canvasScale;
-    await mouse("mousePressed", panStart, { button: "left", clickCount: 1, buttons: 1 });
-    await mouse("mouseMoved", { x: panStart.x + panDistance, y: panStart.y },
-      { button: "left", buttons: 1 });
-    await sleep(120);
-    await mouse("mouseReleased", { x: panStart.x + panDistance, y: panStart.y },
-      { button: "left", clickCount: 1, buttons: 0 });
     await waitFor(
-      async () => (await readView()).left < beforePan.left - 0.9,
-      "panning did not move the viewport"
+      async () => (await evaluate("document.body.dataset.movePending")) !== "true",
+      "the move request did not settle"
     );
-    const afterPan = await readView();
-    if (Math.abs((beforePan.left - afterPan.left) - 1) > 0.05) {
-      fail(`panning moved ${beforePan.left - afterPan.left} boards instead of one`);
-    }
-    if (Math.abs(afterPan.top - beforePan.top) > 0.05) {
-      fail("a horizontal pan changed the vertical position");
-    }
+
+    // East one board: the moved pawn comes with the camera, and the neighbour
+    // is untouched.
+    await panCamera(1);
+    await waitFor(
+      async () => (await piecePixels(BOARD.x + 1, BOARD.y, 4, 6)) > 20,
+      "the eastern neighbouring board did not appear"
+    );
     if ((await piecePixels(BOARD.x, BOARD.y, 4, 4)) <= 20) {
-      fail("the moved pawn did not pan with the board");
+      fail("the moved pawn did not move with the camera");
     }
+    if ((await piecePixels(BOARD.x + 1, BOARD.y, 4, 4)) > 5) {
+      fail("the eastern board inherited the move");
+    }
+    if ((await coordsText()) !== `(${BOARD.x + 1}, ${BOARD.y})`) {
+      fail(`coordinates overlay did not follow the east pan: ${await coordsText()}`);
+    }
+
+    // West two boards: back through the centre to the western neighbour.
+    await panCamera(-1);
+    if ((await piecePixels(BOARD.x, BOARD.y, 4, 4)) <= 20) {
+      fail("returning to the centre lost the committed move");
+    }
+    await panCamera(-1);
+    await waitFor(
+      async () => (await piecePixels(BOARD.x - 1, BOARD.y, 4, 6)) > 20,
+      "the western neighbouring board did not appear"
+    );
     if ((await piecePixels(BOARD.x - 1, BOARD.y, 4, 4)) > 5) {
-      fail("the old centre square still showed the unmoved board after panning");
+      fail("the western board inherited the move");
     }
-    if ((await evaluate("window.__moveRequests.length")) !== beforePanMoveCount) {
-      fail("panning on an empty square sent a move");
+    if ((await coordsText()) !== `(${BOARD.x - 1}, ${BOARD.y})`) {
+      fail(`coordinates overlay did not follow the west pan: ${await coordsText()}`);
     }
+
+    // Return to the centre for the cross-board drag.
+    await panCamera(1);
 
     // A drag from one board to another is cancelled, not sent as a move.
-    await setCentre(BOARD.x, BOARD.y,
-      async () => (await piecePixels(BOARD.x, BOARD.y, 4, 4)) > 20,
-      "the centre board did not reappear before the cross-board test");
     const beforeCrossMoveCount = await evaluate("window.__moveRequests.length");
     await drag({ boardX: BOARD.x + 1, boardY: BOARD.y, col: 4, row: 6 },
       { boardX: BOARD.x, boardY: BOARD.y, col: 3, row: 4 });
@@ -339,7 +332,7 @@ async function main() {
     }
 
     // Every request must fall inside the 25x25 window of a centre the test
-    // actually visited: BOARD.x - 1 after the pan, or BOARD.x / BOARD.x + 1.
+    // actually visited: BOARD.x - 1, BOARD.x or BOARD.x + 1.
     const requests = await evaluate("window.__snapshotRequests");
     const centres = [BOARD.x - 1, BOARD.x, BOARD.x + 1];
     for (const [x, y] of requests) {
@@ -349,11 +342,17 @@ async function main() {
       if (!inside) fail(`snapshot request (${x}, ${y}) escaped the 25x25 window`);
     }
 
-    await send("Page.reload", { ignoreCache: true });
-    await sleep(1500);
-    await setCentre(BOARD.x, BOARD.y,
+    // Move far enough to evict the centre board, then return. The client must
+    // fetch a fresh snapshot, proving the move is server-authoritative.
+    for (let i = 0; i < 5; i++) await panCamera(3);
+    for (let i = 0; i < 5; i++) await panCamera(-3);
+    await waitFor(
       async () => (await piecePixels(BOARD.x, BOARD.y, 4, 4)) > 20,
-      "reload lost the committed move");
+      "re-fetching after cache eviction lost the committed move"
+    );
+    if ((await coordsText()) !== `(${BOARD.x}, ${BOARD.y})`) {
+      fail(`returning from the eviction lost the query centre: ${await coordsText()}`);
+    }
 
     if (exceptions !== 0) fail(`browser raised ${exceptions} exception(s)`);
     console.log(

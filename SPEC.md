@@ -1010,11 +1010,12 @@ handler returns. A move that has already committed is never rolled back.
 
 ### Rendering
 
-- Canvas backing size: 512 x 512.
+- The canvas fills the viewport (`100vw x 100vh`), and its backing size tracks
+  `window.innerWidth x window.innerHeight`.
 - The world contains 1000 x 1000 boards. Each board is 168 x 168 backing
-  pixels (21 px per square), so about 3.05 boards fit across. At any camera
-  position the nine boards in the 3 x 3 centre are fully visible, with slivers
-  of the boards at the edges.
+  pixels (21 px per square), so a 512 px span shows about 3.05 boards. On a
+  typical desktop viewport the nine centre boards are fully visible (except at
+  world edges), with additional boards at the edges.
 - Board squares are drawn for every board intersecting the viewport. Pieces
   are drawn only for loaded boards, so an unloaded board shows an empty grid
   rather than invented pieces.
@@ -1028,14 +1029,16 @@ handler returns. A move that has already committed is never rolled back.
 ### Camera and panning
 
 - `view_left` and `view_top` are floating-point board coordinates at the
-  canvas origin, clamped to `0 .. 1000 - visible_boards`.
+  canvas origin, clamped independently to `0 .. 1000 - visible_w` and
+  `0 .. 1000 - visible_h`.
 - Dragging empty space with the left button pans; any drag that does not start
   on a piece pans. A middle/right button always pans.
 - Panning updates the camera immediately, requests snapshots for the new
-  visible margin, and writes the rounded centre back to the `centre x` and
-  `centre y` inputs on release.
+  visible margin, and updates the top-right `(x, y)` overlay.
 - `select_center bx by` clamps the camera so the requested board is centred
   and requests the surrounding cache.
+- Resizing the window preserves the rounded centre, resizes the backing store,
+  and reloads the visible margin.
 
 ### Snapshot cache
 
@@ -1066,17 +1069,17 @@ handler returns. A move that has already committed is never rolled back.
   restored on rejection.
 - Castling and en passant are detected geometrically and applied only after
   acceptance. A rejected special move leaves the board untouched.
-- At most one move is in flight. While it is pending, navigation inputs and
-  new drags are ignored; `data-move-pending` on `<body>` reflects the state.
+- At most one move is in flight. While it is pending, panning and new drags
+  are ignored; `data-move-pending` on `<body>` reflects the state.
 
-### Centre selector
+### Coordinates and deep links
 
-- Two number inputs: `board-x`, `board-y`, each `0..999`, labelled
-  `centre x` / `centre y`.
-- Input changes centre the camera on that board and request its cache.
-- `change` clamps and rewrites invalid values.
-- The inputs are also updated after panning, so they always reflect the
-  rounded camera centre.
+- The rounded camera centre is shown in a fixed top-right overlay as
+  `(x, y)`.
+- `?x=<board_x>&y=<board_y>` sets the initial centre. Values outside
+  `0..999` are clamped; omitted or invalid values default to the corner.
+- The query string is preserved across reloads, so a reload returns to the
+  same centre.
 
 ### Networking
 

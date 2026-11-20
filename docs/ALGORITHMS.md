@@ -575,12 +575,16 @@ responses and malformed lengths. The client and server share the same
 The client is a WASM/Brr canvas application. It renders a 1000 x 1000 world of
 boards, not a single board:
 
-- Canvas backing store: 512 x 512. Each board occupies 168 x 168 backing
-  pixels (21 px per square), so roughly 3.05 boards fit across. The nine
-  boards in the centre 3 x 3 are fully visible, with partial edge boards.
+- The canvas fills the viewport (`100vw x 100vh`) and its backing store tracks
+  the viewport size. Each board occupies 168 x 168 backing pixels (21 px per
+  square), so a 512 px span shows roughly 3.05 boards. On a typical desktop
+  the nine centre boards are fully visible (except at world edges), with more
+  boards at the edges.
 - `view_left` and `view_top` hold floating-point board coordinates at the
-  canvas origin, clamped to the world. Dragging empty space pans; a drag that
-  starts on a piece moves that piece instead.
+  canvas origin, clamped independently to the world. Dragging empty space
+  pans; a drag that starts on a piece moves that piece instead.
+- A fixed top-right overlay shows the rounded camera centre as `(x, y)`.
+  `?x=<board_x>&y=<board_y>` sets the initial centre and survives reloads.
 - Board squares are drawn for all boards intersecting the viewport. Pieces are
   drawn only for loaded boards. A dirty flag coalesces redraws into one
   `requestAnimationFrame`; there is no continuous render loop.
@@ -739,8 +743,8 @@ It covers:
 - snapshots before/after moves, queue capacity and shutdown;
 - snapshot protocol round trips, 64-piece ordering, empty squares and invalid coordinates;
 - a browser grid integration test: nine visible boards, a one-board pan,
-  the 25 x 25 cache bound, move persistence across board switches and reload,
-  and cross-board drag cancellation;
+  the 25 x 25 cache bound, move persistence across board switches and a cache
+  eviction/re-fetch, and cross-board drag cancellation;
 - client rollback behaviour was also exercised manually in headless Chromium.
 
 What is tested is not the same as a formal proof. The strongest evidence today

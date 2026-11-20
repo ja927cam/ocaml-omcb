@@ -18,20 +18,25 @@ With the server running, the browser grid integration test can be run with:
 node test/client_snapshot_test.js
 ```
 
-It checks that nine boards are visible, that dragging empty space pans by one
-board, that the client stays within a 25 × 25 cache window, and that moves
-persist across board switches and reloads. It picks a random central board on
-each run because moves are authoritative and remain on the running server.
+It checks that the nine centre boards are visible, that dragging empty space
+pans by one board, that the client stays within a 25 × 25 cache window, and
+that moves persist across board switches and a cache eviction/re-fetch. It
+picks a random central board on each run because moves are authoritative and
+remain on the running server.
 
 The server initialises the complete world at startup and listens on
 `http://localhost:8080`.
 
 ## Controls
 
+The board grid fills the whole window.
+
 - Drag empty space (or use a non-left button) to pan.
 - Drag a piece to move it; the move must stay on the same board.
-- Enter a board in the `centre x` / `centre y` inputs to jump there.
-- About nine boards are fully visible at the default 168 px per board.
+- The current centre is shown in the top-right corner.
+- `?x=<board_x>&y=<board_y>` opens the client centred on that board.
+- At the default 168 px per board, a 512 px span shows about three boards;
+  larger windows show more of the world.
 
 ## Documentation
 

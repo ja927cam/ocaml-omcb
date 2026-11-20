@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chessboards</title>
   <link rel="icon" href="data:,">
   <style>
@@ -18,65 +19,30 @@
       background: #1b1b1b;
     }
 
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 14px;
-    }
-
     canvas#game {
       display: block;
-      width: min(512px, 90vw, calc(100vh - 120px));
-      height: auto;
-      aspect-ratio: 1 / 1;
-      touch-action: none;      /* let pointer events drive the drag */
-      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+      width: 100vw;
+      height: 100vh;
+      touch-action: none;      /* let pointer events drive dragging and panning */
     }
 
-    #board-picker {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    #coords {
+      position: fixed;
+      top: 10px;
+      right: 12px;
+      padding: 4px 8px;
       font: 13px ui-monospace, monospace;
-      color: #8a8a8a;
-    }
-
-    #board-picker input {
-      width: 6em;
-      padding: 6px 8px;
-      font: 15px ui-monospace, monospace;
-      text-align: center;
       color: #f2f2f2;
-      background: #2a2a2a;
-      border: 1px solid #555;
+      background: rgba(0, 0, 0, 0.45);
       border-radius: 4px;
-    }
-
-    #board-picker input:focus {
-      outline: none;
-      border-color: #8a8a8a;
-    }
-
-    #rtt {
-      min-height: 1.3em;
-      font: 12px ui-monospace, monospace;
-      color: #8fbf9f;
+      pointer-events: none;
+      user-select: none;
     }
   </style>
 </head>
 <body>
   <canvas id="game"></canvas>
-  <div id="board-picker">
-    <label for="board-x">centre x</label>
-    <input id="board-x" type="number" min="0" max="999" step="1" value="0"
-           inputmode="numeric">
-    <label for="board-y">centre y</label>
-    <input id="board-y" type="number" min="0" max="999" step="1" value="0"
-           inputmode="numeric">
-  </div>
-  <div id="rtt">drag empty space to pan &middot; drag a piece to move</div>
+  <div id="coords">(0, 0)</div>
   <script src="/static/main.bc.wasm.js"></script>
 </body>
 </html>

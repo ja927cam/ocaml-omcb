@@ -1,10 +1,8 @@
 open Brr
 open Brr_canvas
 
-let canvas_px = 512
-let board_px = 168. (* boards visible: about 3 x 3 *)
+let board_px = 168.
 let cell_px = board_px /. 8.
-let visible_boards = float canvas_px /. board_px
 let max_coord = 999
 let empty = '\000'
 
@@ -135,14 +133,58 @@ let main () =
     | None -> failwith "Could not find #game canvas"
   in
   let canvas = Canvas.of_el canvas_el in
-  Canvas.set_w canvas canvas_px;
-  Canvas.set_h canvas canvas_px;
   let ctx = C2d.get_context canvas in
+  let canvas_w = ref 1 and canvas_h = ref 1 in
+  let visible_w () = float !canvas_w /. board_px in
+  let visible_h () = float !canvas_h /. board_px in
+  let max_left () = max 0. (1000. -. visible_w ()) in
+  let max_top () = max 0. (1000. -. visible_h ()) in
+  let set_canvas_size () =
+    let w = max 1 (Window.inner_width G.window) in
+    let h = max 1 (Window.inner_height G.window) in
+    if w <> !canvas_w || h <> !canvas_h then begin
+      canvas_w := w;
+      canvas_h := h;
+      Canvas.set_w canvas w;
+      Canvas.set_h canvas h
+    end
+  in
+  set_canvas_size ();
   let body_el = Document.body G.document in
+  let find_el id =
+    match Document.find_el_by_id G.document (Jstr.v id) with
+    | Some el -> el
+    | None -> failwith ("Could not find #" ^ id)
+  in
+  let coords_el = find_el "coords" in
   let set_move_pending pending =
     El.set_at (Jstr.v "data-move-pending")
       (if pending then Some (Jstr.v "true") else None)
       body_el
+  in
+
+  let query_coord name default =
+    let location = Jv.get Jv.global "location" in
+    let search = Jstr.to_string (Jv.Jstr.get location "search") in
+    let body =
+      if String.length search > 0 && search.[0] = '?' then
+        String.sub search 1 (String.length search - 1)
+      else search
+    in
+    let rec find = function
+      | [] -> default
+      | part :: rest ->
+        (match String.index_opt part '=' with
+         | Some i when String.sub part 0 i = name ->
+           let value =
+             String.sub part (i + 1) (String.length part - i - 1)
+           in
+           (match int_of_string_opt value with
+            | Some n -> clamp_int n 0 max_coord
+            | None -> default)
+         | _ -> find rest)
+    in
+    find (String.split_on_char '&' body)
   in
 
 
@@ -192,23 +234,24 @@ let main () =
 
   let centre_of_view () =
     ( clamp_int
-        (int_of_float (floor (!view_left +. (visible_boards /. 2.))))
+        (int_of_float (floor (!view_left +. (visible_w () /. 2.))))
         0 max_coord,
       clamp_int
-        (int_of_float (floor (!view_top +. (visible_boards /. 2.))))
+        (int_of_float (floor (!view_top +. (visible_h () /. 2.))))
         0 max_coord )
   in
 
   let needs_draw = ref true in
   let frame_pending = ref false in
+  let last_coords = ref "" in
 
   let origin_x = ref 0. and origin_y = ref 0. in
   let scale_x = ref 1. and scale_y = ref 1. in
   let update_layout () =
     origin_x := El.bound_x canvas_el;
     origin_y := El.bound_y canvas_el;
-    scale_x := float canvas_px /. El.bound_w canvas_el;
-    scale_y := float canvas_px /. El.bound_h canvas_el
+    scale_x := float !canvas_w /. max 1. (El.bound_w canvas_el);
+    scale_y := float !canvas_h /. max 1. (El.bound_h canvas_el)
   in
 
   let to_canvas ev =
@@ -350,12 +393,12 @@ let main () =
     let visible_x0 = max 0 (int_of_float (floor !view_left)) in
     let visible_x1 =
       min max_coord
-        (int_of_float (floor (!view_left +. visible_boards)))
+        (int_of_float (floor (!view_left +. visible_w ())))
     in
     let visible_y0 = max 0 (int_of_float (floor !view_top)) in
     let visible_y1 =
       min max_coord
-        (int_of_float (floor (!view_top +. visible_boards)))
+        (int_of_float (floor (!view_top +. visible_h ())))
     in
     (* Eagerly load the visible boards plus a one-board margin. The cache
        window is 25 x 25 around the centre, so panning reuses nearby snapshots
@@ -401,22 +444,29 @@ let main () =
     end
 
   and draw () =
+    let centre_x, centre_y = centre_of_view () in
+    let coords = Printf.sprintf "(%d, %d)" centre_x centre_y in
+    if coords <> !last_coords then begin
+      last_coords := coords;
+      El.set_children coords_el [ El.txt (Jstr.v coords) ]
+    end;
     El.set_at (Jstr.v "data-view-left")
       (Some (Jstr.of_float !view_left)) body_el;
     El.set_at (Jstr.v "data-view-top")
       (Some (Jstr.of_float !view_top)) body_el;
     C2d.set_fill_style ctx page_bg;
-    C2d.fill_rect ctx ~x:0. ~y:0. ~w:(float canvas_px) ~h:(float canvas_px);
+    C2d.fill_rect ctx ~x:0. ~y:0. ~w:(float !canvas_w)
+      ~h:(float !canvas_h);
 
     let x_first = max 0 (int_of_float (floor !view_left)) in
     let x_last =
       min max_coord
-        (int_of_float (floor (!view_left +. visible_boards)))
+        (int_of_float (floor (!view_left +. visible_w ())))
     in
     let y_first = max 0 (int_of_float (floor !view_top)) in
     let y_last =
       min max_coord
-        (int_of_float (floor (!view_top +. visible_boards)))
+        (int_of_float (floor (!view_top +. visible_h ())))
     in
 
     (* Board squares first. *)
@@ -497,19 +547,27 @@ let main () =
   let select_center bx by =
     let left =
       clamp_float
-        (float bx +. 0.5 -. (visible_boards /. 2.))
-        0. (1000. -. visible_boards)
+        (float bx +. 0.5 -. (visible_w () /. 2.))
+        0. (max_left ())
     in
     let top =
       clamp_float
-        (float by +. 0.5 -. (visible_boards /. 2.))
-        0. (1000. -. visible_boards)
+        (float by +. 0.5 -. (visible_h () /. 2.))
+        0. (max_top ())
     in
     view_left := left;
     view_top := top;
     ensure_window ();
     request_draw ()
   in
+
+  let on_resize _ =
+    let cx, cy = centre_of_view () in
+    set_canvas_size ();
+    update_layout ();
+    select_center cx cy
+  in
+  ignore (Ev.listen Ev.resize on_resize (Window.as_target G.window));
 
   let send_move ~request_id ~expected_piece_id ~bx ~by src dst =
     let position sq =
@@ -563,14 +621,6 @@ let main () =
     e.state.ids.(e.dst) <- e.pawn_id
   in
 
-  let find_el id =
-    match Document.find_el_by_id G.document (Jstr.v id) with
-    | Some el -> el
-    | None -> failwith ("Could not find #" ^ id)
-  in
-  let x_el = find_el "board-x" in
-  let y_el = find_el "board-y" in
-
   let on_pointer_down ev =
     update_layout ();
     if !pending = None then begin
@@ -610,10 +660,8 @@ let main () =
       let cx, cy = to_canvas ev in
       let dx = (cx -. p.start_cx) /. board_px in
       let dy = (cy -. p.start_cy) /. board_px in
-      view_left :=
-        clamp_float (p.start_left -. dx) 0. (1000. -. visible_boards);
-      view_top :=
-        clamp_float (p.start_top -. dy) 0. (1000. -. visible_boards);
+      view_left := clamp_float (p.start_left -. dx) 0. (max_left ());
+      view_top := clamp_float (p.start_top -. dy) 0. (max_top ());
       ensure_window ();
       request_draw ()
     | None ->
@@ -629,9 +677,6 @@ let main () =
     match !panning with
      | Some _ ->
        panning := None;
-       let cx, cy = centre_of_view () in
-       El.set_prop El.Prop.value (Jstr.of_int cx) x_el;
-       El.set_prop El.Prop.value (Jstr.of_int cy) y_el;
        ensure_window ();
        request_draw ()
      | None ->
@@ -756,36 +801,6 @@ let main () =
   ignore (Ev.listen Ev.pointerup on_pointer_up window);
   ignore (Ev.listen Ev.pointercancel on_pointer_cancel window);
 
-  let coord el =
-    match Jstr.to_int (El.prop El.Prop.value el) with
-    | Some n -> max 0 (min max_coord n)
-    | None -> 0
-  in
-
-  let on_input _ =
-    if !pending = None then
-      match
-        ( Jstr.to_int (El.prop El.Prop.value x_el),
-          Jstr.to_int (El.prop El.Prop.value y_el) )
-      with
-      | Some x, Some y
-        when x >= 0 && x <= max_coord && y >= 0 && y <= max_coord ->
-        select_center x y
-      | _ -> ()
-  in
-
-  let on_change _ =
-    let x = coord x_el and y = coord y_el in
-    El.set_prop El.Prop.value (Jstr.of_int x) x_el;
-    El.set_prop El.Prop.value (Jstr.of_int y) y_el;
-    if !pending = None then select_center x y
-  in
-
-  ignore (Ev.listen Ev.input on_input (El.as_target x_el));
-  ignore (Ev.listen Ev.input on_input (El.as_target y_el));
-  ignore (Ev.listen Ev.change on_change (El.as_target x_el));
-  ignore (Ev.listen Ev.change on_change (El.as_target y_el));
-
   let connect_ws () =
     let location = Jv.get Jv.global "location" in
     let secure = Jstr.equal (Jv.Jstr.get location "protocol") (Jstr.v "https:") in
@@ -876,6 +891,7 @@ let main () =
     ws := Some socket
   in
 
+  select_center (query_coord "x" 0) (query_coord "y" 0);
   Metrics.init ();
   connect_ws ();
   request_draw ()
