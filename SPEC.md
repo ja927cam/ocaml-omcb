@@ -710,6 +710,17 @@ type submit_error =
   | Invalid_request
 ```
 
+Internally the queue carries two request kinds:
+
+```ocaml
+type request =
+  | Move of Move_request.t
+  | Snapshot of { board_x : int; board_y : int }
+```
+
+Move results are `Move_engine.result`; snapshot results are `Piece.t array`.
+Both use the same FIFO and the same `submit_error` type.
+
 ### Lifecycle
 
 - `start ~config state`:
