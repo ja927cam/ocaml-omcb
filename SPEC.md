@@ -2,7 +2,8 @@
 
 Status: describes the code currently in this repository. It is not a roadmap.
 Last implementation phase covered: authoritative game state, serialised move
-engine, request/response protocol, and client integration.
+engine, request/response protocol, client integration, benchmarks and
+algorithm documentation.
 
 ---
 
@@ -93,7 +94,7 @@ README.md
 
 ### Build graph
 
-- `sim_map_lib` (`lib/`) is unwrapped and depends on `lwt.unix`.
+- `sim_map_lib` (`lib/`) is unwrapped and depends on `lwt.unix` and `mtime.clock.os`.
   Modules: `Piece`, `Board`, `Int16`, `Ledger`, `Move`, `Move_validator`,
   `Move_processor`, `Game_state`, `Move_request`, `Move_engine`,
   `State_worker`.
@@ -598,6 +599,7 @@ type t = {
   board : Board.t;
   ledger : Ledger.t;
   mutable sequence : int64;
+  mutable initialised : bool;
 }
 ```
 
@@ -730,6 +732,8 @@ while not finished:
   if queue empty:
     if stopping: finish
     else wait for condition
+  else if batch budget exhausted:
+    Lwt.pause (yield to the scheduler)
   else:
     take oldest item
     decrement depth
@@ -737,7 +741,7 @@ while not finished:
     result = Move_engine.process state request   (synchronous)
     update metrics
     resolve item promise
-    Lwt.pause  (yield between transactions)
+    process up to 64 items before yielding
 ```
 
 No network, filesystem, or client waiting occurs inside a transaction.
@@ -799,7 +803,7 @@ Little-endian across 6 bytes.
   - rejects positions outside the 8,000 x 8,000 world;
   - rejects `|dx| > 128` or `|dy| > 128`.
 - `move_of_bytes`:
-  - requires exactly 5 bytes;
+  - requires exactly 6 bytes;
   - reconstructs destination from absolute source + delta;
   - rejects invalid source, deltas outside ±128, and destinations outside the
     world;
@@ -813,7 +817,7 @@ Little-endian across 6 bytes.
 | 6–9 | Expected piece ID, int32 little-endian |
 | 10–13 | Request ID, int32 little-endian |
 
-Decoder requires exactly 13 bytes, a valid move, and an expected piece ID in
+Decoder requires exactly 14 bytes, a valid move, and an expected piece ID in
 `1..33,554,431`. Otherwise returns `None`.
 
 ### 13.4 Response — 26 bytes
@@ -999,7 +1003,8 @@ On a local move:
   - 0 → “move rejected”.
 - Calls `Metrics.received` for every response.
 
-No reconnect, snapshot, or local reconciliation is implemented.
+No reconnect or snapshot reconciliation is implemented; local handling is
+limited to per-request rollback and accepted special-move application.
 
 ### Metrics
 
@@ -1217,4 +1222,9 @@ b8a414c Encode moves as source plus 7-bit deltas
 ba8d7c6 Add chessboard UI, WebSocket move acks, RTT metrics, and move ledger
 93a2bdf Stop tracking dune build output
 5c6eebe Initial Work
+2b3bf6a Apply review fixes for moves, transactions, worker timing, and client rollback
+564a5bc Add benchmark suite, dashboard, algorithm notes, and performance cleanups
+250ec44 Update benchmark baseline
+68d85d7 Expand algorithm notes with proof obligations and efficiency audit
+26559d2 Update notes to reflect ledger wraparound tests
 ```
