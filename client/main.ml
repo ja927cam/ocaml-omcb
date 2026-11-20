@@ -46,6 +46,13 @@ type pending_action =
 
 type pending = { request_id : int32; action : pending_action }
 
+type pending_snapshot = {
+  request_id : int32;
+  generation : int;
+  board_x : int;
+  board_y : int;
+}
+
 (* Glyphs for pawn, knight, bishop, rook, queen, king. *)
 let piece_glyphs =
   [| "\xe2\x99\x9f"; "\xe2\x99\x9e"; "\xe2\x99\x9d";
@@ -59,36 +66,31 @@ let piece_index = function
   | 'q' | 'Q' -> 4
   | _ -> 5
 
-(* A board is 64 bytes, one per square (row-major from a8). Empty is 0.
-   For now every board shows the standard starting position; the coordinate
-   pair already travels with each move so the backend can supply the real
-   position later. *)
-let make_board _board_x _board_y =
-  let board = Bytes.make 64 empty in
-  let back = [| 'r'; 'n'; 'b'; 'q'; 'k'; 'b'; 'n'; 'r' |] in
-  for f = 0 to 7 do
-    Bytes.unsafe_set board (8 + f) 'p';
-    Bytes.unsafe_set board (48 + f) 'P';
-    Bytes.unsafe_set board f back.(f);
-    Bytes.unsafe_set board (56 + f) (Char.uppercase_ascii back.(f))
-  done;
-  board
+(* A board is 64 bytes, one glyph per square (row-major from a8). Piece IDs
+   and authoritative piece types come from server snapshots. *)
+let empty_board () = Bytes.make 64 empty
+let empty_ids () = Array.make 64 0l
 
-(* Piece IDs must match Board.initialise_standard_position on the server:
-   black back rank, black pawns, white pawns, white back rank. *)
-let make_piece_ids board_x board_y =
-  let base = (((board_y * 1000) + board_x) * 32) + 1 in
-  let ids = Array.make 64 0l in
-  let slot = ref 0 in
-  let put x y =
-    ids.((y * 8) + x) <- Int32.of_int (base + !slot);
-    incr slot
-  in
-  for x = 0 to 7 do put x 0 done;
-  for x = 0 to 7 do put x 1 done;
-  for x = 0 to 7 do put x 6 done;
-  for x = 0 to 7 do put x 7 done;
-  ids
+let decode_piece value =
+  if Int64.equal value 0L then (empty, 0l)
+  else
+    let id = Int64.logand value 0x1FFFFFFL |> Int64.to_int32 in
+    let code =
+      Int64.logand (Int64.shift_right_logical value 25) 0xFL |> Int64.to_int
+    in
+    let white = Int64.logand value (Int64.shift_left 1L 29) <> 0L in
+    let glyph =
+      match code with
+      | 1 -> 'P'
+      | 2 -> 'N'
+      | 3 -> 'B'
+      | 4 -> 'R'
+      | 5 -> 'Q'
+      | 6 -> 'K'
+      | 7 -> 'Q' (* promoted pawn, displayed as a queen *)
+      | _ -> '?'
+    in
+    ((if white then glyph else Char.lowercase_ascii glyph), id)
 
 let square_at x y =
   if x < 0. || y < 0. || x >= float board_px || y >= float board_px
@@ -162,12 +164,15 @@ let main () =
     piece_glyphs;
   let atlas = C2d.image_src_of_el (Canvas.to_el atlas_canvas) in
 
-  let board = ref (make_board 0 0) in
-  let piece_ids = ref (make_piece_ids 0 0) in
+  let board = ref (empty_board ()) in
+  let piece_ids = ref (empty_ids ()) in
   let board_x = ref 0 in
   let board_y = ref 0 in
+  let board_loaded = ref false in
+  let generation = ref 0 in
   let drag = ref None in
   let pending : pending option ref = ref None in
+  let pending_snapshot : pending_snapshot option ref = ref None in
   let ws = ref None in
   let next_request_id = ref 0l in
   let needs_draw = ref true in
@@ -241,28 +246,17 @@ let main () =
       (Ev.Mouse.client_y m -. !origin_y) *. !scale_y )
   in
 
-  let send_move ~request_id ~expected_piece_id src dst =
+  let alloc_request_id () =
+    let request_id = !next_request_id in
+    next_request_id := Int32.succ request_id;
+    request_id
+  in
+
+  let send_binary data =
     match !ws with
     | Some socket
       when Brr_io.Websocket.ready_state socket
            = Brr_io.Websocket.Ready_state.open' ->
-      let position sq =
-        {
-          Protocol.Types.board_x = !board_x;
-          board_y = !board_y;
-          x = sq mod 8;
-          y = sq / 8;
-        }
-      in
-      let request =
-        {
-          Protocol.Types.request_id;
-          expected_piece_id;
-          move =
-            { Protocol.Types.src = position src; dst = position dst };
-        }
-      in
-      let data = Protocol.Types.move_request_to_bytes request in
       let len = Bytes.length data in
       let buffer = Tarray.Buffer.create len in
       let bytes = Tarray.uint8_of_buffer buffer |> Tarray.to_bigarray1 in
@@ -270,10 +264,51 @@ let main () =
         Bigarray.Array1.unsafe_set bytes i
           (Char.code (Bytes.unsafe_get data i))
       done;
-      Metrics.sent ();
       Brr_io.Websocket.send_array_buffer socket buffer;
       true
     | _ -> false
+  in
+
+  let send_move ~request_id ~expected_piece_id src dst =
+    let position sq =
+      {
+        Protocol.Types.board_x = !board_x;
+        board_y = !board_y;
+        x = sq mod 8;
+        y = sq / 8;
+      }
+    in
+    let request =
+      {
+        Protocol.Types.request_id;
+        expected_piece_id;
+        move =
+          { Protocol.Types.src = position src; dst = position dst };
+      }
+    in
+    let data = Protocol.Types.move_request_to_bytes request in
+    Metrics.sent ();
+    send_binary data
+  in
+
+  let send_snapshot_request () =
+    let request_id = alloc_request_id () in
+    pending_snapshot :=
+      Some
+        {
+          request_id;
+          generation = !generation;
+          board_x = !board_x;
+          board_y = !board_y;
+        };
+    let request : Protocol.Types.snapshot_request =
+      {
+        Protocol.Types.request_id;
+        board_x = !board_x;
+        board_y = !board_y;
+      }
+    in
+    ignore (send_binary (Protocol.Types.snapshot_request_to_bytes request))
   in
 
   let restore_normal (u : normal_undo) =
@@ -311,18 +346,22 @@ let main () =
     ids.(e.dst) <- e.pawn_id
   in
 
-  let load_board x y =
-    board := make_board x y;
-    piece_ids := make_piece_ids x y;
+  let select_board x y =
+    board := empty_board ();
+    piece_ids := empty_ids ();
     board_x := x;
     board_y := y;
+    incr generation;
+    board_loaded := false;
     drag := None;
     pending := None;
+    pending_snapshot := None;
+    send_snapshot_request ();
     request_draw ()
   in
 
   let on_pointer_down ev =
-    if !pending = None then begin
+    if !pending = None && !board_loaded then begin
       update_layout ();
       let x, y = to_board ev in
       match square_at x y with
@@ -355,8 +394,7 @@ let main () =
          let b = !board and ids = !piece_ids in
          let dx = (sq mod 8) - (d.from mod 8) in
          let dy = (sq / 8) - (d.from / 8) in
-         let request_id = !next_request_id in
-         next_request_id := Int32.succ request_id;
+         let request_id = alloc_request_id () in
          let expected_piece_id = ids.(d.from) in
          let is_castle =
            (d.piece = 'k' || d.piece = 'K') && abs dx = 2 && dy = 0
@@ -470,7 +508,7 @@ let main () =
         Jstr.to_int (El.prop El.Prop.value y_el) )
     with
     | Some x, Some y when x >= 0 && x <= max_coord && y >= 0 && y <= max_coord ->
-        load_board x y
+        select_board x y
     | _ -> ()
   in
 
@@ -478,7 +516,7 @@ let main () =
     let x = coord x_el and y = coord y_el in
     El.set_prop El.Prop.value (Jstr.of_int x) x_el;
     El.set_prop El.Prop.value (Jstr.of_int y) y_el;
-    load_board x y
+    select_board x y
   in
 
   ignore (Ev.listen Ev.input on_input (El.as_target x_el));
@@ -504,7 +542,42 @@ let main () =
            let data : Tarray.Buffer.t =
              Ev.as_type ev |> Brr_io.Message.Ev.data
            in
-           if Tarray.Buffer.byte_length data > 0 then begin
+           let length = Tarray.Buffer.byte_length data in
+           if length = Protocol.Types.snapshot_response_bytes then begin
+             let view = Tarray.Data_view.of_buffer data in
+             let bytes = Bytes.create length in
+             for i = 0 to length - 1 do
+               Bytes.set bytes i
+                 (Char.chr (Tarray.Data_view.get_uint8 view i))
+             done;
+             match Protocol.Types.snapshot_response_of_bytes bytes with
+             | None -> ()
+             | Some response ->
+               (match !pending_snapshot with
+                | None -> ()
+                | Some pending when
+                    pending.request_id = response.request_id
+                    && pending.generation = !generation
+                    && pending.board_x = response.board_x
+                    && pending.board_y = response.board_y ->
+                  pending_snapshot := None;
+                  if response.status = Protocol.Types.Snapshot_ok then begin
+                    let b = empty_board () and ids = empty_ids () in
+                    Array.iteri
+                      (fun i packed ->
+                        let glyph, id = decode_piece packed in
+                        Bytes.unsafe_set b i glyph;
+                        ids.(i) <- id)
+                      response.board;
+                    board := b;
+                    piece_ids := ids;
+                    board_loaded := true;
+                    request_draw ()
+                  end
+                  else board_loaded := false
+                | Some _ -> ())
+           end
+           else if length = Protocol.Types.response_bytes then begin
              let view = Tarray.Data_view.of_buffer data in
              let accepted = Tarray.Data_view.get_uint8 view 0 <> 0 in
              (match !pending with
@@ -532,7 +605,9 @@ let main () =
          target);
     ignore
       (Ev.listen Ev.open'
-         (fun _ -> Console.(log [ Jstr.v "ws: connected" ]))
+         (fun _ ->
+           Console.(log [ Jstr.v "ws: connected" ]);
+           if not !board_loaded then send_snapshot_request ())
          target);
     ignore
       (Ev.listen Ev.error
