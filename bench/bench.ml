@@ -301,6 +301,34 @@ let bench_protocol () =
         | Some (Protocol.Types.Wire_move r) ->
           sink := !sink + Int32.to_int r.request_id
         | _ -> failwith "wire response decode failed"
+      done);
+  let snapshot_response =
+    {
+      Protocol.Types.request_id = 43l;
+      board_x = 0;
+      board_y = 0;
+      status = Protocol.Types.Snapshot_ok;
+      board =
+        Bytes.init 64 (fun i -> Char.chr (if i mod 9 = 0 then 0 else i + 1));
+    }
+  in
+  run_bench ~group:"Protocol" ~name:"snapshot response encode"
+    ~variant:"73-byte payload" ~iterations:100_000 (fun n ->
+      for _ = 1 to n do
+        sink :=
+          !sink
+          + Bytes.length
+              (Protocol.Types.snapshot_response_to_bytes snapshot_response)
+      done);
+  let snapshot_bytes =
+    Protocol.Types.snapshot_response_to_bytes snapshot_response
+  in
+  run_bench ~group:"Protocol" ~name:"snapshot response decode"
+    ~variant:"73-byte payload" ~iterations:100_000 (fun n ->
+      for _ = 1 to n do
+        match Protocol.Types.snapshot_response_of_bytes snapshot_bytes with
+        | Some r -> sink := !sink + Char.code (Bytes.get r.board 1)
+        | None -> failwith "snapshot response decode failed"
       done)
 
 (* ------------------------------------------------------------------------- *)
@@ -345,7 +373,7 @@ let bench_validation_and_processing board =
   done;
   let queen = Piece.create ~id:100l ~piece_type:Piece.Queen ~is_white:true in
   Board.set board (position 0 0 0 0) queen;
-  let src = position 0 0 0 0 and dst = position 15 0 7 0 in
+  let src = position 0 0 0 0 and dst = position 4 0 4 0 in
   let long_move = Move.create ~src ~dst in
   run_bench ~group:"Validation" ~name:"path" ~variant:"position record + checked get"
     ~iterations:100_000 (fun n ->
@@ -357,7 +385,7 @@ let bench_validation_and_processing board =
       for _ = 1 to n do
         if path_new board src dst then incr sink
       done);
-  run_bench ~group:"Validation" ~name:"long queen move" ~variant:"127 squares"
+  run_bench ~group:"Validation" ~name:"long queen move" ~variant:"36 squares"
     ~iterations:100_000 (fun n ->
       for _ = 1 to n do
         match Move_validator.validate board long_move with

@@ -121,7 +121,7 @@ README.md
 | Board coordinates | `board_x`, `board_y` in `0..999` |
 | Square coordinates | `x`, `y` in `0..7`, `y = 0` is the top row / rank 8 |
 | Absolute world size | 8,000 x 8,000 |
-| Maximum move distance per axis | 128 |
+| Maximum move distance per axis | 36 |
 | Piece ID width | 25 bits |
 | Piece ID maximum | 33,554,431 |
 | Ledger capacity | 1,048,576 events |
@@ -327,10 +327,12 @@ type Move_request.t = {
 
 `Move_request.create` validates:
 
-- `expected_piece_id` is in `1..Piece.max_id`;
+- `expected_piece_id` is in `1..Piece.max_id`; it carries either the 25-bit
+  server ID or the compact client signature `(square lsl 8) lor client_byte`;
 - both move positions are inside the world.
 
-It performs no board access and no chess validation.
+It performs no board access and no chess validation. The signature lets the
+web client identify a source piece without receiving 25-bit IDs in snapshots.
 
 `request_id` is a client correlation identifier. It is not a sequence number.
 
@@ -375,7 +377,7 @@ type result = Legal of move_info | Illegal of rejection
 4. `src = dst` → `Invalid_geometry`.
 5. Read the destination piece. Same colour → `Invalid_destination`.
 6. Compute absolute `dx`, `dy`.
-7. `|dx| > 128` or `|dy| > 128` → `Invalid_geometry`.
+7. `|dx| > 36` or `|dy| > 36` → `Invalid_geometry`.
 8. Dispatch:
    - king with `|dx| = 2` and `dy = 0` → castling validation;
    - pawn with `|dx| = 1` and empty destination → en-passant validation;
@@ -658,7 +660,9 @@ type result =
 
 1. Read source piece from the authoritative board.
 2. If empty → `Rejected (Invalid_move Empty_source)`.
-3. If `Piece.id source <> expected_piece_id` → `Rejected Stale_piece`.
+3. If `expected_piece_id` is neither the source ID nor
+   `Piece.client_signature ~square source` (and is not the protocol-layer
+   invalid zero) → `Rejected Stale_piece`.
 4. Validate with `Move_validator.validate`.
 5. Illegal → `Rejected (Invalid_move rejection)`.
 6. Prepare ledger data:
@@ -837,7 +841,7 @@ Little-endian across 6 bytes.
 | Bytes | Field |
 |---|---|
 | 0–5 | 6-byte move |
-| 6–9 | Expected piece ID, int32 little-endian |
+| 6–9 | Expected piece identity: 25-bit server ID or `(square lsl 8) lor client_byte`, int32 little-endian |
 | 10–13 | Request ID, int32 little-endian |
 
 Decoder requires exactly 14 bytes, a valid move, and an expected piece ID in
@@ -886,7 +890,7 @@ as bytes, never as JavaScript `Number`.
 The decoder requires exactly 9 bytes, message type `0x02`, and coordinates in
 `0..999`. Otherwise it returns `None`.
 
-### 13.6 Snapshot response — 521 bytes
+### 13.6 Snapshot response — 73 bytes
 
 | Bytes | Field | Encoding |
 |---|---|---|
@@ -894,9 +898,29 @@ The decoder requires exactly 9 bytes, message type `0x02`, and coordinates in
 | 1–4 | Request ID | int32 little-endian |
 | 5–6 | Board X | uint16 little-endian |
 | 7–8 | Board Y | uint16 little-endian |
-| 9–520 | Board contents | 64 packed int64 pieces, row-major |
+| 9–72 | Board contents | 64 one-byte client pieces, row-major |
 
 A failed response has status 0 and zero-filled board contents.
+
+### 13.6.1 Client piece byte
+
+Each snapshot square is one byte:
+
+| Bit | Meaning |
+|---|---|
+| 0 | 1 = white, 0 = black |
+| 1–3 | 0 empty, 1 pawn, 2 bishop, 3 knight, 4 rook, 5 queen, 6 king |
+| 4 | 1 = on its original board (the piece has never moved) |
+| 5 | 1 = en passantable (pawn) or castling-eligible (king/rook) |
+| 6–7 | 0 |
+
+Promoted pawns encode as queens (type 5). This is 64 bytes per board instead of
+512, and it removes the need to send 25-bit IDs to the renderer. The server
+still keeps the full `Piece.t`; `Piece.client_byte` projects it to the wire
+format. A move request recovers stale-piece protection by combining the source
+square with this byte into a 16-bit signature. `Protocol.Types.client_byte_of_packed`
+performs the reverse projection for the `moved_piece` int64 in a move response,
+so the client can refresh its local byte after an accepted move.
 
 Codec functions: `snapshot_request_to_bytes`, `snapshot_request_of_bytes`,
 `snapshot_response_to_bytes`, `snapshot_response_of_bytes`. They depend only on
@@ -912,12 +936,12 @@ in a fixed 4096-byte binary frame:
 | Bytes | Field |
 |---|---|
 | 0 | Kind: `1` move response, `2` snapshot response |
-| 1..26 or 1..521 | The encoded response |
+| 1..26 or 1..73 | The encoded response |
 | Rest | Zero padding |
 
 `wire_response_to_bytes` and `wire_response_of_bytes` in `Protocol.Types` build
 and validate these frames. Each send crosses the 4096-byte threshold, so Dream
-flushes it immediately. The 521-byte snapshot payload and 26-byte move payload
+flushes it immediately. The 73-byte snapshot payload and 26-byte move payload
 remain unchanged for codec tests and benchmarks.
 
 The client keeps at most **one** snapshot request in flight. Dream's stream
@@ -1016,8 +1040,9 @@ handler returns. A move that has already committed is never rolled back.
   pixels (21 px per square), so a 512 px span shows about 3.05 boards. On a
   typical desktop viewport the nine centre boards are fully visible (except at
   world edges), with additional boards at the edges.
-- Board squares are drawn for every board intersecting the viewport. Pieces
-  are drawn only for loaded boards, so an unloaded board shows an empty grid
+- An 8 x 8 board tile is rendered once to a 168 x 168 offscreen canvas. Each
+  visible board is one `drawImage` blit, not 64 rectangle fills. Pieces are
+  drawn only for loaded boards, so an unloaded board shows an empty grid
   rather than invented pieces.
 - Piece glyphs are rendered once into a 6 x 2 offscreen atlas: pawn, knight,
   bishop, rook, queen, king; white and black rows.
@@ -1043,8 +1068,7 @@ handler returns. A move that has already committed is never rolled back.
 ### Snapshot cache
 
 - A `Hashtbl` keyed by `board_y * 1000 + board_x` stores loaded boards:
-  64 piece glyphs, 64 piece IDs, a loaded flag and an optional pending request
-  ID.
+  64 one-byte client pieces, a loaded flag and an optional pending request ID.
 - Only boards within 25 x 25 of the view centre are retained. Boards outside
   that window are evicted, and their pending requests are forgotten.
 - On every camera change the client requests the visible boards plus a
@@ -1055,20 +1079,27 @@ handler returns. A move that has already committed is never rolled back.
   by request ID and board key; stale or evicted responses are ignored.
 - A failed snapshot leaves the board unloaded and does not install an empty
   board. It will be retried after the next camera change.
-- Each loaded board holds about 320 bytes (64 piece bytes plus 64 int32 IDs),
-  so a full 625-board cache is roughly 200 KiB.
+- Each loaded board holds 64 bytes plus a small record, so a full 625-board
+  cache is roughly 50 KiB instead of 200 KiB.
 
 ### Moves
 
 - `pointerdown` on a loaded board's occupied square starts a piece drag.
-- `pointerup` on the same board sends a move if the destination differs. A
-  cross-board drag is cancelled and sends nothing.
+- `pointerup` on any loaded board sends a move if the destination differs.
+  Quiet moves may cross board boundaries.
+- A cross-board capture is sent only if the destination byte has the
+  on-original-board bit clear (the captured piece has moved). Otherwise the
+  drag snaps back locally, matching the server rule.
 - The move wire format is unchanged: a 14-byte request containing the world
-  source position, signed 9-bit deltas, expected piece ID and request ID.
-- Normal moves are optimistic: source and destination bytes/IDs are saved and
-  restored on rejection.
-- Castling and en passant are detected geometrically and applied only after
-  acceptance. A rejected special move leaves the board untouched.
+  source position, signed 9-bit deltas, the source signature and request ID.
+- Normal moves are optimistic: source and destination bytes are saved and
+  restored on rejection. Cross-board normal moves update both board states.
+- Castling and en passant are applied only after acceptance. En passant can
+  clear a pawn on either the source board or the destination board.
+- The accepted response carries the moved piece's packed int64; the client
+  projects it back to the one-byte form and updates the destination byte, so
+  the on-original-board / en-passant / castling bits stay accurate without a
+  new snapshot.
 - At most one move is in flight. While it is pending, panning and new drags
   are ignored; `data-move-pending` on `<body>` reflects the state.
 
@@ -1090,7 +1121,7 @@ handler returns. A move that has already committed is never rolled back.
 - Snapshot requests are 9 bytes; move requests are 14 bytes.
 - Server responses are fixed 4096-byte wire frames with a kind byte (`1` move,
   `2` snapshot). The client dispatches on the kind and parses the first 26 or
-  521 bytes.
+  73 bytes.
 - Movement/rollback dispatch reads the status byte: 1 accepted, 0 rejected.
 - Calls `Metrics.received` for every move response.
 - Closes the WebSocket on `beforeunload` so page reloads shut down cleanly.
@@ -1105,7 +1136,7 @@ handler returns. A move that has already committed is never rolled back.
 - `received` pops the oldest timestamp and computes RTT in nanoseconds.
 - Tracks last, average, min, max, count, and measured timer resolution.
 - Resolution measurement takes the minimum of 20 clock ticks.
-- Writes `#rtt` and logs to the console:
+- Logs to the console (there is no on-screen RTT element):
   ```
   rtt … ns   avg … ns   min … ns   max … ns   n=…   res … ns
   ```
@@ -1121,8 +1152,9 @@ These are deliberate and are not conventional chess:
 
 - Pieces move in absolute world coordinates and may cross board boundaries
   freely.
-- The project uses a maximum displacement of 128 world squares per axis
-  (the original implementation used 36).
+- The validator uses the original maximum displacement of 36 world squares per
+  axis. The wire codec still supports signed 9-bit deltas (±128) so the
+  transport remains general; the server enforces 36.
 - Capturing a piece on a different board is only allowed if the captured
   piece’s move count is greater than zero.
 - Normal king moves may not cross board boundaries; castling uses the absolute offsets above.
@@ -1172,6 +1204,9 @@ These are deliberate and are not conventional chess:
 - All flag setters/getters and independence.
 - Counter saturation at 4095, including the high capture-count bits.
 - Promotion metadata preservation.
+- One-byte client encoding: colour, type order (pawn, bishop, knight, rook,
+  queen, king), original-board bit, en-passant/castling bit, promoted-queen
+  projection, and the square-plus-byte signature.
 - Empty-piece errors.
 - Board first/last world indices.
 - First/last square reads/writes/clears.
@@ -1190,7 +1225,9 @@ These are deliberate and are not conventional chess:
 - King movement and same-board restriction.
 - Kingside/queenside castling; moved pieces and blocked paths.
 - Cross-board capture with moved/unmoved targets.
+- Same-board and cross-board quiet moves.
 - Same-board and cross-board en passant.
+- 36-square acceptance and 37-square rejection.
 - Move classification (`Normal`, `Castle` with rook positions, `En_passant`
   with captured square).
 - En-passant flag expiry: a double-move flag cleared by the pawn's next move
@@ -1202,13 +1239,16 @@ These are deliberate and are not conventional chess:
 
 ### `test_protocol`
 
-- Snapshot request/response round trips, all 64 pieces, empty squares, 521-byte length and maximum coordinates.
+- Snapshot request/response round trips, all 64 one-byte pieces, empty
+  squares, 73-byte length and maximum coordinates.
 - Invalid snapshot coordinates and frame lengths.
 - Source+delta move round trips.
-- ±128 boundary and rejection of 129.
+- ±128 wire boundary and rejection of 129.
 - Out-of-world positions.
 - Request round trip and invalid piece IDs.
 - Response round trip for accepted and rejected.
+- Packed-to-client-byte projection for move acknowledgements (colour, knight /
+  bishop order, original board, en passant/castling, promotion).
 - Wire response framing: 4096-byte length, kind byte, move/snapshot round trip,
   wrong length and wrong kind.
 - Wrong frame lengths.
@@ -1231,6 +1271,7 @@ These are deliberate and are not conventional chess:
 
 - Accepted pawn move, sequence, ledger event.
 - Stale expected piece ID rejection.
+- Signature-based acceptance and stale-signature rejection.
 - Invalid move rejection with unchanged sequence/ledger/board.
 - Capture and ledger captured ID.
 - En passant flag and captured pawn.
@@ -1263,8 +1304,9 @@ These are deliberate and are not conventional chess:
 - The client keeps a 25 x 25 snapshot cache and pans a 3 x 3-board viewport.
   There are no spatial subscriptions or live updates, so a cached board can
   become stale after another client moves.
-- Cross-board piece drags are cancelled; a move must start and end on the same
-  board.
+- The client snapshot carries no 25-bit piece IDs, so stale-move detection uses
+  the source square plus the one-byte piece signature. A different piece of the
+  same type and status on the same square is indistinguishable to the client.
 - Server responses are padded to 4096 bytes to work around Dream 1.0.0~alpha8
   WebSocket buffering, so small acknowledgements use more bandwidth than their
   logical 26-byte payload.

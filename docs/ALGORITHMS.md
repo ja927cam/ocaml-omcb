@@ -216,7 +216,7 @@ makes the transaction safety argument in Section 6 possible.
 Validation first converts both endpoints to absolute world coordinates. This
 makes all pieces use the same geometry across board boundaries.
 
-- maximum displacement: 128 squares on either axis;
+- maximum displacement: 36 squares on either axis (the original rule);
 - `|dx|`, `|dy|` computed once;
 - sliding path checks walk intermediate absolute squares;
 - two-square pawn moves check the one intermediate square;
@@ -260,11 +260,17 @@ the difference.
 - **Queen / promoted pawn**: bishop or rook geometry; intermediates empty.
 - **King**: at most one square on each axis and same board.
 
-### Cross-board captures
+### Cross-board moves and captures
 
-If the destination is occupied by an enemy on a different board, the captured
-piece must have `move_count > 0`. Otherwise validation returns
-`Cross_board_capture`. This mirrors the original implementation.
+Quiet moves may cross board boundaries freely. If the destination is occupied
+by an enemy on a different board, the captured piece must have
+`move_count > 0`. Otherwise validation returns `Cross_board_capture`. This
+mirrors the original implementation: an unmoved piece is still on its original
+board and cannot be taken from another board.
+
+The client mirrors the same test in O(1) using bit 4 of the destination
+snapshot byte. If a cross-board drop targets an on-original piece, it snaps
+back without sending a request; the server independently enforces the rule.
 
 ### Special moves
 
@@ -525,16 +531,17 @@ dst_world_x = src_world_x + dx
 dst_world_y = src_world_y + dy
 ```
 
-Because the game limits deltas to ±128, nine signed bits are sufficient.
-Nine-bit two’s-complement represents `-256..255`; the codec rejects values
-outside `-128..128` and rejects destinations outside the world.
+Because the wire format allows deltas up to ±128, nine signed bits are
+sufficient. Nine-bit two’s-complement represents `-256..255`; the codec rejects
+values outside `-128..128` and rejects destinations outside the world. The
+validator separately enforces the original 36-square move limit.
 
 This reduces the move portion from 8 bytes to 6. The request is 14 bytes:
 
 | Bytes | Field |
 |---|---|
 | 0–5 | move |
-| 6–9 | expected piece ID |
+| 6–9 | expected piece identity: 25-bit ID or `(square lsl 8) lor client_byte` |
 | 10–13 | request ID |
 
 Responses are fixed 26-byte records, including status, request ID, sequence,
@@ -544,28 +551,53 @@ JavaScript `Number`.
 
 Snapshot messages are intentionally distinct. The request is 9 bytes: one
 message-type byte (0x02), request ID, board X and board Y as uint16. The
-response payload is 521 bytes: status, request ID, board coordinates, then 64
-packed int64 pieces in row-major order. A failed snapshot has status 0 and zero
-board contents. Requests dispatch by length (14 move, 9 snapshot). Every server
-response is carried in a fixed 4096-byte wire frame with a kind byte (`1` move,
-`2` snapshot) and zero padding. The padding is a workaround for Dream
-1.0.0~alpha8, which buffers WebSocket writes until 4096 bytes accumulate: a
-26-byte acknowledgement can otherwise wait forever while the client waits for
+response payload is 73 bytes: status, request ID, board coordinates, then 64
+one-byte client pieces in row-major order. A failed snapshot has status 0 and
+zero board contents. Requests dispatch by length (14 move, 9 snapshot). Every
+server response is carried in a fixed 4096-byte wire frame with a kind byte
+(`1` move, `2` snapshot) and zero padding. The padding is a workaround for
+Dream 1.0.0~alpha8, which buffers WebSocket writes until 4096 bytes accumulate:
+a 26-byte acknowledgement can otherwise wait forever while the client waits for
 it before sending more requests. The snapshot and move codecs live in
 `Protocol.Types` and do not depend on the board implementation.
+
+### One-byte client pieces
+
+`Piece.client_byte` projects the 64-bit server piece to one byte:
+
+| Bit | Meaning |
+|---|---|
+| 0 | white |
+| 1–3 | 0 empty, 1 pawn, 2 bishop, 3 knight, 4 rook, 5 queen, 6 king |
+| 4 | on its original board (never moved) |
+| 5 | en passantable (pawn) or castling-eligible (king/rook) |
+| 6–7 | zero |
+
+Promoted pawns project as queens. The snapshot drops from 521 to 73 bytes and
+the client cache from roughly 320 to 64 bytes per board. Bit 4 is exactly
+`move_count = 0`, so the client can apply the cross-board capture rule without
+the 12-bit counter.
+
+Move requests identify the source with a 16-bit signature
+`(source_square lsl 8) lor client_byte`. The server accepts the signature, the
+full 25-bit ID, or zero (protocol-layer 0 is normally rejected). This preserves
+stale-piece detection without sending IDs to the renderer.
+`Protocol.Types.client_byte_of_packed` projects the `moved_piece` int64 in an
+accepted move response back to this byte, so the client refreshes its local
+original/en-passant/castling bits without another snapshot.
 
 ### Why fixed widths
 
 - Predictable decoding: no varints, no length prefixes per field.
 - Easy to validate length before exposing anything to the state worker.
-- Compact payloads: 26-byte move responses and 521-byte snapshot payloads.
+- Compact payloads: 26-byte move responses and 73-byte snapshot payloads.
 - No JSON parsing or allocation on the server move path.
 - No dependence on JavaScript numeric precision for 64-bit values.
 - The fixed 4096-byte wire frame makes the pinned Dream version flush each
   response; the padding is transport-only and ignored by the codecs.
 
-Protocol tests cover ±128 boundaries, 129 rejection, round trips, request IDs,
-responses and malformed lengths. The client and server share the same
+Protocol tests cover ±128 wire boundaries, 129 rejection, round trips, request
+IDs, responses, malformed lengths and the 36-square validator limit. The client and server share the same
 `Protocol.Types` module, so the layouts cannot drift independently.
 
 ---
@@ -585,11 +617,12 @@ boards, not a single board:
   pans; a drag that starts on a piece moves that piece instead.
 - A fixed top-right overlay shows the rounded camera centre as `(x, y)`.
   `?x=<board_x>&y=<board_y>` sets the initial centre and survives reloads.
-- Board squares are drawn for all boards intersecting the viewport. Pieces are
-  drawn only for loaded boards. A dirty flag coalesces redraws into one
-  `requestAnimationFrame`; there is no continuous render loop.
-- All 12 piece sprites are rendered once into a 6 x 2 atlas. A redraw is a
-  loop over visible squares plus at most 64 sprite blits per loaded board.
+- A single 8 x 8 board tile is rendered once to a 168 x 168 offscreen canvas.
+  Every visible board is one `drawImage` blit instead of 64 rectangle fills.
+  Pieces are drawn only for loaded boards. A dirty flag coalesces redraws into
+  one `requestAnimationFrame`; there is no continuous render loop.
+- All 12 piece sprites are rendered once into a 6 x 2 atlas. A redraw is one
+  tile blit per visible board plus at most 64 sprite blits per loaded board.
 
 ### Snapshot cache
 
@@ -605,15 +638,23 @@ boards, not a single board:
 - Responses are matched by request ID and board key; stale or evicted
   responses are ignored. A failed snapshot leaves the board unloaded and does
   not install an empty board.
-- Each loaded board costs about 320 bytes (64 piece bytes plus 64 int32 IDs),
-  so a full 625-board cache is roughly 200 KiB.
+- Each loaded board stores 64 one-byte pieces plus a small record, so a full
+  625-board cache is roughly 50 KiB. Decoding a byte to a glyph at draw time is
+  a handful of bit operations.
 
 ### Moves
 
-- A drag must start and end on the same loaded board. Cross-board drags are
-  cancelled and send nothing.
-- Normal moves are optimistic and save undo bytes/IDs; rejected moves restore
-  them. Castling and en passant are applied only after acceptance.
+- A drag may start and end on any loaded board. Quiet moves cross boundaries.
+- A cross-board capture is allowed only if the destination byte has bit 4
+  clear. The client checks this in O(1) and cancels otherwise; the server
+  enforces the same rule.
+- Normal moves are optimistic. The undo record holds the source and
+  destination board states, so a cross-board move restores both on rejection.
+  Castling and en passant are applied only after acceptance; an en-passant
+  capture can belong to the source board or the destination board.
+- On acceptance the 26-byte response's packed `moved_piece` is projected back
+  to a client byte, updating the moved piece's original/en-passant/castling
+  bits immediately. No extra snapshot is needed.
 - At most one move is in flight. Navigation and new drags are blocked while it
   is pending; `data-move-pending` on `<body>` exposes the state.
 - The drag and render path never allocates a board copy.
@@ -622,7 +663,7 @@ boards, not a single board:
 
 - Requests: 9-byte snapshot, 14-byte move.
 - Responses: 4096-byte wire frames with a kind byte. The client dispatches on
-  the kind and parses the first 26 or 521 bytes.
+  the kind and parses the first 26 or 73 bytes.
 - The WebSocket is closed on `beforeunload` so reloads shut down cleanly.
 - No reconnect or event replay is implemented.
 
@@ -667,27 +708,29 @@ Machine-specific numbers, useful for relative comparisons:
 
 | Benchmark | Variant | ns/op |
 |---|---:|---:|
-| Board index | checked | ~6.2 |
+| Board index | checked | ~6.1 |
 | Board index | raw arithmetic | ~2.6 |
-| Board read | checked position | ~14.5 |
-| Board read | `get_world` | ~12.8 |
-| Piece create | packed int64 | ~9.2 |
-| Piece inspect | id/type/flags | ~12.3 |
-| Piece metadata | immutable flags | ~20.3 |
-| Protocol move | encode/decode | ~29 / ~22 |
-| Protocol request | encode/decode | ~66 / ~50 |
-| Protocol wire response | encode/decode | ~1,231 / ~102 |
-| Validation path | record + checked get | ~1,930 |
-| Validation path | `get_world` | ~916 |
+| Board read | checked position | ~13.7 |
+| Board read | `get_world` | ~11.1 |
+| Piece create | packed int64 | ~7.4 |
+| Piece inspect | id/type/flags | ~9.3 |
+| Piece metadata | immutable flags | ~19.0 |
+| Protocol move | encode/decode | ~24 / ~19 |
+| Protocol request | encode/decode | ~59 / ~39 |
+| Protocol wire response | encode/decode | ~535 / ~49 |
+| Protocol snapshot response | encode/decode | ~33 / ~21 |
+| Validation path | record + checked get | ~556 |
+| Validation path | `get_world` | ~249 |
+| Validation long queen | 36 squares | ~300 |
 | Processing prepare | queen long move | ~15 |
-| Processing `apply_plan` | queen long move | ~25 |
+| Processing `apply_plan` | queen long move | ~27 |
 | Ledger append | 1M circular | ~16 |
-| Ledger event read | decoded | ~15 |
-| Snapshot board | 64-piece copy | ~301 |
-| Engine process | full move | ~181 |
-| Worker submit/process | sequential awaiter | ~2,108 |
-| Worker submit/process | pipelined 4,000 | ~2,172 |
-| Worker snapshot | pipelined 4,000 | ~4,572 |
+| Ledger event read | decoded | ~14 |
+| Snapshot board | 64-piece copy | ~314 |
+| Engine process | full move | ~183 |
+| Worker submit/process | sequential awaiter | ~2,046 |
+| Worker submit/process | pipelined 4,000 | ~1,658 |
+| Worker snapshot | pipelined 4,000 | ~3,409 |
 
 Startup single-shot on the same run:
 
@@ -697,7 +740,7 @@ Startup single-shot on the same run:
 
 The wire-response encode figure includes allocating and zero-filling the
 4,096-byte frame that forces Dream to flush each WebSocket response. That is
-transport overhead, not part of the 26-byte move or 521-byte snapshot codecs.
+transport overhead, not part of the 26-byte move or 73-byte snapshot codecs.
 
 The path and read comparisons demonstrate why the `get_world` fast path was
 introduced: it removes per-square record allocation and repeated position
@@ -741,10 +784,13 @@ It covers:
 - protocol round trips and invalid lengths/IDs/deltas;
 - worker FIFO, same-piece races, queue-full and shutdown with pending work;
 - snapshots before/after moves, queue capacity and shutdown;
-- snapshot protocol round trips, 64-piece ordering, empty squares and invalid coordinates;
-- a browser grid integration test: nine visible boards, a one-board pan,
-  the 25 x 25 cache bound, move persistence across board switches and a cache
-  eviction/re-fetch, and cross-board drag cancellation;
+- snapshot protocol round trips, 64 one-byte pieces, empty squares, 73-byte
+  length and invalid coordinates;
+- client piece-byte colour/type/original/castle/en-passant encoding and the
+  square-plus-byte signature;
+- a browser grid integration test: nine visible boards, one-board pans, the
+  25 x 25 cache bound, move persistence, a cross-board quiet rook move, a
+  blocked cross-board capture of an unmoved pawn, and a cache eviction/re-fetch;
 - client rollback behaviour was also exercised manually in headless Chromium.
 
 What is tested is not the same as a formal proof. The strongest evidence today
@@ -807,7 +853,7 @@ interleavings, especially around worker failure.
 ### 13.5 Protocol exactness
 
 Prove the source+delta encoding is a bijection on moves with
-`|dx|,|dy| ≤ 128`:
+`|dx|,|dy| ≤ 36`:
 
 - encode/decode round-trips source and destination;
 - signed 9-bit representation covers the allowed range;
@@ -856,6 +902,8 @@ must include that handoff and the response mailbox.
 | Rejected move changes nothing | Engine tests | Model-based property test |
 | Accepted move changes all three exactly once | Engine tests; prepare/commit order | TLA+ transaction model |
 | Wire move round-trips exactly for ±128 | Protocol tests | SMT/bit-vector proof |
+| Client byte preserves colour/type/original/castle/en-passant | Piece tests | Case analysis per bit |
+| Signature matches source without a 25-bit ID | Engine tests | Equivalence with `client_byte` |
 | Queue is FIFO and bounded | Worker tests | TLA+ queue model |
 | Snapshot returns an exact 64-piece copy | Tests for all special moves; row-major checks | Array-copy proof |
 | Only the worker mutates state | Module-boundary convention | Capability token or private library |

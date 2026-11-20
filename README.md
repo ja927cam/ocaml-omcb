@@ -2,7 +2,8 @@
 
 Server-authoritative world of 1,000 × 1,000 chessboards (64,000,000 squares,
 32,000,000 starting pieces), with a pannable WASM/Brr grid client, a 25 × 25
-board snapshot cache and a binary WebSocket protocol.
+board snapshot cache, one-byte snapshot pieces and a binary WebSocket
+protocol.
 
 ## Build and run
 
@@ -32,7 +33,8 @@ The server initialises the complete world at startup and listens on
 The board grid fills the whole window.
 
 - Drag empty space (or use a non-left button) to pan.
-- Drag a piece to move it; the move must stay on the same board.
+- Drag a piece to move it. Quiet moves may cross board boundaries; a
+  cross-board capture is only allowed if the target piece has already moved.
 - The current centre is shown in the top-right corner.
 - `?x=<board_x>&y=<board_y>` opens the client centred on that board.
 - At the default 168 px per board, a 512 px span shows about three boards;
