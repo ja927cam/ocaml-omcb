@@ -18,6 +18,10 @@ let request request_id src dst id =
     ~move:(Move.create ~src ~dst)
     ~expected_piece_id:id
 
+let snapshot_board = function
+  | Ok board -> board
+  | Error _ -> failwith "expected snapshot"
+
 let accepted_sequence = function
   | Ok (Move_engine.Accepted accepted) -> accepted.sequence
   | Ok (Move_engine.Rejected _) -> failwith "expected accepted"
@@ -32,6 +36,7 @@ let () =
   place board 1 0 0 6 p1;
 
   let worker = State_worker.start ~config:{ queue_capacity = 8 } state in
+  let before = State_worker.submit_snapshot worker ~board_x:0 ~board_y:0 in
   let r1 =
     State_worker.submit worker
       (request 1l (pos 0 0 0 6) (pos 0 0 0 5) (Piece.id p0))
@@ -40,13 +45,24 @@ let () =
     State_worker.submit worker
       (request 2l (pos 1 0 0 6) (pos 1 0 0 5) (Piece.id p1))
   in
-  let results = Lwt_main.run (Lwt.all [ r1; r2 ]) in
+  let before, results = Lwt_main.run (Lwt.both before (Lwt.all [ r1; r2 ])) in
+  let before = snapshot_board before in
+  check "snapshot before move source" (Piece.id before.(48) = Piece.id p0);
+  check "snapshot before move destination" (Piece.is_empty before.(40));
   check "two accepted" (List.for_all (fun r -> Result.is_ok r) results);
   check "fifo sequence 1"
     (accepted_sequence (List.nth results 0) = 1L);
   check "fifo sequence 2"
     (accepted_sequence (List.nth results 1) = 2L);
   check "sequence after two" (Game_state.sequence state = 2L);
+
+  let after0 = snapshot_board
+      (Lwt_main.run (State_worker.submit_snapshot worker ~board_x:0 ~board_y:0)) in
+  let after1 = snapshot_board
+      (Lwt_main.run (State_worker.submit_snapshot worker ~board_x:1 ~board_y:0)) in
+  check "snapshot after move source" (Piece.is_empty after0.(48));
+  check "snapshot after move destination" (Piece.id after0.(40) = Piece.id p0);
+  check "snapshot other board" (Piece.id after1.(40) = Piece.id p1);
 
   (* Stale piece ID is rejected without advancing sequence. *)
   let p2 = piece Piece.Pawn true in
@@ -85,7 +101,7 @@ let () =
   check "same piece sequence once" (Game_state.sequence state = 3L);
 
   let metrics = State_worker.metrics worker in
-  check "metrics processed" (metrics.requests_processed = 5L);
+  check "metrics processed" (metrics.requests_processed = 8L);
   check "metrics rejected" (metrics.requests_rejected = 2L);
   check "metrics queue depth" (metrics.queue_depth = 0);
   check "metrics capacity" (metrics.queue_capacity = 8);
@@ -100,8 +116,7 @@ let () =
       (request 6l (pos 0 0 6 6) (pos 0 0 7 4) (Piece.id p4))
   in
   let second =
-    State_worker.submit limited
-      (request 7l (pos 0 0 7 4) (pos 0 0 6 2) (Piece.id p4))
+    State_worker.submit_snapshot limited ~board_x:0 ~board_y:0
   in
   check "queue full"
     (match Lwt_main.run second with
@@ -124,5 +139,15 @@ let () =
     (match result with
      | Ok (Move_engine.Accepted accepted) -> accepted.request_id = 8l
      | _ -> false);
+
+  (* Snapshot queued before shutdown is still processed. *)
+  let worker = State_worker.start ~config:{ queue_capacity = 8 } state in
+  let pending =
+    State_worker.submit_snapshot worker ~board_x:0 ~board_y:0
+  in
+  let stopped = State_worker.stop worker in
+  let snapshot, () = Lwt_main.run (Lwt.both pending stopped) in
+  check "pending snapshot processed on stop"
+    (Array.length (snapshot_board snapshot) = 64);
 
   Printf.printf "All State_worker tests passed.\n"

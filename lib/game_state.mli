@@ -20,6 +20,11 @@ val sequence : t -> int64
 val occupied_count : t -> int
 (** Number of occupied squares, for startup verification and tests. *)
 
+val snapshot_board : t -> board_x:int -> board_y:int -> Piece.t array
+(** Return a 64-element copy of one board in row-major order. Empty squares are
+    {!Piece.empty}. The board, ledger and sequence are unchanged.
+    @raise Invalid_argument if either coordinate is outside [0; 999]. *)
+
 val with_state :
   t ->
   (board:Board.t ->

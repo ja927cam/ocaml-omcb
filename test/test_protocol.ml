@@ -6,7 +6,7 @@ let check name condition =
 let pos bx by x y = { board_x = bx; board_y = by; x; y }
 let move src dst = { src; dst }
 
-let same_position a b =
+let same_position (a : position) (b : position) =
   a.board_x = b.board_x && a.board_y = b.board_y && a.x = b.x && a.y = b.y
 
 let roundtrip name m =
@@ -99,5 +99,83 @@ let () =
      check "rejected code" (r.rejection = rejection_blocked_path));
 
   check "short response rejected" (response_of_bytes (Bytes.create 25) = None);
+
+  (* Snapshot codecs. *)
+  let snap_request =
+    { Protocol.Types.request_id = 91l; board_x = 999; board_y = 0 }
+  in
+  let sb = Protocol.Types.snapshot_request_to_bytes snap_request in
+  check "snapshot request length" (Bytes.length sb = 9);
+  (match Protocol.Types.snapshot_request_of_bytes sb with
+   | None -> failwith "snapshot request decoded to None"
+   | Some r ->
+     check "snapshot request id" (r.request_id = 91l);
+     check "snapshot request x" (r.board_x = 999);
+     check "snapshot request y" (r.board_y = 0));
+
+  expect_invalid "snapshot request invalid coordinates" (fun () ->
+      Protocol.Types.snapshot_request_to_bytes
+        { snap_request with board_x = 1000 });
+
+  let bad_coord = Bytes.copy sb in
+  Bytes.set bad_coord 5 (Char.chr 0xE8);
+  Bytes.set bad_coord 6 (Char.chr 0x03);
+  check "snapshot request coordinate validation"
+    (Protocol.Types.snapshot_request_of_bytes bad_coord = None);
+  check "snapshot request wrong type"
+    (let b = Bytes.copy sb in
+     Bytes.set b 0 (Char.chr 1);
+     Protocol.Types.snapshot_request_of_bytes b = None);
+  check "snapshot request wrong length"
+    (Protocol.Types.snapshot_request_of_bytes (Bytes.create 8) = None);
+
+  let board =
+    Array.init 64 (fun i ->
+        if i mod 7 = 0 then 0L else Int64.of_int ((i * 1000) + 1))
+  in
+  let snap_response =
+    {
+      Protocol.Types.request_id = 92l;
+      board_x = 999;
+      board_y = 999;
+      status = Protocol.Types.Snapshot_ok;
+      board;
+    }
+  in
+  let rb = Protocol.Types.snapshot_response_to_bytes snap_response in
+  check "snapshot response length" (Bytes.length rb = 521);
+  (match Protocol.Types.snapshot_response_of_bytes rb with
+   | None -> failwith "snapshot response decoded to None"
+   | Some r ->
+     check "snapshot response status"
+       (r.status = Protocol.Types.Snapshot_ok);
+     check "snapshot response id" (r.request_id = 92l);
+     check "snapshot response x" (r.board_x = 999);
+     check "snapshot response y" (r.board_y = 999);
+     check "snapshot response board length" (Array.length r.board = 64);
+     check "snapshot response empty square" (r.board.(0) = 0L);
+     check "snapshot response piece"
+       (r.board.(1) = Int64.of_int 1001));
+
+  let failed =
+    {
+      snap_response with
+      status = Protocol.Types.Snapshot_failed;
+      board = Array.make 64 1L;
+    }
+  in
+  (match Protocol.Types.snapshot_response_of_bytes
+           (Protocol.Types.snapshot_response_to_bytes failed) with
+   | None -> failwith "failed snapshot decoded to None"
+   | Some r ->
+     check "failed snapshot status" (r.status = Protocol.Types.Snapshot_failed);
+     check "failed snapshot board is zero"
+       (Array.for_all (Int64.equal 0L) r.board));
+
+  expect_invalid "snapshot response wrong board size" (fun () ->
+      Protocol.Types.snapshot_response_to_bytes
+        { snap_response with board = Array.make 63 0L });
+  check "snapshot response wrong length"
+    (Protocol.Types.snapshot_response_of_bytes (Bytes.create 520) = None);
 
   Printf.printf "All protocol move codec tests passed.\n"

@@ -112,6 +112,9 @@ let () =
   in
   check "capture sequence" (capture.sequence = 2L);
   check "capture id" (Piece.id capture.captured_piece = Piece.id black_knight);
+  let snapshot1 = Game_state.snapshot_board state ~board_x:1 ~board_y:0 in
+  check "capture snapshot destination" (Piece.id snapshot1.(39) = Piece.id white_rook);
+  check "capture snapshot source" (Piece.is_empty snapshot1.(36));
   (match Ledger.get_event (with_ledger Fun.id) 2L with
    | None -> failwith "missing ledger event 2"
    | Some event ->
@@ -131,6 +134,10 @@ let () =
   check "en passant captured" (Piece.id ep.captured_piece = Piece.id epc);
   check "en passant destination empty"
     (Piece.is_empty (Board.get board (pos 0 0 3 3)));
+  let snapshot_ep = Game_state.snapshot_board state ~board_x:0 ~board_y:0 in
+  check "en passant snapshot pawn" (Piece.id snapshot_ep.(19) = Piece.id epp);
+  check "en passant snapshot captured square"
+    (Piece.is_empty snapshot_ep.(27));
   (match Ledger.get_event (with_ledger Fun.id) 3L with
    | None -> failwith "missing ledger event 3"
    | Some event ->
@@ -151,6 +158,9 @@ let () =
   in
   check "castle king" (Piece.id (Board.get board (pos 0 0 6 7)) = Piece.id king);
   check "castle rook" (Piece.id (Board.get board (pos 0 0 5 7)) = Piece.id rook2);
+  let snapshot_castle = Game_state.snapshot_board state ~board_x:0 ~board_y:0 in
+  check "castle snapshot king" (Piece.id snapshot_castle.(62) = Piece.id king);
+  check "castle snapshot rook" (Piece.id snapshot_castle.(61) = Piece.id rook2);
   (match Ledger.get_event (with_ledger Fun.id) 4L with
    | None -> failwith "missing ledger event 4"
    | Some event ->
@@ -169,6 +179,9 @@ let () =
   check "promotion id" (Piece.id promoted.moved_piece = Piece.id promo);
   check "promotion type"
     (Piece.piece_type promoted.moved_piece = Piece.Promoted_pawn);
+  let snapshot_promoted = Game_state.snapshot_board state ~board_x:0 ~board_y:0 in
+  check "promotion snapshot type"
+    (Piece.piece_type snapshot_promoted.(4) = Piece.Promoted_pawn);
   (match Ledger.get_event (with_ledger Fun.id) 5L with
    | None -> failwith "missing ledger event 5"
    | Some event ->

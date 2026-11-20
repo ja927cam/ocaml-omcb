@@ -81,41 +81,93 @@ let response_of_result request_id
     rejected_response ~request_id Protocol.Types.rejection_worker_stopped
   | Error State_worker.Worker_failed ->
     rejected_response ~request_id Protocol.Types.rejection_worker_failed
+  | Error State_worker.Invalid_request ->
+    rejected_response ~request_id Protocol.Types.rejection_invalid_request
 
-let send_response socket response =
-  let bytes = Protocol.Types.response_to_bytes response in
+let send_bytes socket bytes =
   Dream.send ~text_or_binary:`Binary socket (Bytes.to_string bytes)
+
+let snapshot_failure ?(request_id = 0l) ?(board_x = 0) ?(board_y = 0) () =
+  Protocol.Types.
+    {
+      request_id;
+      board_x;
+      board_y;
+      status = Snapshot_failed;
+      board = Array.make 64 0L;
+    }
+
+let snapshot_success (request : Protocol.Types.snapshot_request) board =
+  Protocol.Types.
+    {
+      request_id = request.Protocol.Types.request_id;
+      board_x = request.board_x;
+      board_y = request.board_y;
+      status = Snapshot_ok;
+      board;
+    }
 
 let handle_socket worker socket =
   let rec loop () =
     match%lwt Dream.receive socket with
     | None -> Lwt.return_unit
     | Some data ->
+      let bytes = Bytes.of_string data in
       let response_lwt =
-        match Protocol.Types.move_request_of_bytes (Bytes.of_string data) with
-        | None ->
-          Lwt.return
-            (rejected_response Protocol.Types.rejection_invalid_request)
-        | Some wire ->
-          (match to_request wire with
-           | exception Invalid_argument _ ->
+        match String.length data with
+        | 14 ->
+          (match Protocol.Types.move_request_of_bytes bytes with
+           | None ->
              Lwt.return
-               (rejected_response ~request_id:wire.request_id
-                  Protocol.Types.rejection_invalid_request)
-           | request ->
+               (`Move
+                  (rejected_response Protocol.Types.rejection_invalid_request))
+           | Some wire ->
+             (match to_request wire with
+              | exception Invalid_argument _ ->
+                Lwt.return
+                  (`Move
+                     (rejected_response ~request_id:wire.request_id
+                        Protocol.Types.rejection_invalid_request))
+              | request ->
+                Lwt.map
+                  (fun result ->
+                    match result with
+                    | Ok result ->
+                      `Move
+                        (response_of_result request.request_id (Ok result))
+                    | Error error ->
+                      `Move
+                        (response_of_result request.request_id (Error error)))
+                  (State_worker.submit worker request)))
+        | 9 ->
+          (match Protocol.Types.snapshot_request_of_bytes bytes with
+           | None -> Lwt.return (`Snapshot (snapshot_failure ()))
+           | Some request ->
              Lwt.map
                (fun result ->
                  match result with
-                 | Ok result ->
-                   response_of_result request.request_id (Ok result)
-                 | Error error ->
-                   response_of_result request.request_id (Error error))
-               (State_worker.submit worker request))
+                 | Ok board -> `Snapshot (snapshot_success request board)
+                 | Error _ ->
+                   `Snapshot
+                     (snapshot_failure ~request_id:request.request_id
+                        ~board_x:request.board_x ~board_y:request.board_y ()))
+               (State_worker.submit_snapshot worker
+                  ~board_x:request.board_x ~board_y:request.board_y))
+        | _ ->
+          Lwt.return
+            (`Move
+               (rejected_response Protocol.Types.rejection_invalid_request))
       in
       let%lwt response = response_lwt in
       Lwt.catch
         (fun () ->
-          let%lwt () = send_response socket response in
+          let bytes =
+            match response with
+            | `Move response -> Protocol.Types.response_to_bytes response
+            | `Snapshot response ->
+              Protocol.Types.snapshot_response_to_bytes response
+          in
+          let%lwt () = send_bytes socket bytes in
           loop ())
         (fun _ -> Lwt.return_unit)
   in

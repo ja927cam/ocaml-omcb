@@ -11,6 +11,7 @@ type submit_error =
   | Queue_full
   | Worker_stopped
   | Worker_failed
+  | Invalid_request
 
 type metrics = {
   queue_depth : int;
@@ -34,7 +35,15 @@ val start : config:config -> Game_state.t -> t
 
 val submit :
   t -> Move_request.t -> (Move_engine.result, submit_error) result Lwt.t
-(** Resolves after the request has been processed, not merely queued. *)
+(** Resolves after the move has been processed, not merely queued. *)
+
+val submit_snapshot :
+  t ->
+  board_x:int ->
+  board_y:int ->
+  (Piece.t array, submit_error) result Lwt.t
+(** Snapshot a board through the same FIFO queue. Returns a 64-element copy in
+    row-major order. Invalid coordinates return [Invalid_request]. *)
 
 val stop : t -> unit Lwt.t
 (** Stop accepting new requests, finish queued requests, then resolve. *)

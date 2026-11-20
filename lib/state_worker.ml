@@ -6,6 +6,7 @@ type submit_error =
   | Queue_full
   | Worker_stopped
   | Worker_failed
+  | Invalid_request
 
 type metrics = {
   queue_depth : int;
@@ -18,9 +19,17 @@ type metrics = {
   max_queue_wait_ns : int64;
 }
 
+type request =
+  | Move of Move_request.t
+  | Snapshot of { board_x : int; board_y : int }
+
+type response =
+  | Move_result of Move_engine.result
+  | Snapshot_result of Piece.t array
+
 type item = {
-  request : Move_request.t;
-  promise : (Move_engine.result, submit_error) result Lwt.u;
+  request : request;
+  promise : (response, submit_error) result Lwt.u;
   enqueued_ns : int64;
 }
 
@@ -81,15 +90,22 @@ let batch_size = 64
 
 let process_one t item =
   let started_ns = now_ns () in
-  match Move_engine.process t.state item.request with
-  | result ->
+  match item.request with
+  | Move request ->
+    let result = Move_engine.process t.state request in
     let finished_ns = now_ns () in
     update_metrics t ~started_ns ~finished_ns item;
     (match result with
      | Move_engine.Accepted _ -> ()
      | Move_engine.Rejected _ ->
        t.requests_rejected <- Int64.succ t.requests_rejected);
-    Lwt.wakeup_later item.promise (Ok result);
+    Lwt.wakeup_later item.promise (Ok (Move_result result));
+    true
+  | Snapshot { board_x; board_y } ->
+    let board = Game_state.snapshot_board t.state ~board_x ~board_y in
+    let finished_ns = now_ns () in
+    update_metrics t ~started_ns ~finished_ns item;
+    Lwt.wakeup_later item.promise (Ok (Snapshot_result board));
     true
   | exception exn ->
     fail_queue t exn;
@@ -153,7 +169,7 @@ let schedule_notification t =
         Lwt.return_unit)
   end
 
-let submit t request =
+let enqueue t request =
   if t.failed then Lwt.return (Error Worker_failed)
   else if not t.accepting then Lwt.return (Error Worker_stopped)
   else if t.depth >= t.settings.queue_capacity then
@@ -167,6 +183,26 @@ let submit t request =
     schedule_notification t;
     promise
   end
+
+let submit t request =
+  Lwt.map
+    (function
+      | Ok (Move_result result) -> Ok result
+      | Ok (Snapshot_result _) -> assert false
+      | Error error -> Error error)
+    (enqueue t (Move request))
+
+let submit_snapshot t ~board_x ~board_y =
+  if
+    board_x < 0 || board_x >= 1000 || board_y < 0 || board_y >= 1000
+  then Lwt.return (Error Invalid_request)
+  else
+    Lwt.map
+      (function
+        | Ok (Snapshot_result board) -> Ok board
+        | Ok (Move_result _) -> assert false
+        | Error error -> Error error)
+      (enqueue t (Snapshot { board_x; board_y }))
 
 let stop t =
   if t.accepting then begin

@@ -98,4 +98,36 @@ let () =
     (Piece.id (Board.get board (pos 0 0 0 0)) = 1l);
   check "last board id formula"
     (Piece.id (Board.get board (pos 999 999 7 7)) = 32_000_000l);
+  (* Snapshot semantics. *)
+  let sequence_before = Game_state.sequence state in
+  let ledger_before = Ledger.next_seq (with_ledger Fun.id) in
+  let snapshot = Game_state.snapshot_board state ~board_x:0 ~board_y:0 in
+  check "snapshot length" (Array.length snapshot = 64);
+  check "snapshot black rook" (Piece.id snapshot.(0) = 1l);
+  check "snapshot black king"
+    (Piece.piece_type snapshot.(4) = Piece.King
+    && not (Piece.is_white snapshot.(4)));
+  check "snapshot white pawn"
+    (Piece.piece_type snapshot.(48) = Piece.Pawn && Piece.is_white snapshot.(48));
+  check "snapshot empty square" (Piece.is_empty snapshot.(36));
+  check "snapshot sequence unchanged" (Game_state.sequence state = sequence_before);
+  check "snapshot ledger unchanged" (Ledger.next_seq (with_ledger Fun.id) = ledger_before);
+
+  (* Modified board snapshot is a copy and reflects the change. *)
+  Game_state.with_state state (fun ~board ~ledger:_ ~sequence ->
+      Board.clear_board board { Board.board_x = 0; board_y = 0 };
+      let p =
+        Piece.create ~id:123l ~piece_type:Piece.Knight ~is_white:false
+      in
+      Board.set board (pos 0 0 1 2) p;
+      (sequence, ()));
+  let modified = Game_state.snapshot_board state ~board_x:0 ~board_y:0 in
+  check "modified snapshot" (Piece.id modified.(17) = 123l);
+  check "modified snapshot empty" (Piece.is_empty modified.(0));
+  modified.(18) <- Piece.create ~id:1l ~piece_type:Piece.Pawn ~is_white:true;
+  let again = Game_state.snapshot_board state ~board_x:0 ~board_y:0 in
+  check "snapshot is a copy" (Piece.is_empty again.(18));
+  (match Game_state.snapshot_board state ~board_x:1000 ~board_y:0 with
+   | exception Invalid_argument _ -> ()
+   | _ -> failwith "FAIL: invalid snapshot coordinates");
   Printf.printf "All Game_state initialisation tests passed.\n"

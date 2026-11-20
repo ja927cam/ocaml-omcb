@@ -288,3 +288,111 @@ let response_of_bytes b =
         captured_piece_id = get_i32_le b 21;
         rejection = Char.code (Bytes.get b 25);
       }
+
+(* {2 Snapshot requests and responses} *)
+
+let snapshot_message_type = 0x02
+let snapshot_request_bytes = 9
+let snapshot_response_bytes = 521
+
+let get_u16_le b off =
+  Char.code (Bytes.get b off) lor (Char.code (Bytes.get b (off + 1)) lsl 8)
+
+let set_u16_le b off v =
+  Bytes.set b off (Char.chr (v land 0xff));
+  Bytes.set b (off + 1) (Char.chr ((v lsr 8) land 0xff))
+
+let valid_board_coord x = x >= 0 && x < 1000
+
+type snapshot_request = {
+  request_id : int32;
+  board_x : int;
+  board_y : int;
+}
+
+type snapshot_status =
+  | Snapshot_ok
+  | Snapshot_failed
+
+type snapshot_response = {
+  request_id : int32;
+  board_x : int;
+  board_y : int;
+  status : snapshot_status;
+  board : int64 array;
+}
+
+let snapshot_request_to_bytes (request : snapshot_request) =
+  if
+    not
+      (valid_board_coord request.board_x
+      && valid_board_coord request.board_y)
+  then
+    invalid_arg
+      "Protocol.Types.snapshot_request_to_bytes: board coordinates out of range";
+  let b = Bytes.create snapshot_request_bytes in
+  Bytes.set b 0 (Char.chr snapshot_message_type);
+  set_i32_le b 1 request.request_id;
+  set_u16_le b 5 request.board_x;
+  set_u16_le b 7 request.board_y;
+  b
+
+let snapshot_request_of_bytes b : snapshot_request option =
+  if Bytes.length b <> snapshot_request_bytes then None
+  else if Char.code (Bytes.get b 0) <> snapshot_message_type then None
+  else
+    let board_x = get_u16_le b 5 and board_y = get_u16_le b 7 in
+    if not (valid_board_coord board_x && valid_board_coord board_y) then None
+    else
+      Some
+        {
+          request_id = get_i32_le b 1;
+          board_x;
+          board_y;
+        }
+
+let snapshot_response_to_bytes (response : snapshot_response) =
+  if
+    not
+      (valid_board_coord response.board_x
+      && valid_board_coord response.board_y)
+  then
+    invalid_arg
+      "Protocol.Types.snapshot_response_to_bytes: board coordinates out of range";
+  let success = response.status = Snapshot_ok in
+  if success && Array.length response.board <> 64 then
+    invalid_arg
+      "Protocol.Types.snapshot_response_to_bytes: expected 64 pieces";
+  let b = Bytes.create snapshot_response_bytes in
+  Bytes.set b 0 (Char.chr (if success then 1 else 0));
+  set_i32_le b 1 response.request_id;
+  set_u16_le b 5 response.board_x;
+  set_u16_le b 7 response.board_y;
+  if success then
+    Array.iteri
+      (fun i piece -> set_i64_le b (9 + (i * 8)) piece)
+      response.board;
+  b
+
+let snapshot_response_of_bytes b : snapshot_response option =
+  if Bytes.length b <> snapshot_response_bytes then None
+  else
+    let status =
+      match Char.code (Bytes.get b 0) with
+      | 1 -> Snapshot_ok
+      | _ -> Snapshot_failed
+    in
+    let board_x = get_u16_le b 5 and board_y = get_u16_le b 7 in
+    if not (valid_board_coord board_x && valid_board_coord board_y) then None
+    else
+      let board =
+        Array.init 64 (fun i -> get_i64_le b (9 + (i * 8)))
+      in
+      Some
+        {
+          request_id = get_i32_le b 1;
+          board_x;
+          board_y;
+          status;
+          board;
+        }
