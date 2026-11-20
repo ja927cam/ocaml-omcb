@@ -189,5 +189,25 @@ let () =
        (Int16.to_int event.flags = Move_engine.flag_promotion));
 
   check "final sequence" (Game_state.sequence state = 5L);
+
+  (* Client signature identifies the source without a 25-bit ID. *)
+  let signature_piece = piece Piece.Rook true in
+  place board 2 0 0 0 signature_piece;
+  let signature = Piece.client_signature ~square:0 signature_piece in
+  let signature_accepted =
+    expect_accepted
+      (Move_engine.process state
+         (move_request 12l (pos 2 0 0 0) (pos 2 0 0 2) signature))
+  in
+  check "signature accepted" (signature_accepted.request_id = 12l);
+  check "signature piece moved"
+    (Piece.id (Board.get board (pos 2 0 0 2)) = Piece.id signature_piece);
+  let stale_signature_piece = piece Piece.Rook true in
+  place board 3 0 0 0 stale_signature_piece;
+  expect_rejected Move_engine.Stale_piece
+    (Move_engine.process state
+       (move_request 13l (pos 3 0 0 0) (pos 3 0 0 2)
+          (Int32.succ (Piece.client_signature ~square:0 stale_signature_piece))));
+
   ignore b0;
   Printf.printf "All Move_engine transaction tests passed.\n"

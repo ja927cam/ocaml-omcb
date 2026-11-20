@@ -122,6 +122,36 @@ let test_piece () =
     && Piece.move_count promoted_decorated = 1
     && Piece.capture_count promoted_decorated = 1);
 
+  (* Compact client snapshot byte and move signature. *)
+  let white_pawn = Piece.create ~id:10l ~piece_type:Piece.Pawn ~is_white:true in
+  let black_pawn = Piece.create ~id:11l ~piece_type:Piece.Pawn ~is_white:false in
+  check "client byte white pawn original" (Piece.client_byte white_pawn = 19);
+  check "client byte black pawn original" (Piece.client_byte black_pawn = 18);
+  check "client byte empty" (Piece.client_byte Piece.empty = 0);
+  check "client byte en passant"
+    (Piece.client_byte (Piece.with_just_double_moved white_pawn true) = 51);
+  check "client byte moved pawn clears original"
+    (Piece.client_byte (Piece.increment_move_count white_pawn) = 3);
+  let white_rook = Piece.create ~id:12l ~piece_type:Piece.Rook ~is_white:true in
+  check "client byte castling rook" (Piece.client_byte white_rook = 57);
+  check "client byte moved rook"
+    (Piece.client_byte (Piece.increment_move_count white_rook) = 9);
+  let black_bishop = Piece.create ~id:13l ~piece_type:Piece.Bishop ~is_white:false in
+  check "client byte bishop before knight"
+    (Piece.client_byte black_bishop = 20);
+  let white_knight = Piece.create ~id:14l ~piece_type:Piece.Knight ~is_white:true in
+  check "client byte knight" (Piece.client_byte white_knight = 23);
+  let promoted =
+    Piece.promote (Piece.increment_move_count white_pawn) Piece.Promoted_pawn
+  in
+  check "client byte promoted pawn is queen" (Piece.client_byte promoted = 11);
+  check "client signature"
+    (Piece.client_signature ~square:52 white_pawn = Int32.of_int ((52 lsl 8) lor 19));
+  check "client empty signature"
+    (Piece.client_signature ~square:0 Piece.empty = 0l);
+  expect_invalid "client signature square" (fun () ->
+      Piece.client_signature ~square:64 white_pawn);
+
   expect_invalid "promote empty" (fun () -> Piece.promote Piece.empty Piece.Queen);
   expect_invalid "increment empty" (fun () -> Piece.increment_move_count Piece.empty);
   check "empty id" (Piece.id Piece.empty = 0l);

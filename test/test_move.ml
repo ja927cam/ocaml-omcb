@@ -274,9 +274,11 @@ let test_cross_board_capture () =
 
   reset ();
   let _ = place Piece.Rook true 0 0 0 0 in
-  ignore (expect_legal (move (pos 0 0 0 0) (pos 16 0 0 0)));
+  ignore (expect_legal (move (pos 0 0 0 0) (pos 4 0 4 0)));
   expect_illegal Invalid_geometry
-    (move (pos 0 0 0 0) (pos 16 0 1 0))
+    (move (pos 0 0 0 0) (pos 4 0 5 0));
+  expect_illegal Invalid_geometry
+    (move (pos 0 0 0 0) (pos 4 0 4 1))
 
 let test_en_passant () =
   reset ();

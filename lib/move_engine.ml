@@ -42,7 +42,15 @@ let process state (request : Move_request.t) =
               request_id = request.request_id;
               reason = Invalid_move Move_validator.Empty_source;
             } )
-      else if Piece.id source <> request.expected_piece_id then
+      else if
+        request.expected_piece_id <> 0l
+        && request.expected_piece_id <> Piece.id source
+        && request.expected_piece_id
+           <> Piece.client_signature
+                ~square:
+                  ((request.move.src.square.y * 8) + request.move.src.square.x)
+                source
+      then
         ( sequence,
           Rejected { request_id = request.request_id; reason = Stale_piece } )
       else

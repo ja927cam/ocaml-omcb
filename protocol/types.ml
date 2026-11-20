@@ -298,7 +298,7 @@ let response_of_bytes b =
 
 let snapshot_message_type = 0x02
 let snapshot_request_bytes = 9
-let snapshot_response_bytes = 521
+let snapshot_response_bytes = 9 + 64
 
 let get_u16_le b off =
   Char.code (Bytes.get b off) lor (Char.code (Bytes.get b (off + 1)) lsl 8)
@@ -324,7 +324,7 @@ type snapshot_response = {
   board_x : int;
   board_y : int;
   status : snapshot_status;
-  board : int64 array;
+  board : Bytes.t; (* 64 one-byte client pieces, row-major *)
 }
 
 let snapshot_request_to_bytes (request : snapshot_request) =
@@ -365,7 +365,7 @@ let snapshot_response_to_bytes (response : snapshot_response) =
     invalid_arg
       "Protocol.Types.snapshot_response_to_bytes: board coordinates out of range";
   let success = response.status = Snapshot_ok in
-  if success && Array.length response.board <> 64 then
+  if success && Bytes.length response.board <> 64 then
     invalid_arg
       "Protocol.Types.snapshot_response_to_bytes: expected 64 pieces";
   let b = Bytes.create snapshot_response_bytes in
@@ -373,10 +373,7 @@ let snapshot_response_to_bytes (response : snapshot_response) =
   set_i32_le b 1 response.request_id;
   set_u16_le b 5 response.board_x;
   set_u16_le b 7 response.board_y;
-  if success then
-    Array.iteri
-      (fun i piece -> set_i64_le b (9 + (i * 8)) piece)
-      response.board;
+  if success then Bytes.blit response.board 0 b 9 64;
   b
 
 let snapshot_response_of_bytes b : snapshot_response option =
@@ -390,9 +387,7 @@ let snapshot_response_of_bytes b : snapshot_response option =
     let board_x = get_u16_le b 5 and board_y = get_u16_le b 7 in
     if not (valid_board_coord board_x && valid_board_coord board_y) then None
     else
-      let board =
-        Array.init 64 (fun i -> get_i64_le b (9 + (i * 8)))
-      in
+      let board = Bytes.sub b 9 64 in
       Some
         {
           request_id = get_i32_le b 1;
@@ -438,3 +433,38 @@ let wire_response_of_bytes bytes =
       snapshot_response_of_bytes (Bytes.sub bytes 1 snapshot_response_bytes)
       |> Option.map (fun response -> Wire_snapshot response)
     | _ -> None
+
+(* Project a packed piece to the one-byte client snapshot representation.
+   This is the inverse direction of the move-response update: the client
+   receives a moved_piece int64 and refreshes its local byte without a new
+   snapshot. The bit layout is the Piece.t layout documented in lib/piece.ml. *)
+let client_byte_of_packed value =
+  if Int64.equal value 0L then 0
+  else begin
+    let code =
+      Int64.logand (Int64.shift_right_logical value 25) 0xFL |> Int64.to_int
+    in
+    let type_code =
+      match code with
+      | 1 -> 1
+      | 2 -> 3 (* knight *)
+      | 3 -> 2 (* bishop *)
+      | 4 -> 4
+      | 5 -> 5
+      | 6 -> 6
+      | 7 -> 5 (* promoted pawn renders as a queen *)
+      | _ -> 0
+    in
+    let white = Int64.logand value (Int64.shift_left 1L 29) <> 0L in
+    let moves =
+      Int64.logand (Int64.shift_right_logical value 40) 0xFFFL |> Int64.to_int
+    in
+    let double = Int64.logand value (Int64.shift_left 1L 30) <> 0L in
+    let byte = type_code lsl 1 in
+    let byte = if white then byte lor 1 else byte in
+    let byte = if moves = 0 then byte lor 0x10 else byte in
+    match type_code with
+    | 1 -> if double then byte lor 0x20 else byte
+    | 4 | 6 -> if moves = 0 then byte lor 0x20 else byte
+    | _ -> byte
+  end

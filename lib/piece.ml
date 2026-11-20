@@ -180,6 +180,41 @@ let promote t piece_type =
   Int64.logor cleared
     (Int64.shift_left (Int64.of_int (type_code piece_type)) type_shift)
 
+(* Compact one-byte representation sent in board snapshots.
+
+   bit 0    white
+   bits 1-3 type: 0 empty, 1 pawn, 2 bishop, 3 knight, 4 rook, 5 queen, 6 king
+   bit 4    on its original board (never moved)
+   bit 5    en passantable (pawn) or castling-eligible (king/rook)
+   bits 6-7 zero *)
+
+let client_type_code = function
+  | Pawn -> 1
+  | Bishop -> 2
+  | Knight -> 3
+  | Rook -> 4
+  | Queen | Promoted_pawn -> 5
+  | King -> 6
+
+let client_byte t =
+  if is_empty t then 0
+  else
+    let byte = client_type_code (piece_type t) lsl 1 in
+    let byte = if is_white t then byte lor 1 else byte in
+    let byte = if move_count t = 0 then byte lor (1 lsl 4) else byte in
+    let byte =
+      match piece_type t with
+      | Pawn -> if just_double_moved t then byte lor (1 lsl 5) else byte
+      | King | Rook -> if move_count t = 0 then byte lor (1 lsl 5) else byte
+      | _ -> byte
+    in
+    byte
+
+let client_signature ~square t =
+  if square < 0 || square >= 64 then
+    invalid_arg "Piece.client_signature: square is out of range";
+  Int32.of_int ((square lsl 8) lor client_byte t)
+
 let to_string t =
   if is_empty t then "empty"
   else

@@ -13,8 +13,7 @@ let empty = '\000'
 type board_state = {
   bx : int;
   by : int;
-  mutable pieces : Bytes.t;
-  mutable ids : int32 array;
+  mutable pieces : Bytes.t; (* 64 one-byte client pieces *)
   mutable loaded : bool;
   mutable pending_request : int32 option;
 }
@@ -22,7 +21,8 @@ type board_state = {
 type drag = {
   state : board_state;
   from : int;
-  piece : char;
+  piece_byte : char;
+  piece : char; (* glyph for the floating piece *)
   x : float;
   y : float;
 }
@@ -35,34 +35,35 @@ type pan = {
 }
 
 type normal_undo = {
-  state : board_state;
+  src_state : board_state;
+  dst_state : board_state;
   src : int;
   dst : int;
   src_piece : char;
   dst_piece : char;
-  src_id : int32;
-  dst_id : int32;
 }
 
 type castle_info = {
-  state : board_state;
+  king_src_state : board_state;
+  king_dst_state : board_state;
+  rook_src_state : board_state;
+  rook_dst_state : board_state;
   king_src : int;
   king_dst : int;
   rook_src : int;
   rook_dst : int;
   king_piece : char;
   rook_piece : char;
-  king_id : int32;
-  rook_id : int32;
 }
 
 type en_passant_info = {
-  state : board_state;
+  src_state : board_state;
+  dst_state : board_state;
+  captured_state : board_state;
   src : int;
   dst : int;
   captured : int;
   pawn_piece : char;
-  pawn_id : int32;
 }
 
 type special_action =
@@ -80,28 +81,28 @@ let clamp_int v lo hi = max lo (min hi v)
 let clamp_float v lo hi = max lo (min hi v)
 
 let empty_board () = Bytes.make 64 empty
-let empty_ids () = Array.make 64 0l
 
-let decode_piece value =
-  if Int64.equal value 0L then (empty, 0l)
+let glyph_of_byte byte =
+  if byte = empty then empty
   else
-    let id = Int64.logand value 0x1FFFFFFL |> Int64.to_int32 in
-    let code =
-      Int64.logand (Int64.shift_right_logical value 25) 0xFL |> Int64.to_int
-    in
-    let white = Int64.logand value (Int64.shift_left 1L 29) <> 0L in
+    let code = (Char.code byte lsr 1) land 7 in
     let glyph =
       match code with
       | 1 -> 'P'
-      | 2 -> 'N'
-      | 3 -> 'B'
+      | 2 -> 'B'
+      | 3 -> 'N'
       | 4 -> 'R'
       | 5 -> 'Q'
       | 6 -> 'K'
-      | 7 -> 'Q' (* promoted pawn *)
       | _ -> '?'
     in
-    ((if white then glyph else Char.lowercase_ascii glyph), id)
+    if Char.code byte land 1 = 1 then glyph
+    else Char.lowercase_ascii glyph
+
+let on_original_board byte = Char.code byte land 0x10 <> 0
+let en_passantable byte = Char.code byte land 0x20 <> 0
+let piece_type_code byte = (Char.code byte lsr 1) land 7
+let white_byte byte = Char.code byte land 1 = 1
 
 let piece_glyphs =
   [| "\xe2\x99\x9f"; "\xe2\x99\x9e"; "\xe2\x99\x9d";
@@ -193,6 +194,22 @@ let main () =
   let page_bg = C2d.color (Jstr.v "#1b1b1b") in
   let src_hl = C2d.color (Jstr.v "rgba(255, 235, 59, 0.45)") in
   let dst_hl = C2d.color (Jstr.v "rgba(20, 85, 30, 0.45)") in
+
+  (* One board tile blit replaces 64 per-square fills on every frame. *)
+  let board_canvas =
+    Canvas.create ~w:(int_of_float board_px) ~h:(int_of_float board_px) []
+  in
+  let board_ctx = C2d.get_context board_canvas in
+  for row = 0 to 7 do
+    for col = 0 to 7 do
+      C2d.set_fill_style board_ctx
+        (if (row + col) land 1 = 0 then light else dark);
+      C2d.fill_rect board_ctx
+        ~x:(float col *. cell_px) ~y:(float row *. cell_px)
+        ~w:cell_px ~h:cell_px
+    done
+  done;
+  let board_tile = C2d.image_src_of_el (Canvas.to_el board_canvas) in
 
   let atlas_canvas = Canvas.create ~w:(6 * 64) ~h:(2 * 64) [] in
   let atlas_ctx = C2d.get_context atlas_canvas in
@@ -303,7 +320,6 @@ let main () =
           bx;
           by;
           pieces = empty_board ();
-          ids = empty_ids ();
           loaded = false;
           pending_request = None;
         }
@@ -469,21 +485,12 @@ let main () =
         (int_of_float (floor (!view_top +. visible_h ())))
     in
 
-    (* Board squares first. *)
+    (* Board tiles first: one blit per board. *)
     for by = y_first to y_last do
       for bx = x_first to x_last do
         let ox = (float bx -. !view_left) *. board_px in
         let oy = (float by -. !view_top) *. board_px in
-        for row = 0 to 7 do
-          for col = 0 to 7 do
-            C2d.set_fill_style ctx
-              (if (row + col) land 1 = 0 then light else dark);
-            C2d.fill_rect ctx
-              ~x:(ox +. (float col *. cell_px))
-              ~y:(oy +. (float row *. cell_px))
-              ~w:cell_px ~h:cell_px
-          done
-        done
+        C2d.draw_image ctx board_tile ~x:ox ~y:oy
       done
     done;
 
@@ -500,18 +507,22 @@ let main () =
          ~y:(oy +. (float row *. cell_px))
          ~w:cell_px ~h:cell_px;
        (match board_at_canvas d.x d.y with
-        | Some (bx, by, col, row)
-          when bx = d.state.bx && by = d.state.by ->
-          let ox = (float bx -. !view_left) *. board_px in
-          let oy = (float by -. !view_top) *. board_px in
-          if (row * 8) + col <> d.from then begin
+        | Some (bx, by, col, row) ->
+          let target = state_of bx by in
+          let dst = (row * 8) + col in
+          if
+            target.loaded
+            && (bx <> d.state.bx || by <> d.state.by || dst <> d.from)
+          then begin
+            let ox = (float bx -. !view_left) *. board_px in
+            let oy = (float by -. !view_top) *. board_px in
             C2d.set_fill_style ctx dst_hl;
             C2d.fill_rect ctx
               ~x:(ox +. (float col *. cell_px))
               ~y:(oy +. (float row *. cell_px))
               ~w:cell_px ~h:cell_px
           end
-        | _ -> ()));
+        | None -> ()));
 
     (* Pieces. *)
     for by = y_first to y_last do
@@ -528,7 +539,7 @@ let main () =
                 match !drag with
                 | Some d when d.state == state && d.from = i -> ()
                 | _ ->
-                  draw_piece ctx atlas piece
+                  draw_piece ctx atlas (glyph_of_byte piece)
                     (ox +. (float (i mod 8) *. cell_px))
                     (oy +. (float (i / 8) *. cell_px))
                     cell_px
@@ -569,8 +580,8 @@ let main () =
   in
   ignore (Ev.listen Ev.resize on_resize (Window.as_target G.window));
 
-  let send_move ~request_id ~expected_piece_id ~bx ~by src dst =
-    let position sq =
+  let send_move ~request_id ~expected_piece_id ~src_board ~dst_board src dst =
+    let position (bx, by) sq =
       {
         Protocol.Types.board_x = bx;
         board_y = by;
@@ -583,7 +594,10 @@ let main () =
         Protocol.Types.request_id;
         expected_piece_id;
         move =
-          { Protocol.Types.src = position src; dst = position dst };
+          {
+            Protocol.Types.src = position src_board src;
+            dst = position dst_board dst;
+          };
       }
     in
     let data = Protocol.Types.move_request_to_bytes request in
@@ -595,30 +609,21 @@ let main () =
   in
 
   let restore_normal (u : normal_undo) =
-    Bytes.unsafe_set u.state.pieces u.src u.src_piece;
-    Bytes.unsafe_set u.state.pieces u.dst u.dst_piece;
-    u.state.ids.(u.src) <- u.src_id;
-    u.state.ids.(u.dst) <- u.dst_id
+    Bytes.unsafe_set u.src_state.pieces u.src u.src_piece;
+    Bytes.unsafe_set u.dst_state.pieces u.dst u.dst_piece
   in
 
   let apply_castle (c : castle_info) =
-    Bytes.unsafe_set c.state.pieces c.king_src empty;
-    Bytes.unsafe_set c.state.pieces c.rook_src empty;
-    Bytes.unsafe_set c.state.pieces c.king_dst c.king_piece;
-    Bytes.unsafe_set c.state.pieces c.rook_dst c.rook_piece;
-    c.state.ids.(c.king_src) <- 0l;
-    c.state.ids.(c.rook_src) <- 0l;
-    c.state.ids.(c.king_dst) <- c.king_id;
-    c.state.ids.(c.rook_dst) <- c.rook_id
+    Bytes.unsafe_set c.king_src_state.pieces c.king_src empty;
+    Bytes.unsafe_set c.rook_src_state.pieces c.rook_src empty;
+    Bytes.unsafe_set c.king_dst_state.pieces c.king_dst c.king_piece;
+    Bytes.unsafe_set c.rook_dst_state.pieces c.rook_dst c.rook_piece
   in
 
   let apply_en_passant (e : en_passant_info) =
-    Bytes.unsafe_set e.state.pieces e.src empty;
-    Bytes.unsafe_set e.state.pieces e.captured empty;
-    Bytes.unsafe_set e.state.pieces e.dst e.pawn_piece;
-    e.state.ids.(e.src) <- 0l;
-    e.state.ids.(e.captured) <- 0l;
-    e.state.ids.(e.dst) <- e.pawn_id
+    Bytes.unsafe_set e.src_state.pieces e.src empty;
+    Bytes.unsafe_set e.captured_state.pieces e.captured empty;
+    Bytes.unsafe_set e.dst_state.pieces e.dst e.pawn_piece
   in
 
   let on_pointer_down ev =
@@ -636,12 +641,22 @@ let main () =
           let state = state_of bx by in
           let sq = (row * 8) + col in
           if state.loaded && Bytes.unsafe_get state.pieces sq <> empty then
-            Some (state, sq, Bytes.unsafe_get state.pieces sq)
+            let byte = Bytes.unsafe_get state.pieces sq in
+            Some (state, sq, byte)
           else None
       in
       match drag_state with
-      | Some (state, sq, piece) when button = 0 ->
-        drag := Some { state; from = sq; piece; x = cx; y = cy }
+      | Some (state, sq, byte) when button = 0 ->
+        drag :=
+          Some
+            {
+              state;
+              from = sq;
+              piece_byte = byte;
+              piece = glyph_of_byte byte;
+              x = cx;
+              y = cy;
+            }
       | _ ->
         panning :=
           Some
@@ -675,118 +690,187 @@ let main () =
 
   let on_pointer_up ev =
     match !panning with
-     | Some _ ->
-       panning := None;
-       ensure_window ();
-       request_draw ()
-     | None ->
-       (match !drag with
-        | None -> ()
-        | Some d ->
-          let cx, cy = to_canvas ev in
-          (match board_at_canvas cx cy with
-           | Some (bx, by, col, row)
-             when bx = d.state.bx && by = d.state.by && d.state.loaded ->
-             let dst = (row * 8) + col in
-             if dst <> d.from then begin
-               let request_id = alloc_request_id () in
-               let expected_piece_id = d.state.ids.(d.from) in
-               let dx = (dst mod 8) - (d.from mod 8) in
-               let dy = (dst / 8) - (d.from / 8) in
-               let castle_rook_positions =
-                 let row = d.from / 8 in
-                 let src_x = d.from mod 8 and dst_x = dst mod 8 in
-                 let rook_src_x = src_x + if dx = 2 then 3 else -4 in
-                 let rook_dst_x = dst_x + if dx = 2 then -1 else 1 in
-                 if
-                   rook_src_x >= 0 && rook_src_x < 8 && rook_dst_x >= 0
-                   && rook_dst_x < 8
-                 then Some (row, rook_src_x, rook_dst_x)
-                 else None
-               in
-               let is_castle =
-                 (d.piece = 'k' || d.piece = 'K') && abs dx = 2 && dy = 0
-                 && castle_rook_positions <> None
-               in
-               let is_en_passant =
-                 (d.piece = 'p' || d.piece = 'P') && abs dx = 1
-                 && Bytes.unsafe_get d.state.pieces dst = empty
-               in
-               let action =
-                 if is_castle then begin
-                   let row, rook_src_x, rook_dst_x =
-                     match castle_rook_positions with
-                     | Some p -> p
-                     | None -> assert false
-                   in
-                   Some
-                     (Special
-                        (Castle
-                           {
-                             state = d.state;
-                             king_src = d.from;
-                             king_dst = dst;
-                             rook_src = (row * 8) + rook_src_x;
-                             rook_dst = (row * 8) + rook_dst_x;
-                             king_piece = d.piece;
-                             rook_piece =
-                               Bytes.unsafe_get d.state.pieces
-                                 ((row * 8) + rook_src_x);
-                             king_id = expected_piece_id;
-                             rook_id = d.state.ids.((row * 8) + rook_src_x);
-                           }))
-                 end
-                 else if is_en_passant then
-                   Some
-                     (Special
-                        (En_passant
-                           {
-                             state = d.state;
-                             src = d.from;
-                             dst;
-                             captured = ((d.from / 8) * 8) + (dst mod 8);
-                             pawn_piece = d.piece;
-                             pawn_id = expected_piece_id;
-                           }))
-                 else begin
-                   let undo =
-                     {
-                       state = d.state;
-                       src = d.from;
-                       dst;
-                       src_piece = d.piece;
-                       dst_piece = Bytes.unsafe_get d.state.pieces dst;
-                       src_id = d.state.ids.(d.from);
-                       dst_id = d.state.ids.(dst);
-                     }
-                   in
-                   Bytes.unsafe_set d.state.pieces d.from empty;
-                   Bytes.unsafe_set d.state.pieces dst d.piece;
-                   d.state.ids.(dst) <- expected_piece_id;
-                   d.state.ids.(d.from) <- 0l;
-                   Some (Normal undo)
-                 end
-               in
-               match action with
-               | None -> ()
-               | Some action ->
-                 pending := Some { request_id; action };
-                 set_move_pending true;
-                 if
-                   not
-                     (send_move ~request_id ~expected_piece_id
-                        ~bx:d.state.bx ~by:d.state.by d.from dst)
-                 then begin
-                   (match action with
-                    | Normal undo -> restore_normal undo
-                    | Special _ -> ());
-                   pending := None;
-                   set_move_pending false
-                 end
-             end
-           | _ -> ());
-          drag := None;
-          request_draw ())
+    | Some _ ->
+      panning := None;
+      ensure_window ();
+      request_draw ()
+    | None ->
+      (match !drag with
+       | None -> ()
+       | Some d ->
+         let cx, cy = to_canvas ev in
+         (match board_at_canvas cx cy with
+          | Some (bx, by, col, row) ->
+            let dst_state = state_of bx by in
+            let dst = (row * 8) + col in
+            if dst_state.loaded && dst <> d.from then begin
+              let src_bx = d.state.bx and src_by = d.state.by in
+              let same_board = bx = src_bx && by = src_by in
+              let dst_piece = Bytes.unsafe_get dst_state.pieces dst in
+              let dx =
+                ((bx - src_bx) * 8) + ((dst mod 8) - (d.from mod 8))
+              in
+              let dy =
+                ((by - src_by) * 8) + ((dst / 8) - (d.from / 8))
+              in
+              let pawn = piece_type_code d.piece_byte = 1 in
+              let king = piece_type_code d.piece_byte = 6 in
+              (* Original rule: a capture may cross a board boundary only if
+                 the captured piece has already moved. *)
+              let capture_blocked =
+                (not same_board) && dst_piece <> empty
+                && on_original_board dst_piece
+              in
+              let within_limit = abs dx <= 36 && abs dy <= 36 in
+              if within_limit && not capture_blocked then begin
+                let request_id = alloc_request_id () in
+                let expected_piece_id =
+                  Int32.of_int
+                    ((d.from lsl 8) lor Char.code d.piece_byte)
+                in
+                let castle =
+                  if king && abs dx = 2 && dy = 0 then begin
+                    let src_world_x = (src_bx * 8) + (d.from mod 8) in
+                    let src_world_y = (src_by * 8) + (d.from / 8) in
+                    let dst_world_x = (bx * 8) + (dst mod 8) in
+                    let dst_world_y = (by * 8) + (dst / 8) in
+                    let rook_src_world_x =
+                      src_world_x + if dx = 2 then 3 else -4
+                    in
+                    let rook_dst_world_x =
+                      dst_world_x + if dx = 2 then -1 else 1
+                    in
+                    if
+                      rook_src_world_x >= 0 && rook_src_world_x < 8000
+                      && rook_dst_world_x >= 0 && rook_dst_world_x < 8000
+                    then begin
+                      let rook_src_bx = rook_src_world_x / 8 in
+                      let rook_src_by = src_world_y / 8 in
+                      let rook_dst_bx = rook_dst_world_x / 8 in
+                      let rook_dst_by = dst_world_y / 8 in
+                      let rook_src =
+                        ((src_world_y mod 8) * 8)
+                        + (rook_src_world_x mod 8)
+                      in
+                      let rook_dst =
+                        ((dst_world_y mod 8) * 8)
+                        + (rook_dst_world_x mod 8)
+                      in
+                      let rook_src_state = state_of rook_src_bx rook_src_by in
+                      if rook_src_state.loaded then
+                        Some
+                          {
+                            king_src_state = d.state;
+                            king_dst_state = dst_state;
+                            rook_src_state;
+                            rook_dst_state = state_of rook_dst_bx rook_dst_by;
+                            king_src = d.from;
+                            king_dst = dst;
+                            rook_src;
+                            rook_dst;
+                            king_piece = d.piece_byte;
+                            rook_piece =
+                              Bytes.unsafe_get rook_src_state.pieces rook_src;
+                          }
+                      else None
+                    end
+                    else None
+                  end
+                  else None
+                in
+                let en_passant_capture =
+                  if pawn && abs dx = 1 && dst_piece = empty then begin
+                    let captured_world_x =
+                      (src_bx * 8) + (d.from mod 8) + dx
+                    in
+                    let captured_world_y =
+                      (src_by * 8) + (d.from / 8)
+                    in
+                    if
+                      captured_world_x >= 0 && captured_world_x < 8000
+                      && captured_world_y >= 0 && captured_world_y < 8000
+                    then begin
+                      let cbx = captured_world_x / 8 in
+                      let cby = captured_world_y / 8 in
+                      let captured =
+                        ((captured_world_y mod 8) * 8)
+                        + (captured_world_x mod 8)
+                      in
+                      let captured_state = state_of cbx cby in
+                      if captured_state.loaded then begin
+                        let captured_piece =
+                          Bytes.unsafe_get captured_state.pieces captured
+                        in
+                        if
+                          captured_piece <> empty
+                          && en_passantable captured_piece
+                          && white_byte captured_piece
+                             <> white_byte d.piece_byte
+                        then
+                          Some (captured_state, captured)
+                        else None
+                      end
+                      else None
+                    end
+                    else None
+                  end
+                  else None
+                in
+                let action =
+                  match castle with
+                  | Some castle -> Some (Special (Castle castle))
+                  | None ->
+                    match en_passant_capture with
+                    | Some (captured_state, captured) ->
+                      Some
+                        (Special
+                           (En_passant
+                              {
+                                src_state = d.state;
+                                dst_state;
+                                captured_state;
+                                src = d.from;
+                                dst;
+                                captured;
+                                pawn_piece = d.piece_byte;
+                              }))
+                    | None ->
+                      let undo =
+                        {
+                          src_state = d.state;
+                          dst_state;
+                          src = d.from;
+                          dst;
+                          src_piece = d.piece_byte;
+                          dst_piece;
+                        }
+                      in
+                      Bytes.unsafe_set d.state.pieces d.from empty;
+                      Bytes.unsafe_set dst_state.pieces dst d.piece_byte;
+                      Some (Normal undo)
+                in
+                match action with
+                | None -> ()
+                | Some action ->
+                  pending := Some { request_id; action };
+                  set_move_pending true;
+                  if
+                    not
+                      (send_move ~request_id ~expected_piece_id
+                         ~src_board:(src_bx, src_by) ~dst_board:(bx, by)
+                         d.from dst)
+                  then begin
+                    (match action with
+                     | Normal undo -> restore_normal undo
+                     | Special _ -> ());
+                    pending := None;
+                    set_move_pending false
+                  end
+              end
+            end
+          | None -> ());
+         drag := None;
+         request_draw ())
   in
 
   let on_pointer_cancel _ =
@@ -832,15 +916,7 @@ let main () =
                   when state.pending_request = Some response.request_id ->
                   state.pending_request <- None;
                   if response.status = Protocol.Types.Snapshot_ok then begin
-                    let pieces = empty_board () and ids = empty_ids () in
-                    Array.iteri
-                      (fun i packed ->
-                        let glyph, id = decode_piece packed in
-                        Bytes.unsafe_set pieces i glyph;
-                        ids.(i) <- id)
-                      response.board;
-                    state.pieces <- pieces;
-                    state.ids <- ids;
+                    state.pieces <- response.board;
                     state.loaded <- true
                   end
                   else state.loaded <- false;
@@ -856,11 +932,25 @@ let main () =
                   let accepted =
                     response.status = Protocol.Types.Accepted
                   in
-                  if accepted then
-                    (match p.action with
-                     | Normal _ -> ()
-                     | Special (Castle c) -> apply_castle c
-                     | Special (En_passant e) -> apply_en_passant e)
+                  if accepted then begin
+                    let moved_byte =
+                      Char.chr
+                        (Protocol.Types.client_byte_of_packed
+                           response.moved_piece)
+                    in
+                    match p.action with
+                    | Normal undo ->
+                      Bytes.unsafe_set undo.dst_state.pieces undo.dst moved_byte
+                    | Special (Castle c) ->
+                      apply_castle c;
+                      Bytes.unsafe_set c.king_dst_state.pieces c.king_dst
+                        moved_byte;
+                      Bytes.unsafe_set c.rook_dst_state.pieces c.rook_dst
+                        (Char.chr (Char.code c.rook_piece land 0xCF))
+                    | Special (En_passant e) ->
+                      apply_en_passant e;
+                      Bytes.unsafe_set e.dst_state.pieces e.dst moved_byte
+                  end
                   else
                     (match p.action with
                      | Normal undo -> restore_normal undo

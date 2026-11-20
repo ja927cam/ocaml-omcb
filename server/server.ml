@@ -94,17 +94,20 @@ let snapshot_failure ?(request_id = 0l) ?(board_x = 0) ?(board_y = 0) () =
       board_x;
       board_y;
       status = Snapshot_failed;
-      board = Array.make 64 0L;
+      board = Bytes.make 64 '\000';
     }
 
 let snapshot_success (request : Protocol.Types.snapshot_request) board =
+  let encoded =
+    Bytes.init 64 (fun i -> Char.chr (Piece.client_byte board.(i)))
+  in
   Protocol.Types.
     {
       request_id = request.Protocol.Types.request_id;
       board_x = request.board_x;
       board_y = request.board_y;
       status = Snapshot_ok;
-      board;
+      board = encoded;
     }
 
 let handle_socket worker socket =

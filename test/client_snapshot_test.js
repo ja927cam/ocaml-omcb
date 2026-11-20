@@ -10,7 +10,8 @@
  * 25x25 board window around the centre.
  * This test checks nine visible boards, one-board camera pans in both
  * directions, the cache bound, move persistence across pans and a cache
- * eviction, and that cross-board drags are cancelled.
+ * eviction, that cross-board quiet moves are accepted, and that cross-board
+ * captures of unmoved pieces are blocked locally.
  */
 
 const { spawn } = require("child_process");
@@ -216,6 +217,12 @@ async function main() {
       await sleep(500);
     };
 
+    const settle = async () =>
+      waitFor(
+        async () => (await evaluate("document.body.dataset.movePending")) !== "true",
+        "a move request did not settle"
+      );
+
     // Move the camera by dx/dy boards by dragging an empty square. Positive x
     // moves the camera east, which drags the content west.
     const panCamera = async (dx, dy = 0) => {
@@ -281,10 +288,7 @@ async function main() {
     if ((await piecePixels(BOARD.x, BOARD.y, 4, 6)) > 5) {
       fail("e2 was not cleared after the move");
     }
-    await waitFor(
-      async () => (await evaluate("document.body.dataset.movePending")) !== "true",
-      "the move request did not settle"
-    );
+    await settle();
 
     // East one board: the moved pawn comes with the camera, and the neighbour
     // is untouched.
@@ -323,13 +327,47 @@ async function main() {
     // Return to the centre for the cross-board drag.
     await panCamera(1);
 
-    // A drag from one board to another is cancelled, not sent as a move.
-    const beforeCrossMoveCount = await evaluate("window.__moveRequests.length");
+    // Cross-board captures of unmoved pieces are blocked. Free the eastern
+    // f1 bishop's diagonal, then try to take the unmoved black h1 pawn on the
+    // centre board. The client must not send a request.
     await drag({ boardX: BOARD.x + 1, boardY: BOARD.y, col: 4, row: 6 },
-      { boardX: BOARD.x, boardY: BOARD.y, col: 3, row: 4 });
-    if ((await evaluate("window.__moveRequests.length")) !== beforeCrossMoveCount) {
-      fail("a cross-board drag sent a move request");
+      { boardX: BOARD.x + 1, boardY: BOARD.y, col: 4, row: 4 });
+    await settle();
+    const beforeBlockedCapture = await evaluate("window.__moveRequests.length");
+    await drag({ boardX: BOARD.x + 1, boardY: BOARD.y, col: 5, row: 7 },
+      { boardX: BOARD.x, boardY: BOARD.y, col: 7, row: 1 });
+    if ((await evaluate("window.__moveRequests.length")) !== beforeBlockedCapture) {
+      fail("a cross-board capture of an unmoved piece sent a move request");
     }
+    if ((await piecePixels(BOARD.x, BOARD.y, 7, 1)) <= 20) {
+      fail("the unmoved black pawn disappeared after a blocked cross-board capture");
+    }
+    if ((await piecePixels(BOARD.x + 1, BOARD.y, 5, 7)) <= 20) {
+      fail("the blocked bishop left its source square");
+    }
+
+    // A quiet move may cross a board boundary. Clear the eastern a-file,
+    // walk the rook to a3, then move it to h3 on the centre board.
+    await drag({ boardX: BOARD.x + 1, boardY: BOARD.y, col: 0, row: 6 },
+      { boardX: BOARD.x + 1, boardY: BOARD.y, col: 0, row: 4 });
+    await settle();
+    await drag({ boardX: BOARD.x + 1, boardY: BOARD.y, col: 0, row: 7 },
+      { boardX: BOARD.x + 1, boardY: BOARD.y, col: 0, row: 5 });
+    await settle();
+    const beforeCrossMoveCount = await evaluate("window.__moveRequests.length");
+    await drag({ boardX: BOARD.x + 1, boardY: BOARD.y, col: 0, row: 5 },
+      { boardX: BOARD.x, boardY: BOARD.y, col: 7, row: 5 });
+    if ((await evaluate("window.__moveRequests.length")) !== beforeCrossMoveCount + 1) {
+      fail("a cross-board quiet move did not send a move request");
+    }
+    await waitFor(
+      async () => (await piecePixels(BOARD.x, BOARD.y, 7, 5)) > 20,
+      "the cross-board rook did not appear on the centre board"
+    );
+    if ((await piecePixels(BOARD.x + 1, BOARD.y, 0, 5)) > 5) {
+      fail("the cross-board rook was not cleared from its source board");
+    }
+    await settle();
 
     // Every request must fall inside the 25x25 window of a centre the test
     // actually visited: BOARD.x - 1, BOARD.x or BOARD.x + 1.
@@ -350,6 +388,9 @@ async function main() {
       async () => (await piecePixels(BOARD.x, BOARD.y, 4, 4)) > 20,
       "re-fetching after cache eviction lost the committed move"
     );
+    if ((await piecePixels(BOARD.x, BOARD.y, 7, 5)) <= 20) {
+      fail("re-fetching after cache eviction lost the cross-board rook");
+    }
     if ((await coordsText()) !== `(${BOARD.x}, ${BOARD.y})`) {
       fail(`returning from the eviction lost the query centre: ${await coordsText()}`);
     }

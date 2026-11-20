@@ -130,8 +130,7 @@ let () =
     (Protocol.Types.snapshot_request_of_bytes (Bytes.create 8) = None);
 
   let board =
-    Array.init 64 (fun i ->
-        if i mod 7 = 0 then 0L else Int64.of_int ((i * 1000) + 1))
+    Bytes.init 64 (fun i -> if i mod 7 = 0 then '\000' else Char.chr (i + 1))
   in
   let snap_response =
     {
@@ -143,7 +142,7 @@ let () =
     }
   in
   let rb = Protocol.Types.snapshot_response_to_bytes snap_response in
-  check "snapshot response length" (Bytes.length rb = 521);
+  check "snapshot response length" (Bytes.length rb = 73);
   (match Protocol.Types.snapshot_response_of_bytes rb with
    | None -> failwith "snapshot response decoded to None"
    | Some r ->
@@ -152,16 +151,15 @@ let () =
      check "snapshot response id" (r.request_id = 92l);
      check "snapshot response x" (r.board_x = 999);
      check "snapshot response y" (r.board_y = 999);
-     check "snapshot response board length" (Array.length r.board = 64);
-     check "snapshot response empty square" (r.board.(0) = 0L);
-     check "snapshot response piece"
-       (r.board.(1) = Int64.of_int 1001));
+     check "snapshot response board length" (Bytes.length r.board = 64);
+     check "snapshot response empty square" (Bytes.get r.board 0 = '\000');
+     check "snapshot response piece" (Bytes.get r.board 1 = Char.chr 2));
 
   let failed =
     {
       snap_response with
       status = Protocol.Types.Snapshot_failed;
-      board = Array.make 64 1L;
+      board = Bytes.make 64 '\001';
     }
   in
   (match Protocol.Types.snapshot_response_of_bytes
@@ -170,13 +168,41 @@ let () =
    | Some r ->
      check "failed snapshot status" (r.status = Protocol.Types.Snapshot_failed);
      check "failed snapshot board is zero"
-       (Array.for_all (Int64.equal 0L) r.board));
+       (Bytes.for_all (fun c -> c = '\000') r.board));
 
   expect_invalid "snapshot response wrong board size" (fun () ->
       Protocol.Types.snapshot_response_to_bytes
-        { snap_response with board = Array.make 63 0L });
+        { snap_response with board = Bytes.make 63 '\000' });
   check "snapshot response wrong length"
-    (Protocol.Types.snapshot_response_of_bytes (Bytes.create 520) = None);
+    (Protocol.Types.snapshot_response_of_bytes (Bytes.create 72) = None);
+
+  (* Packed-to-client-byte projection used by move acknowledgements. *)
+  let packed ?(white = false) ?(moves = 0) ?(double = false) type_code =
+    let base = Int64.shift_left (Int64.of_int type_code) 25 in
+    let base =
+      if white then Int64.logor base (Int64.shift_left 1L 29) else base
+    in
+    let base =
+      if moves = 0 then base
+      else Int64.logor base (Int64.shift_left (Int64.of_int moves) 40)
+    in
+    if double then Int64.logor base (Int64.shift_left 1L 30) else base
+  in
+  check "client byte white pawn"
+    (Protocol.Types.client_byte_of_packed
+       (packed ~white:true 1) = 19);
+  check "client byte black bishop"
+    (Protocol.Types.client_byte_of_packed (packed 3) = 20);
+  check "client byte white knight"
+    (Protocol.Types.client_byte_of_packed (packed ~white:true 2) = 23);
+  check "client byte moved rook"
+    (Protocol.Types.client_byte_of_packed
+       (packed ~white:true ~moves:1 4) = 9);
+  check "client byte double-moved pawn"
+    (Protocol.Types.client_byte_of_packed
+       (packed ~white:true ~moves:1 ~double:true 1) = 35);
+  check "client byte promoted pawn"
+    (Protocol.Types.client_byte_of_packed (packed ~moves:1 7) = 10);
 
   (* Wire framing: every response is padded to 4096 bytes so Dream flushes. *)
   let wire_move =
@@ -201,7 +227,7 @@ let () =
   (match Protocol.Types.wire_response_of_bytes wire_snapshot with
    | Some (Protocol.Types.Wire_snapshot r) ->
      check "wire snapshot id" (r.request_id = snap_response.request_id);
-     check "wire snapshot board" (r.board.(1) = snap_response.board.(1))
+     check "wire snapshot board" (Bytes.get r.board 1 = Bytes.get snap_response.board 1)
    | _ -> failwith "wire snapshot decoded incorrectly");
   check "wire short frame rejected"
     (Protocol.Types.wire_response_of_bytes (Bytes.create 4095) = None);

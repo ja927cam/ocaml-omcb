@@ -64,5 +64,16 @@ val promote : t -> piece_type -> t
 (** Change the piece type, preserving ID, colour and all metadata.
     @raise Invalid_argument if the piece is empty. *)
 
+val client_byte : t -> int
+(** [client_byte p] is the compact one-byte snapshot encoding: white bit,
+    type bits (0 empty, 1 pawn, 2 bishop, 3 knight, 4 rook, 5 queen, 6 king),
+    on-original-board bit, and en-passant/castling bit. Promoted pawns encode
+    as queens. *)
+
+val client_signature : square:int -> t -> int32
+(** [client_signature ~square p] combines a square index with {!client_byte}
+    for move-request staleness checks without sending 25-bit IDs to the client.
+    @raise Invalid_argument if [square] is outside [0..63]. *)
+
 val to_string : t -> string
 val pp : Format.formatter -> t -> unit

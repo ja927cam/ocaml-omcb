@@ -26,7 +26,7 @@ type result =
   | Legal of move_info
   | Illegal of rejection
 
-let max_move_distance = 128
+let max_move_distance = 36
 
 let abs_int x = if x < 0 then -x else x
 
