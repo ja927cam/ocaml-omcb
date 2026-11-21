@@ -302,18 +302,58 @@ let bench_protocol () =
           sink := !sink + Int32.to_int r.request_id
         | _ -> failwith "wire response decode failed"
       done);
+  let event_board board_x revision =
+    Protocol.Types.
+      {
+        board_x;
+        board_y = 0;
+        revision;
+        changes =
+          [ { square = 52; piece = 0 }; { square = 36; piece = 51 } ];
+      }
+  in
+  let move_event =
+    Protocol.Types.
+      {
+        sequence = 99L;
+        request_id = 123l;
+        boards = [ event_board 500 8l; event_board 501 3l ];
+      }
+  in
+  run_bench ~group:"Protocol" ~name:"move event encode"
+    ~variant:"2 boards, 4096-byte frame" ~iterations:100_000 (fun n ->
+      for _ = 1 to n do
+        sink :=
+          !sink
+          + Bytes.length
+              (Protocol.Types.wire_response_to_bytes
+                 (Protocol.Types.Wire_event move_event))
+      done);
+  let event_bytes =
+    Protocol.Types.wire_response_to_bytes
+      (Protocol.Types.Wire_event move_event)
+  in
+  run_bench ~group:"Protocol" ~name:"move event decode"
+    ~variant:"2 boards, 4096-byte frame" ~iterations:100_000 (fun n ->
+      for _ = 1 to n do
+        match Protocol.Types.wire_response_of_bytes event_bytes with
+        | Some (Protocol.Types.Wire_event event) ->
+          sink := !sink + List.length event.boards
+        | _ -> failwith "event decode failed"
+      done);
   let snapshot_response =
     {
       Protocol.Types.request_id = 43l;
       board_x = 0;
       board_y = 0;
       status = Protocol.Types.Snapshot_ok;
+      revision = 0l;
       board =
         Bytes.init 64 (fun i -> Char.chr (if i mod 9 = 0 then 0 else i + 1));
     }
   in
   run_bench ~group:"Protocol" ~name:"snapshot response encode"
-    ~variant:"73-byte payload" ~iterations:100_000 (fun n ->
+    ~variant:"77-byte payload" ~iterations:100_000 (fun n ->
       for _ = 1 to n do
         sink :=
           !sink
@@ -324,7 +364,7 @@ let bench_protocol () =
     Protocol.Types.snapshot_response_to_bytes snapshot_response
   in
   run_bench ~group:"Protocol" ~name:"snapshot response decode"
-    ~variant:"73-byte payload" ~iterations:100_000 (fun n ->
+    ~variant:"77-byte payload" ~iterations:100_000 (fun n ->
       for _ = 1 to n do
         match Protocol.Types.snapshot_response_of_bytes snapshot_bytes with
         | Some r -> sink := !sink + Char.code (Bytes.get r.board 1)
@@ -548,7 +588,7 @@ let bench_engine state board =
   let total = Int64.sub (now_ns ()) started in
   List.iter
     (function
-      | Ok board when Array.length board = 64 -> ()
+      | Ok snapshot when Array.length snapshot.State_worker.board = 64 -> ()
       | _ -> failwith "snapshot burst failed")
     responses;
   add_result ~group:"Worker" ~name:"snapshot throughput"

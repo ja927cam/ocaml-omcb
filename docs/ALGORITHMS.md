@@ -556,11 +556,12 @@ JavaScript `Number`.
 
 Snapshot messages are intentionally distinct. The request is 9 bytes: one
 message-type byte (0x02), request ID, board X and board Y as uint16. The
-response payload is 73 bytes: status, request ID, board coordinates, then 64
-one-byte client pieces in row-major order. A failed snapshot has status 0 and
-zero board contents. Requests dispatch by length (14 move, 9 snapshot). Every
-server response is carried in a fixed 4096-byte wire frame with a kind byte
-(`1` move, `2` snapshot) and zero padding. The padding is a workaround for
+response payload is 77 bytes: status, request ID, board coordinates, board
+revision, then 64 one-byte client pieces in row-major order. A failed snapshot
+has status 0, revision 0 and zero board contents. Requests dispatch by length
+(5 subscribe/unsubscribe, 6 cache window, 14 move, 9 snapshot). Every server
+message is carried in a fixed 4096-byte wire frame with a kind byte (`1` move,
+`2` snapshot, `3` live event) and zero padding. The padding is a workaround for
 Dream 1.0.0~alpha8, which buffers WebSocket writes until 4096 bytes accumulate:
 a 26-byte acknowledgement can otherwise wait forever while the client waits for
 it before sending more requests. The snapshot and move codecs live in
@@ -578,7 +579,7 @@ it before sending more requests. The snapshot and move codecs live in
 | 5 | en passantable (pawn) or castling-eligible (king/rook) |
 | 6–7 | zero |
 
-Promoted pawns project as queens. The snapshot drops from 521 to 73 bytes and
+Promoted pawns project as queens. The snapshot drops from 521 to 77 bytes and
 the client cache from roughly 320 to 64 bytes per board. Bit 4 is the cached
 capturable bit; snapshots compute it from the board being sent
 (`client_byte_at`), so it remains correct even if a piece was placed manually.
@@ -595,7 +596,7 @@ original/en-passant/castling bits without another snapshot.
 
 - Predictable decoding: no varints, no length prefixes per field.
 - Easy to validate length before exposing anything to the state worker.
-- Compact payloads: 26-byte move responses and 73-byte snapshot payloads.
+- Compact payloads: 26-byte move responses and 77-byte snapshot payloads.
 - No JSON parsing or allocation on the server move path.
 - No dependence on JavaScript numeric precision for 64-bit values.
 - The fixed 4096-byte wire frame makes the pinned Dream version flush each
@@ -604,6 +605,57 @@ original/en-passant/castling bits without another snapshot.
 Protocol tests cover ±128 wire boundaries, 129 rejection, round trips, request
 IDs, responses, malformed lengths and the 36-square validator limit. The client and server share the same
 `Protocol.Types` module, so the layouts cannot drift independently.
+
+---
+
+## 9.5 Live move broadcasting
+
+A committed move is pushed to every client whose 25 x 25 cache window contains
+an affected board.
+
+### Commit boundary
+
+`Move_engine.process` applies the prepared plan and appends the ledger entry.
+Only after that does `State_worker` call its `on_commit` callback. The callback
+receives the global sequence, originating request ID, affected boards, their
+new revisions, and exact changed squares/final pieces. It only appends the
+event to a queue: no encoding, fan-out or network I/O runs on the worker.
+The move handler flushes events through its committed sequence before
+enqueueing the response; a paused background flush is the fallback.
+
+### Board revisions
+
+Each board has a monotonic `int32` revision in `Game_state` (4 MB total). A
+board increments once per committed move touching it. Snapshots include the
+revision at copy time; events include the new revision. Clients use per-board
+revisions, not the global sequence, for gap detection because moves on other
+boards legitimately advance the global sequence.
+
+### Subscription and fan-out
+
+- `board_subscribers : board key -> set of connection IDs` gives O(1) lookup.
+- A 6-byte window message replaces a client's 25 x 25 set in O(625); 5-byte
+  subscribe/unsubscribe messages adjust one board.
+- A broadcast collects subscribers from up to two affected boards into a
+  temporary set, so a client subscribed to both receives one event.
+- The event is encoded once per move; the same 4096-byte buffer is enqueued to
+  every subscriber.
+
+### Ordering and isolation
+
+Every connection has one FIFO outbox used by both responses and live events,
+drained by a per-client sender fiber. The worker enqueues the broadcast before
+it resolves the move promise, so the origin client sees the event before the
+response; the event marks its pending move as already applied, preventing a
+second castling/en-passant/promotion update. A failed send or full outbox
+unregisters only that client; other outboxes continue.
+
+### Event wire format
+
+Kind `3`, global sequence, request ID, board count (1–2), then per board:
+coordinates, revision, change count, and `(square, piece byte)` pairs. Normal
+moves have 2 changes, en passant 3, castling 4, promotion 2. Cross-board moves
+carry two board records.
 
 ---
 
@@ -644,6 +696,12 @@ boards, not a single board:
 - Responses are matched by request ID and board key; stale or evicted
   responses are ignored. A failed snapshot leaves the board unloaded and does
   not install an empty board.
+- The client sends one subscription-window message whenever its rounded cache
+  centre changes. The server window is exactly the retained 25 x 25 set.
+- Live events update changed squares and the board revision. A duplicate or
+  older revision is ignored; a revision gap invalidates that board and queues a
+  fresh snapshot. The event matching a pending move sets an `event_applied`
+  flag, so the move response does not repeat castling/en-passant/promotion.
 - Each loaded board stores 64 one-byte pieces plus a small record, so a full
   625-board cache is roughly 50 KiB. Decoding a byte to a glyph at draw time is
   a handful of bit operations.
@@ -667,15 +725,16 @@ boards, not a single board:
 
 ### Networking
 
-- Requests: 9-byte snapshot, 14-byte move.
-- Responses: 4096-byte wire frames with a kind byte. The client dispatches on
-  the kind and parses the first 26 or 73 bytes.
+- Requests: 9-byte snapshot, 14-byte move, 6-byte subscription window.
+- Messages: 4096-byte wire frames with a kind byte. The client dispatches on
+  the kind and parses move responses, snapshots or live events.
 - The route uses `Dream.websocket ~close:false` to avoid Dream
   1.0.0~alpha8’s busy-looping close path on abrupt peer teardown. Sends have a
   two-second timeout, the receive loop catches connection errors, and pending
   worker work remains bounded by the queue.
 - The client still closes the WebSocket on `beforeunload`.
-- No reconnect or event replay is implemented.
+- Live events are not replayed; a missed revision gap is repaired by a
+  snapshot. No reconnect/resume is implemented.
 
 Client RTT metrics use `performance.now()` and a FIFO of send timestamps. With
 cross-origin isolation (COOP/COEP headers) Chrome exposes a finer clock
@@ -718,29 +777,30 @@ Machine-specific numbers, useful for relative comparisons:
 
 | Benchmark | Variant | ns/op |
 |---|---:|---:|
-| Board index | checked | ~6.1 |
+| Board index | checked | ~6.7 |
 | Board index | raw arithmetic | ~2.7 |
-| Board read | checked position | ~14.1 |
-| Board read | `get_world` | ~11.5 |
-| Piece create | packed int64 | ~8.6 |
+| Board read | checked position | ~15.1 |
+| Board read | `get_world` | ~12.6 |
+| Piece create | packed int64 | ~8.1 |
 | Piece inspect | id/type/flags | ~9.7 |
-| Piece metadata | immutable flags | ~18.2 |
-| Protocol move | encode/decode | ~24 / ~19 |
-| Protocol request | encode/decode | ~59 / ~40 |
-| Protocol wire response | encode/decode | ~565 / ~49 |
-| Protocol snapshot response | encode/decode | ~34 / ~21 |
-| Validation path | record + checked get | ~517 |
+| Piece metadata | immutable flags | ~17.1 |
+| Protocol move | encode/decode | ~24 / ~20 |
+| Protocol request | encode/decode | ~60 / ~41 |
+| Protocol wire response | encode/decode | ~555 / ~50 |
+| Protocol move event | encode/decode | ~608 / ~64 |
+| Protocol snapshot response | encode/decode | ~45 / ~26 |
+| Validation path | record + checked get | ~556 |
 | Validation path | `get_world` | ~250 |
-| Validation long queen | 36 squares | ~302 |
-| Processing prepare | queen long move | ~27 |
-| Processing `apply_plan` | queen long move | ~25 |
-| Ledger append | 1M circular | ~16 |
-| Ledger event read | decoded | ~14 |
-| Snapshot board | 64-piece copy | ~293 |
-| Engine process | full move | ~192 |
-| Worker submit/process | sequential awaiter | ~2,097 |
-| Worker submit/process | pipelined 4,000 | ~2,097 |
-| Worker snapshot | pipelined 4,000 | ~3,499 |
+| Validation long queen | 36 squares | ~304 |
+| Processing prepare | queen long move | ~26 |
+| Processing `apply_plan` | queen long move | ~26 |
+| Ledger append | 1M circular | ~15 |
+| Ledger event read | decoded | ~15 |
+| Snapshot board | 64-piece copy | ~335 |
+| Engine process | full move | ~215 |
+| Worker submit/process | sequential awaiter | ~2,462 |
+| Worker submit/process | pipelined 4,000 | ~2,986 |
+| Worker snapshot | pipelined 4,000 | ~4,212 |
 
 Startup single-shot on the same run:
 
@@ -750,7 +810,7 @@ Startup single-shot on the same run:
 
 The wire-response encode figure includes allocating and zero-filling the
 4,096-byte frame that forces Dream to flush each WebSocket response. That is
-transport overhead, not part of the 26-byte move or 73-byte snapshot codecs.
+transport overhead, not part of the 26-byte move or 77-byte snapshot codecs.
 
 The path and read comparisons demonstrate why the `get_world` fast path was
 introduced: it removes per-square record allocation and repeated position
@@ -796,13 +856,21 @@ It covers:
 - protocol round trips and invalid lengths/IDs/deltas;
 - worker FIFO, same-piece races, queue-full and shutdown with pending work;
 - snapshots before/after moves, queue capacity and shutdown;
-- snapshot protocol round trips, 64 one-byte pieces, empty squares, 73-byte
-  length and invalid coordinates;
+- snapshot protocol round trips, 64 one-byte pieces, empty squares, 77-byte
+  length, board revision and invalid coordinates;
+- subscription, cache-window and live-event codecs;
 - client piece-byte colour/type/original/castle/en-passant encoding and the
   square-plus-byte signature;
 - a browser grid integration test: nine visible boards, one-board pans, the
   25 x 25 cache bound, move persistence, a cross-board quiet rook move,
   blocked off-board and off-home captures, and a cache eviction/re-fetch;
+- a connection-manager suite: same-board fan-out, unrelated isolation,
+  cross-board deduplication, failed-send isolation, unregister cleanup,
+  unsubscribe and window replacement;
+- a real two-client live broadcast test including cross-board events and
+  disconnects;
+- a browser live-client test for applying events, ignoring late duplicates,
+  and resynchronising after an injected revision gap;
 - a WebSocket teardown regression test that repeatedly SIGKILLs Chromium,
   checks server CPU returns to idle, checks file descriptors do not grow, and
   confirms a fresh snapshot request still works;

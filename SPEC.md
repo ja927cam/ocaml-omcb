@@ -56,6 +56,7 @@ lib/
   move_request.ml / move_request.mli
   move_engine.ml / move_engine.mli
   state_worker.ml / state_worker.mli
+  connection_manager.ml
 
 protocol/
   dune
@@ -79,7 +80,10 @@ test/
   test_game_state.ml
   test_engine.ml
   test_worker.ml
+  test_connection_manager.ml
   client_snapshot_test.js
+  live_update_test.js
+  live_client_test.js
   ws_teardown_test.js
 
 bench/
@@ -608,6 +612,7 @@ Append is single-writer and does not allocate.
 type t = {
   board : Board.t;
   ledger : Ledger.t;
+  revisions : int32 array; (* one per board, 4 MB *)
   mutable sequence : int64;
   mutable initialised : bool;
 }
@@ -618,14 +623,18 @@ The representation is private in the `.mli`.
 - `create`:
   - allocates the board (512 MB, zero-filled);
   - allocates a 1,048,576-event ledger with next sequence 1;
+  - allocates one int32 revision per board (4 MB);
   - sequence = 0.
 - `initialise`:
   - iterates all 1,000,000 board coordinates;
   - on the first call (fresh zero-filled board) uses
     `Board.initialise_standard_position ~clear:false`;
   - later calls clear each board first;
+  - resets all board revisions to 0;
   - leaves sequence at 0 and ledger empty.
-- Public accessors: `sequence` (read-only) and `occupied_count`.
+- Public accessors: `sequence` (read-only), `occupied_count`, `board_revision`
+  and `bump_board_revision`. The worker bumps each affected board once after a
+  committed move.
 - Controlled internal interface: `with_state`, which passes the board, ledger
   and current sequence to a callback and commits the returned sequence. The
   move engine is the sole production user; direct board/ledger accessors and a
@@ -634,6 +643,12 @@ The representation is private in the `.mli`.
   in row-major order. Empty squares are `Piece.empty`; every packed piece field
   is preserved. Invalid coordinates raise. It does not modify the board,
   ledger or sequence.
+- `snapshot_board_with_revision` returns the board and its revision at the
+  same instant.
+- Board revisions increase by one for every committed move touching the board.
+  Snapshots and live events carry both the global sequence and the per-board
+  revision, so clients can detect missed events without treating unrelated
+  board moves as gaps.
 
 ### Startup verification
 
@@ -897,7 +912,7 @@ as bytes, never as JavaScript `Number`.
 The decoder requires exactly 9 bytes, message type `0x02`, and coordinates in
 `0..999`. Otherwise it returns `None`.
 
-### 13.6 Snapshot response — 73 bytes
+### 13.6 Snapshot response — 77 bytes
 
 | Bytes | Field | Encoding |
 |---|---|---|
@@ -905,9 +920,10 @@ The decoder requires exactly 9 bytes, message type `0x02`, and coordinates in
 | 1–4 | Request ID | int32 little-endian |
 | 5–6 | Board X | uint16 little-endian |
 | 7–8 | Board Y | uint16 little-endian |
-| 9–72 | Board contents | 64 one-byte client pieces, row-major |
+| 9–12 | Board revision | int32 little-endian |
+| 13–76 | Board contents | 64 one-byte client pieces, row-major |
 
-A failed response has status 0 and zero-filled board contents.
+A failed response has status 0, revision 0 and zero-filled board contents.
 
 ### 13.6.1 Client piece byte
 
@@ -933,6 +949,43 @@ Codec functions: `snapshot_request_to_bytes`, `snapshot_request_of_bytes`,
 `snapshot_response_to_bytes`, `snapshot_response_of_bytes`. They depend only on
 `Protocol.Types`, not `Game_state` or `Board`.
 
+### 13.6.2 Subscription messages
+
+| Bytes | Message | Layout |
+|---|---|---|
+| 5 | Subscribe board | `0x03`, uint16 board X, uint16 board Y |
+| 5 | Unsubscribe board | `0x04`, uint16 board X, uint16 board Y |
+| 6 | Set cache window | `0x05`, uint16 centre X, uint16 centre Y, uint8 radius |
+
+The client sends one window message when its rounded cache centre changes; the
+server replaces that connection's subscription set with the square window.
+Individual subscribe/unsubscribe messages are also supported for tests and
+future clients. All coordinates are validated and clamped server-side.
+
+### 13.6.3 Live move event — kind 3, 4096-byte wire frame
+
+| Bytes | Field |
+|---|---|
+| 0 | Wire kind `3` |
+| 1–8 | Global move sequence, int64 little-endian |
+| 9–12 | Originating request ID, int32 little-endian |
+| 13 | Board count, 1 or 2 |
+| 14+ | Board records |
+
+Each board record is:
+
+| Bytes | Field |
+|---|---|
+| 0–1 | Board X, uint16 |
+| 2–3 | Board Y, uint16 |
+| 4–7 | Board revision, int32 |
+| 8 | Change count |
+| 9+ | `(square uint8, piece byte uint8)` pairs |
+
+A normal move carries two changes (source cleared, destination written).
+Castling carries four, en passant three, and promotion two. A cross-board move
+carries two board records. The frame is zero-padded to 4096 bytes.
+
 ### 13.7 Wire response framing — 4096 bytes
 
 Dream 1.0.0~alpha8 buffers WebSocket writes until 4096 bytes have accumulated.
@@ -942,13 +995,13 @@ in a fixed 4096-byte binary frame:
 
 | Bytes | Field |
 |---|---|
-| 0 | Kind: `1` move response, `2` snapshot response |
-| 1..26 or 1..73 | The encoded response |
+| 0 | Kind: `1` move response, `2` snapshot response, `3` live move event |
+| 1..26, 1..77, or 1.. | The encoded response/event |
 | Rest | Zero padding |
 
 `wire_response_to_bytes` and `wire_response_of_bytes` in `Protocol.Types` build
 and validate these frames. Each send crosses the 4096-byte threshold, so Dream
-flushes it immediately. The 73-byte snapshot payload and 26-byte move payload
+flushes it immediately. The 77-byte snapshot payload and 26-byte move payload
 remain unchanged for codec tests and benchmarks.
 
 The client keeps at most **one** snapshot request in flight. Dream's stream
@@ -968,9 +1021,10 @@ longer depends on `ppx_deriving_yojson`.
 1. `Game_state.create`.
 2. `Game_state.initialise`.
 3. Verify `occupied_count = 32,000,000`.
-4. `State_worker.start`.
-5. Build the Dream router.
-6. `Dream.run` on port 8080.
+4. `Connection_manager.create`.
+5. `State_worker.start` with `on_commit = Connection_manager.enqueue_move`.
+6. Build the Dream router.
+7. `Dream.run` on port 8080.
 
 Startup timings are logged for allocation, world initialisation, verification,
 worker startup, and total startup.
@@ -1004,21 +1058,63 @@ This enables a higher-resolution browser timer for RTT metrics.
 
 ### WebSocket handler
 
-1. Receive a binary frame.
-2. Dispatch on length:
+1. Register a connection with the `Connection_manager`, receiving a unique
+   ID and a per-client ordered send queue.
+2. Receive a binary frame.
+3. Dispatch on length:
+   - 5 bytes → subscribe or unsubscribe one board;
+   - 6 bytes → replace the 25 x 25 cache-window subscription;
    - 14 bytes → move request;
    - 9 bytes → snapshot request;
    - anything else → rejection / invalid request.
-3. For a move: decode, convert positions, create `Move_request`, submit to the
+4. For a move: decode, convert positions, create `Move_request`, submit to the
    worker, await the result, encode a move response.
-4. For a snapshot: decode, call `State_worker.submit_snapshot`, await the
-   64-piece board, encode a snapshot response.
-5. Wrap the response in the fixed 4096-byte wire frame (kind + payload) and
-   send it, so Dream flushes immediately.
-6. Snapshot decode failures produce a status-0 snapshot response.
-6. Worker errors produce the corresponding move rejection or snapshot failure.
-7. Continue reading on the same connection after the send resolves.
-8. Never read the board directly in the handler.
+5. For a snapshot: decode, call `State_worker.submit_snapshot`, await the
+   64-piece board and revision, encode a snapshot response.
+6. Wrap the response in the fixed 4096-byte wire frame (kind + payload) and
+   enqueue it on the connection's ordered send queue.
+7. Snapshot decode failures produce a status-0, revision-0 snapshot response.
+8. Worker errors produce the corresponding move rejection or snapshot failure.
+9. Continue reading on the same connection after the send completes.
+10. On EOF, error or send failure, unregister the connection and remove all of
+    its subscriptions.
+11. Never read the board directly in the handler.
+
+### Connection manager
+
+- One record per connection: unique ID, ordered outbox, raw send function,
+  subscription set, closed/sending flags.
+- `board_subscribers : board key -> set of connection IDs` gives O(1) lookup
+  of clients interested in a board.
+- Subscription windows replace the old set; individual subscribe/unsubscribe
+  messages add or remove one board.
+- Every outbound frame, response or live event, goes through the same FIFO
+  outbox, preserving order per client.
+- A per-client sender fiber drains the outbox. A failed send unregisters only
+  that connection; other clients are unaffected.
+- The outbox is capped. A permanently slow client is disconnected rather than
+  growing memory without bound.
+- `State_worker.on_commit` runs after the commit but only appends the event to
+  a pending queue. No encoding, fan-out or network I/O happens on the worker.
+- The move handler calls `flush_through sequence` before enqueueing its own
+  response; this broadcasts all committed events up to that sequence. A
+  background flush is scheduled as a fallback. Because the event is enqueued
+  before the move response, the originating client always sees it first.
+
+### Live event pipeline
+
+1. Worker commits a move and knows the exact changed squares.
+2. Worker groups changes by board and bumps each board revision once.
+3. Worker calls `on_commit` with sequence, request ID, boards, revisions and
+   final pieces; this only appends to the manager's pending-event queue.
+4. The move handler flushes events through its committed sequence before
+   enqueueing the response. A scheduled background flush handles cases where a
+   handler disappears.
+5. Flushing collects subscribers to any affected board, deduplicating connection
+   IDs, and encodes one kind-3 event frame.
+6. The frame is enqueued to each subscriber's ordered outbox.
+7. Each client's sender fiber writes it independently. Slow or failed clients
+   do not delay others.
 
 Worker errors become rejection codes 9–11 with the originating request ID.
 
@@ -1086,7 +1182,8 @@ never rolled back.
 ### Snapshot cache
 
 - A `Hashtbl` keyed by `board_y * 1000 + board_x` stores loaded boards:
-  64 one-byte client pieces, a loaded flag and an optional pending request ID.
+  64 one-byte client pieces, the board revision, a loaded flag and an optional
+  pending request ID.
 - Only boards within 25 x 25 of the view centre are retained. Boards outside
   that window are evicted, and their pending requests are forgotten.
 - On every camera change the client requests the visible boards plus a
@@ -1096,7 +1193,12 @@ never rolled back.
 - At most one snapshot request is outstanding at a time. Responses are matched
   by request ID and board key; stale or evicted responses are ignored.
 - A failed snapshot leaves the board unloaded and does not install an empty
-  board. It will be retried after the next camera change.
+  board. An older snapshot that arrives after a newer event is ignored; a
+  resync snapshot is requested instead.
+- The client sends a single subscription-window message (centre, radius 12)
+  whenever the rounded cache centre changes. This exactly matches its retained
+  25 x 25 window, so the server never broadcasts boards the client has
+  evicted.
 - Each loaded board holds 64 bytes plus a small record, so a full 625-board
   cache is roughly 50 KiB instead of 200 KiB.
 
@@ -1118,6 +1220,13 @@ never rolled back.
   projects it back to the one-byte form and updates the destination byte, so
   the on-original-board / en-passant / castling bits stay accurate without a
   new snapshot.
+- Live move events are applied by square and revision. A revision equal to or
+  below the cached revision is a duplicate/stale event and is ignored. The next
+  revision applies the changed squares. A revision gap invalidates that board
+  and queues a fresh snapshot.
+- The event matching the pending request marks it as already applied before the
+  move response arrives. The response then only clears pending state, so
+  castling, en passant and promotion are not applied twice.
 - At most one move is in flight. While it is pending, panning and new drags
   are ignored; `data-move-pending` on `<body>` reflects the state.
 
@@ -1134,16 +1243,19 @@ never rolled back.
 
 - Connect to `ws://` or `wss://` + host + `/ws`.
 - Binary type: `arraybuffer`.
-- Request ID counter is a client-side `int32` counter shared by snapshot and
-  move requests.
-- Snapshot requests are 9 bytes; move requests are 14 bytes.
-- Server responses are fixed 4096-byte wire frames with a kind byte (`1` move,
-  `2` snapshot). The client dispatches on the kind and parses the first 26 or
-  73 bytes.
+- Request IDs are a per-page random `int32` seed incremented per request,
+  shared by snapshot and move requests. Randomising the seed keeps one client's
+  pending request ID from colliding with another client's broadcast event.
+- Snapshot requests are 9 bytes; move requests are 14 bytes; cache window
+  updates are 6 bytes.
+- Server messages are fixed 4096-byte wire frames with a kind byte (`1` move,
+  `2` snapshot, `3` live event).
 - Movement/rollback dispatch reads the status byte: 1 accepted, 0 rejected.
 - Calls `Metrics.received` for every move response.
 - Closes the WebSocket on `beforeunload` so page reloads shut down cleanly.
-- No reconnect, subscriptions or event replay is implemented.
+- Live subscriptions are implemented, but there is no event replay or
+  reconnect/resume. After a missed event the client re-snapshots the affected
+  board; after a disconnect a new page/cache starts from snapshots.
 
 ### Metrics
 
@@ -1262,7 +1374,10 @@ These are deliberate and are not conventional chess:
 ### `test_protocol`
 
 - Snapshot request/response round trips, all 64 one-byte pieces, empty
-  squares, 73-byte length and maximum coordinates.
+  squares, 77-byte length, board revision and maximum coordinates.
+- Board subscribe/unsubscribe and cache-window codecs.
+- Live event framing: kind 3, global sequence, request ID, two boards,
+  revisions and changed squares.
 - Invalid snapshot coordinates and frame lengths.
 - Source+delta move round trips.
 - ±128 wire boundary and rejection of 129.
@@ -1302,9 +1417,21 @@ These are deliberate and are not conventional chess:
 - Consecutive sequence values.
 - Small-capacity ledger wraparound: latest/next/oldest and retained events.
 
+### `test_connection_manager`
+
+- Two clients subscribed to one board both receive an event.
+- An unrelated board subscriber receives nothing.
+- A client subscribed to both affected boards receives one deduplicated event.
+- A failing client send is isolated and removes only that client.
+- Unregister removes subscriptions.
+- Explicit unsubscribe and window replacement stop matching events.
+- Outbox/event parsing via the real wire codec.
+
 ### `test_worker`
 
 - Snapshot before/after move, snapshot followed by move, FIFO ordering and queue capacity.
+- Committed events for normal, capture, castling, en passant and promotion:
+  affected board, revision, cleared squares and final pieces.
 - Shutdown processes a queued snapshot.
 - Two concurrent submissions processed FIFO with sequences 1 and 2.
 - Stale request rejected without sequence advancement.
@@ -1313,6 +1440,21 @@ These are deliberate and are not conventional chess:
   rejected, sequence advances once.
 - Queue-full rejection with capacity one.
 - Shutdown processes an already accepted pending request.
+
+### `live_update_test.js`
+
+- Real two-client WebSocket fan-out for a shared board.
+- Unrelated-board subscriber receives nothing.
+- A cross-board move reaches subscribers of both boards and includes both
+  board records.
+- A disconnected client stops receiving while other clients continue.
+
+### `live_client_test.js`
+
+- A browser watching a remote client applies live events to its cache.
+- A late duplicate event is ignored by revision.
+- An injected revision gap triggers a fresh snapshot and resynchronises the
+  board.
 
 ### `ws_teardown_test.js` (Linux)
 
@@ -1325,22 +1467,24 @@ These are deliberate and are not conventional chess:
 
 ## 19. Known limitations / explicitly out of scope
 
-- No spatial subscriptions, broadcasting, or event replay.
+- Live subscriptions and broadcasts are implemented, but events are not
+  persisted or replayed. A missed event is recovered by re-snapshotting the
+  affected board; a new connection starts from snapshots.
 - No reconnect/resume.
 - Normal moves are applied optimistically and rolled back on rejection.
   Castling and en passant are not applied optimistically: the client waits for
   acceptance and then applies the local king+rook or pawn+captured-pawn move.
-- The client keeps a 25 x 25 snapshot cache and pans a 3 x 3-board viewport.
-  There are no spatial subscriptions or live updates, so a cached board can
-  become stale after another client moves.
+- The client keeps a 25 x 25 snapshot cache and subscribes to that window.
+  Broadcasts keep loaded boards current; a revision gap triggers a full board
+  resync.
 - The client snapshot carries no 25-bit piece IDs, so stale-move detection uses
   the source square plus the one-byte piece signature. A different piece of the
   same type and status on the same square is indistinguishable to the client.
 - Server responses are padded to 4096 bytes to work around Dream 1.0.0~alpha8
   WebSocket buffering, so small acknowledgements use more bandwidth than their
   logical 26-byte payload.
-- Client promotion rendering uses the server snapshot type; an optimistic local
-  promotion is not re-glyphed until a snapshot/reload.
+- Client promotion is not re-glyphed locally before commit; the live event or
+  response supplies the promoted byte immediately after acceptance.
 - No persistence.
 - No authentication or authorisation.
 - No turn validation; either colour can move any piece from the client’s
@@ -1364,9 +1508,9 @@ These are deliberate and are not conventional chess:
 
 Example relative results on the benchmark machine: raw board indexing ~2.7 ns,
 checked indexing ~6.1 ns; checked board read ~14.1 ns vs direct world read
-~11.5 ns; a 36-square sliding path ~517 ns with record construction vs
+~11.5 ns; a 36-square sliding path ~556 ns with record construction vs
 ~250 ns with direct world reads; ledger append ~16 ns; full engine process
-~192 ns; Lwt worker round trip ~2.1 µs. See `bench/results.json` for the
+~215 ns; Lwt worker round trip ~2.5 µs. See `bench/results.json` for the
 current run.
 
 ---

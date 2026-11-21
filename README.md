@@ -2,8 +2,8 @@
 
 Server-authoritative world of 1,000 × 1,000 chessboards (64,000,000 squares,
 32,000,000 starting pieces), with a pannable WASM/Brr grid client, a 25 × 25
-board snapshot cache, one-byte snapshot pieces and a binary WebSocket
-protocol.
+board snapshot cache, one-byte snapshot pieces, live move broadcasts over a
+binary WebSocket protocol.
 
 ## Build and run
 
@@ -17,6 +17,13 @@ With the server running, the browser grid integration test can be run with:
 
 ```bash
 node test/client_snapshot_test.js
+```
+
+Live update tests:
+
+```bash
+node test/live_update_test.js   # real two-client fan-out and subscriptions
+node test/live_client_test.js   # browser cache apply, duplicate and gap handling
 ```
 
 The WebSocket teardown regression test (Linux) repeatedly kills a headless
@@ -71,10 +78,10 @@ the full move engine, the Lwt worker, board snapshots, and startup phases.
 
 | Path | Contents |
 |---|---|
-| `lib/` | Piece, Board, Move, validation/application, ledger, state, engine, worker |
+| `lib/` | Piece, Board, Move, validation/application, ledger, state, engine, worker, connection manager |
 | `protocol/` | Binary move/request/response codecs |
 | `client/` | Canvas client in OCaml/WASM (Brr) |
 | `server/` | Dream server and WebSocket endpoint |
-| `test/` | Unit and integration tests |
+| `test/` | Unit, browser, live-update and teardown integration tests |
 | `bench/` | Speed benchmarks and static dashboard |
 | `docs/` | Engineering/algorithm notes |
