@@ -20,8 +20,10 @@ node test/client_snapshot_test.js
 ```
 
 It checks that the nine centre boards are visible, that dragging empty space
-pans by one board, that the client stays within a 25 × 25 cache window, and
-that moves persist across board switches and a cache eviction/re-fetch. It
+pans by one board, that the client stays within a 25 × 25 cache window, that
+cross-board quiet moves work, that off-board and off-home captures are
+blocked, and that moves persist across board switches and a
+cache eviction/re-fetch. It
 picks a random central board on each run because moves are authoritative and
 remain on the running server.
 
@@ -33,8 +35,9 @@ The server initialises the complete world at startup and listens on
 The board grid fills the whole window.
 
 - Drag empty space (or use a non-left button) to pan.
-- Drag a piece to move it. Quiet moves may cross board boundaries; a
-  cross-board capture is only allowed if the target piece has already moved.
+- Drag a piece to move it. Quiet moves may cross board boundaries. A piece
+  can only capture while it is on its own original board; leaving clears the
+  capturable bit and returning restores it.
 - The current centre is shown in the top-right corner.
 - `?x=<board_x>&y=<board_y>` opens the client centred on that board.
 - At the default 168 px per board, a 512 px span shows about three boards;

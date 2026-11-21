@@ -176,7 +176,8 @@ callers may use `Board.in_bounds`.
 | 34 | 1 | Queen pawner |
 | 35 | 1 | Adopted killer |
 | 36 | 1 | Has captured a different piece type |
-| 37–38 | 2 | Reserved, preserved |
+| 37 | 1 | Reserved, preserved |
+| 38 | 1 | On original board (cached; updated by moves) |
 | 39 | 1 | Adopted |
 | 40–51 | 12 | Move count |
 | 52–63 | 12 | Capture count |
@@ -348,7 +349,7 @@ type rejection =
   | Invalid_geometry
   | Blocked_path
   | Invalid_destination
-  | Cross_board_capture
+  | Capture_off_original_board
   | Invalid_special_move
 
 type move_kind =
@@ -385,10 +386,10 @@ type result = Legal of move_info | Illegal of rejection
 
 ### Normal move validation
 
-Before piece-specific geometry:
-
-- If destination is occupied, the two positions are on different boards, and
-  the captured piece has `move_count = 0` → `Cross_board_capture`.
+Before piece-specific geometry, a capture is only legal when the moving piece
+is currently on its original board and the destination is on that same board.
+Otherwise validation returns `Capture_off_original_board`. Quiet moves may
+still leave the original board freely.
 
 Then:
 
@@ -453,7 +454,8 @@ Triggered by: pawn, `|dx| = 1`, empty destination.
   ```
   i.e. the destination file, source rank.
 - It must exist, be an enemy pawn, and have `just_double_moved = true`.
-- Cross-board capture restrictions are not applied (matching the original).
+- En passant is a capture, so the moving pawn must start and finish on its
+  original board.
 
 `move_info.captured_piece` is the off-destination pawn.
 
@@ -486,8 +488,10 @@ captured square; the processor never reclassifies the move.
    - captured piece adopted → `AdoptedKiller`;
    - captured type differs from final moving type →
      `HasCapturedPieceTypeOtherThanOwn`.
-4. Clear the source square.
-5. Write the final moving piece to the destination.
+4. Set `on_original_board` to whether the destination board equals the board
+   encoded by the piece ID.
+5. Clear the source square.
+6. Write the final moving piece to the destination.
 
 ### En passant
 
@@ -495,6 +499,7 @@ captured square; the processor never reclassifies the move.
 - Clear the captured pawn at `(dst_world_x, src_world_y)`.
 - Increment move and capture counts.
 - Clear `just_double_moved`.
+- Set `on_original_board` from the destination board.
 - Write the moving pawn to the destination.
 - No killer/adopted/different-type flags are set, matching the original.
 
@@ -502,6 +507,7 @@ captured square; the processor never reclassifies the move.
 
 - Recompute the rook source and destination from the king’s move.
 - Increment king and rook move counts from 0 to 1.
+- Set each piece's `on_original_board` from its destination board.
 - Clear both original squares.
 - Write king and rook to their new squares.
 
@@ -868,7 +874,7 @@ Rejection codes:
 | 3 | Invalid geometry |
 | 4 | Blocked path |
 | 5 | Invalid destination |
-| 6 | Cross-board capture forbidden |
+| 6 | Capture off the original board |
 | 7 | Invalid special move |
 | 8 | Invalid request |
 | 9 | Queue full |
@@ -910,7 +916,7 @@ Each snapshot square is one byte:
 |---|---|
 | 0 | 1 = white, 0 = black |
 | 1–3 | 0 empty, 1 pawn, 2 bishop, 3 knight, 4 rook, 5 queen, 6 king |
-| 4 | 1 = on its original board (the piece has never moved) |
+| 4 | 1 = currently on the original board encoded by its piece ID |
 | 5 | 1 = en passantable (pawn) or castling-eligible (king/rook) |
 | 6–7 | 0 |
 
@@ -1087,15 +1093,15 @@ handler returns. A move that has already committed is never rolled back.
 - `pointerdown` on a loaded board's occupied square starts a piece drag.
 - `pointerup` on any loaded board sends a move if the destination differs.
   Quiet moves may cross board boundaries.
-- A cross-board capture is sent only if the destination byte has the
-  on-original-board bit clear (the captured piece has moved). Otherwise the
-  drag snaps back locally, matching the server rule.
+- A capture is sent only if the source and destination are on the same board
+  and the moving piece's on-original-board bit is set. Otherwise the drag
+  snaps back locally, matching the server rule.
 - The move wire format is unchanged: a 14-byte request containing the world
   source position, signed 9-bit deltas, the source signature and request ID.
 - Normal moves are optimistic: source and destination bytes are saved and
   restored on rejection. Cross-board normal moves update both board states.
-- Castling and en passant are applied only after acceptance. En passant can
-  clear a pawn on either the source board or the destination board.
+- Castling and en passant are applied only after acceptance. En passant is
+  same-board, so its captured pawn is on the source/destination board.
 - The accepted response carries the moved piece's packed int64; the client
   projects it back to the one-byte form and updates the destination byte, so
   the on-original-board / en-passant / castling bits stay accurate without a
@@ -1155,8 +1161,9 @@ These are deliberate and are not conventional chess:
 - The validator uses the original maximum displacement of 36 world squares per
   axis. The wire codec still supports signed 9-bit deltas (±128) so the
   transport remains general; the server enforces 36.
-- Capturing a piece on a different board is only allowed if the captured
-  piece’s move count is greater than zero.
+- A piece can capture only while it is on its original board, and the capture
+  must land on that same board. Moving off the board clears the capturable
+  bit; moving back sets it again.
 - Normal king moves may not cross board boundaries; castling uses the absolute offsets above.
 - Castling uses the original absolute rook offsets (king ±3 / ±4) and does not
   require king and rook to be on the same board.
@@ -1166,7 +1173,8 @@ These are deliberate and are not conventional chess:
 - En passant captures the pawn at `(source_x + dx, source_y)` if it has
   `just_double_moved`. The flag expires when that pawn next moves; moves by
   other pieces do not clear it, matching the original implementation.
-- En passant has no cross-board capture restriction.
+- En passant is a capture and therefore requires the moving pawn to start and
+  finish on its original board. Cross-board en passant is rejected.
 - Promotion occurs only at the absolute top/bottom world edges (white row 0,
   black row 7999), not at individual board edges.
 - A promoted pawn moves like a queen.
@@ -1206,7 +1214,7 @@ These are deliberate and are not conventional chess:
 - Promotion metadata preservation.
 - One-byte client encoding: colour, type order (pawn, bishop, knight, rook,
   queen, king), original-board bit, en-passant/castling bit, promoted-queen
-  projection, and the square-plus-byte signature.
+  projection, the current on-original flag, and the square-plus-byte signature.
 - Empty-piece errors.
 - Board first/last world indices.
 - First/last square reads/writes/clears.
@@ -1224,9 +1232,11 @@ These are deliberate and are not conventional chess:
 - Knight jumps, sliding paths, blockers.
 - King movement and same-board restriction.
 - Kingside/queenside castling; moved pieces and blocked paths.
-- Cross-board capture with moved/unmoved targets.
+- Captures are rejected off the original board and while a piece is away from
+  home (including a same-board capture); returning to the original board
+  restores capturing.
 - Same-board and cross-board quiet moves.
-- Same-board and cross-board en passant.
+- Same-board en passant; cross-board en passant rejected.
 - 36-square acceptance and 37-square rejection.
 - Move classification (`Normal`, `Castle` with rook positions, `En_passant`
   with captured square).

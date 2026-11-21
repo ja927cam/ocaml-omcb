@@ -56,7 +56,8 @@ including the OCaml runtime and benchmark allocations.
 | 34 | Queen pawner |
 | 35 | Adopted killer |
 | 36 | Captured a different type |
-| 37–38 | Reserved |
+| 37 | Reserved |
+| 38 | On original board (cached) |
 | 39 | Adopted |
 | 40–51 | Move count |
 | 52–63 | Capture count |
@@ -262,15 +263,19 @@ the difference.
 
 ### Cross-board moves and captures
 
-Quiet moves may cross board boundaries freely. If the destination is occupied
-by an enemy on a different board, the captured piece must have
-`move_count > 0`. Otherwise validation returns `Cross_board_capture`. This
-mirrors the original implementation: an unmoved piece is still on its original
-board and cannot be taken from another board.
+Quiet moves may cross board boundaries freely. A capture is allowed only while
+the moving piece is on its original board, and the destination must be on that
+same board. Otherwise validation returns `Capture_off_original_board`.
 
-The client mirrors the same test in O(1) using bit 4 of the destination
-snapshot byte. If a cross-board drop targets an on-original piece, it snaps
-back without sending a request; the server independently enforces the rule.
+The original board comes from the piece ID: `(id - 1) / 32`. `Move_processor`
+sets the cached `on_original_board` bit after every move from
+`destination_board = original_board`. The bit therefore flips off when a piece
+leaves home and flips back on when it returns.
+
+The client mirrors the rule in O(1): a capture (including en passant) is sent
+only when the source and destination boards match and the moving piece's bit 4
+is set. Otherwise the drag snaps back; the server independently enforces the
+same condition.
 
 ### Special moves
 
@@ -569,14 +574,14 @@ it before sending more requests. The snapshot and move codecs live in
 |---|---|
 | 0 | white |
 | 1–3 | 0 empty, 1 pawn, 2 bishop, 3 knight, 4 rook, 5 queen, 6 king |
-| 4 | on its original board (never moved) |
+| 4 | currently on the original board encoded by its piece ID |
 | 5 | en passantable (pawn) or castling-eligible (king/rook) |
 | 6–7 | zero |
 
 Promoted pawns project as queens. The snapshot drops from 521 to 73 bytes and
-the client cache from roughly 320 to 64 bytes per board. Bit 4 is exactly
-`move_count = 0`, so the client can apply the cross-board capture rule without
-the 12-bit counter.
+the client cache from roughly 320 to 64 bytes per board. Bit 4 is the cached
+capturable bit; snapshots compute it from the board being sent
+(`client_byte_at`), so it remains correct even if a piece was placed manually.
 
 Move requests identify the source with a 16-bit signature
 `(source_square lsl 8) lor client_byte`. The server accepts the signature, the
@@ -645,13 +650,13 @@ boards, not a single board:
 ### Moves
 
 - A drag may start and end on any loaded board. Quiet moves cross boundaries.
-- A cross-board capture is allowed only if the destination byte has bit 4
-  clear. The client checks this in O(1) and cancels otherwise; the server
-  enforces the same rule.
+- A capture (including en passant) is allowed only when source and destination
+  are on the same board and the moving piece's bit 4 is set. The client checks
+  this in O(1) and cancels otherwise; the server enforces the same rule.
 - Normal moves are optimistic. The undo record holds the source and
   destination board states, so a cross-board move restores both on rejection.
-  Castling and en passant are applied only after acceptance; an en-passant
-  capture can belong to the source board or the destination board.
+  Castling and en passant are applied only after acceptance; en passant is
+  same-board.
 - On acceptance the 26-byte response's packed `moved_piece` is projected back
   to a client byte, updating the moved piece's original/en-passant/castling
   bits immediately. No extra snapshot is needed.
@@ -775,6 +780,8 @@ It covers:
 - Board boundaries, copies, iteration and standard initialisation;
 - exhaustive 32,000,000-piece ID uniqueness over a fully initialised world;
 - move geometry, path blocking, castling, en passant and promotion;
+- off-board capture rejection, off-home same-board capture rejection, and
+  capture re-enabled after returning to the original board;
 - classification consistency between validator and processor;
 - en-passant flag expiry;
 - rejected transactions leaving board, ledger and sequence unchanged;
@@ -789,8 +796,8 @@ It covers:
 - client piece-byte colour/type/original/castle/en-passant encoding and the
   square-plus-byte signature;
 - a browser grid integration test: nine visible boards, one-board pans, the
-  25 x 25 cache bound, move persistence, a cross-board quiet rook move, a
-  blocked cross-board capture of an unmoved pawn, and a cache eviction/re-fetch;
+  25 x 25 cache bound, move persistence, a cross-board quiet rook move,
+  blocked off-board and off-home captures, and a cache eviction/re-fetch;
 - client rollback behaviour was also exercised manually in headless Chromium.
 
 What is tested is not the same as a formal proof. The strongest evidence today
