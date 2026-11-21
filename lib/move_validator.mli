@@ -10,7 +10,7 @@ type rejection =
   | Invalid_geometry
   | Blocked_path
   | Invalid_destination
-  | Cross_board_capture
+  | Capture_off_original_board
   | Invalid_special_move
 
 type move_kind =

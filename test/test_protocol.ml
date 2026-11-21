@@ -177,7 +177,8 @@ let () =
     (Protocol.Types.snapshot_response_of_bytes (Bytes.create 72) = None);
 
   (* Packed-to-client-byte projection used by move acknowledgements. *)
-  let packed ?(white = false) ?(moves = 0) ?(double = false) type_code =
+  let packed ?(white = false) ?(moves = 0) ?(double = false)
+      ?(on_original = false) type_code =
     let base = Int64.shift_left (Int64.of_int type_code) 25 in
     let base =
       if white then Int64.logor base (Int64.shift_left 1L 29) else base
@@ -186,18 +187,27 @@ let () =
       if moves = 0 then base
       else Int64.logor base (Int64.shift_left (Int64.of_int moves) 40)
     in
-    if double then Int64.logor base (Int64.shift_left 1L 30) else base
+    let base =
+      if double then Int64.logor base (Int64.shift_left 1L 30) else base
+    in
+    if on_original then Int64.logor base (Int64.shift_left 1L 38)
+    else base
   in
   check "client byte white pawn"
     (Protocol.Types.client_byte_of_packed
-       (packed ~white:true 1) = 19);
+       (packed ~white:true ~on_original:true 1) = 19);
   check "client byte black bishop"
-    (Protocol.Types.client_byte_of_packed (packed 3) = 20);
+    (Protocol.Types.client_byte_of_packed
+       (packed ~on_original:true 3) = 20);
   check "client byte white knight"
-    (Protocol.Types.client_byte_of_packed (packed ~white:true 2) = 23);
+    (Protocol.Types.client_byte_of_packed
+       (packed ~white:true ~on_original:true 2) = 23);
   check "client byte moved rook"
     (Protocol.Types.client_byte_of_packed
        (packed ~white:true ~moves:1 4) = 9);
+  check "client byte rook back home"
+    (Protocol.Types.client_byte_of_packed
+       (packed ~white:true ~moves:1 ~on_original:true 4) = 25);
   check "client byte double-moved pawn"
     (Protocol.Types.client_byte_of_packed
        (packed ~white:true ~moves:1 ~double:true 1) = 35);

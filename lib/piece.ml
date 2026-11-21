@@ -20,7 +20,8 @@ type piece_type =
      34     queen pawner
      35     adopted killer
      36     has captured a piece type other than its own
-     37..38 reserved
+     37    reserved
+     38     on original board (cached; updated by moves)
      39     adopted
      40..51 move count (12 bits)
      52..63 capture count (12 bits) *)
@@ -39,6 +40,7 @@ let queen_killer_bit = 33
 let queen_pawner_bit = 34
 let adopted_killer_bit = 35
 let has_captured_other_type_bit = 36
+let on_original_board_bit = 38
 let adopted_bit = 39
 let move_count_shift = 40
 let capture_count_shift = 52
@@ -76,7 +78,8 @@ let create ~id ~piece_type ~is_white =
          (Int64.shift_left (Int64.of_int (type_code piece_type)) type_shift)
          (if is_white then Int64.shift_left 1L white_bit else 0L))
   in
-  bits
+  (* New pieces are created on their original board. Moves update this. *)
+  Int64.logor bits (Int64.shift_left 1L on_original_board_bit)
 
 let id t = Int64.logand t id_mask |> Int64.to_int32
 
@@ -114,6 +117,7 @@ let queen_pawner t = get_flag t queen_pawner_bit
 let adopted_killer t = get_flag t adopted_killer_bit
 let has_captured_other_type t = get_flag t has_captured_other_type_bit
 let adopted t = get_flag t adopted_bit
+let on_original_board t = get_flag t on_original_board_bit
 
 let get_counter t shift =
   Int64.logand (Int64.shift_right_logical t shift) counter_mask
@@ -161,6 +165,17 @@ let with_adopted t value =
   require_piece "Piece.with_adopted" t;
   set_flag t adopted_bit value
 
+let with_on_original_board t value =
+  require_piece "Piece.with_on_original_board" t;
+  set_flag t on_original_board_bit value
+
+let original_board_id t =
+  require_piece "Piece.original_board_id" t;
+  (Int32.to_int (id t) - 1) / 32
+
+let is_on_original_board ~board_x ~board_y t =
+  original_board_id t = (board_y * 1000) + board_x
+
 let increment_move_count t =
   require_piece "Piece.increment_move_count" t;
   let count = move_count t in
@@ -201,7 +216,7 @@ let client_byte t =
   else
     let byte = client_type_code (piece_type t) lsl 1 in
     let byte = if is_white t then byte lor 1 else byte in
-    let byte = if move_count t = 0 then byte lor (1 lsl 4) else byte in
+    let byte = if on_original_board t then byte lor (1 lsl 4) else byte in
     let byte =
       match piece_type t with
       | Pawn -> if just_double_moved t then byte lor (1 lsl 5) else byte
@@ -209,6 +224,13 @@ let client_byte t =
       | _ -> byte
     in
     byte
+
+let client_byte_at ~board_x ~board_y t =
+  if is_empty t then 0
+  else
+    let byte = client_byte t in
+    if is_on_original_board ~board_x ~board_y t then byte lor (1 lsl 4)
+    else byte land lnot (1 lsl 4)
 
 let client_signature ~square t =
   if square < 0 || square >= 64 then
@@ -220,11 +242,11 @@ let to_string t =
   else
     Printf.sprintf
       "{id=%ld type=%s colour=%s dbl=%b kk=%b kp=%b qk=%b qp=%b ak=%b \
-       other=%b adopted=%b moves=%d captures=%d}"
+       other=%b adopted=%b original=%b moves=%d captures=%d}"
       (id t) (type_name (piece_type t))
       (if is_white t then "white" else "black")
       (just_double_moved t) (king_killer t) (king_pawner t) (queen_killer t)
       (queen_pawner t) (adopted_killer t) (has_captured_other_type t)
-      (adopted t) (move_count t) (capture_count t)
+      (adopted t) (on_original_board t) (move_count t) (capture_count t)
 
 let pp fmt t = Format.pp_print_string fmt (to_string t)

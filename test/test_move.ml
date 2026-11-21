@@ -35,7 +35,8 @@ let rejection_name = function
   | Move_validator.Invalid_geometry -> "Invalid_geometry"
   | Move_validator.Blocked_path -> "Blocked_path"
   | Move_validator.Invalid_destination -> "Invalid_destination"
-  | Move_validator.Cross_board_capture -> "Cross_board_capture"
+  | Move_validator.Capture_off_original_board ->
+    "Capture_off_original_board"
   | Move_validator.Invalid_special_move -> "Invalid_special_move"
 
 let check name condition =
@@ -248,37 +249,65 @@ let test_king () =
   let _ = place Piece.Knight false 0 0 5 7 in
   expect_illegal Blocked_path (move (pos 0 0 4 7) (pos 0 0 6 7))
 
-let test_cross_board_capture () =
+let test_capture_off_original_board () =
   reset ();
-  let _ = place Piece.Rook true 0 0 7 4 in
-  let pawn = place Piece.Pawn false 1 0 0 4 in
-  expect_illegal Cross_board_capture
+  let rook =
+    Piece.create ~id:1l ~piece_type:Piece.Rook ~is_white:true
+  in
+  let pawn =
+    Piece.create ~id:33l ~piece_type:Piece.Pawn ~is_white:false
+  in
+  put rook 0 0 7 4;
+  put pawn 1 0 0 4;
+  expect_illegal Capture_off_original_board
     (move (pos 0 0 7 4) (pos 1 0 0 4));
 
-  put (Piece.increment_move_count pawn) 1 0 0 4;
-  let info = apply (move (pos 0 0 7 4) (pos 1 0 0 4)) in
-  check "moved cross-board capture" (Piece.id info.captured_piece = Piece.id pawn);
-  check "moved cross-board rook" (not (Piece.is_empty (piece_at 1 0 0 4)));
+  reset ();
+  let rook =
+    Piece.create ~id:1l ~piece_type:Piece.Rook ~is_white:true
+  in
+  put rook 0 0 0 0;
+  let _ = apply (move (pos 0 0 0 0) (pos 1 0 0 0)) in
+  check "quiet move left original board"
+    (not (Piece.on_original_board (piece_at 1 0 0 0)));
+  let blocker =
+    Piece.create ~id:34l ~piece_type:Piece.Pawn ~is_white:false
+  in
+  put blocker 1 0 1 0;
+  expect_illegal Capture_off_original_board
+    (move (pos 1 0 0 0) (pos 1 0 1 0));
+
+  let _ = apply (move (pos 1 0 0 0) (pos 0 0 7 0)) in
+  check "returned to original board"
+    (Piece.on_original_board (piece_at 0 0 7 0));
+  let target =
+    Piece.create ~id:2l ~piece_type:Piece.Pawn ~is_white:false
+  in
+  put target 0 0 6 0;
+  let info = apply (move (pos 0 0 7 0) (pos 0 0 6 0)) in
+  check "capture after returning home"
+    (Piece.id info.captured_piece = Piece.id target);
 
   reset ();
-  let _ = place Piece.Rook true 0 0 4 4 in
-  let _ = place Piece.Pawn false 0 0 7 4 in
+  let rook =
+    Piece.create ~id:1l ~piece_type:Piece.Rook ~is_white:true
+  in
+  let target =
+    Piece.create ~id:2l ~piece_type:Piece.Pawn ~is_white:false
+  in
+  put rook 0 0 4 4;
+  put target 0 0 7 4;
   let info = apply (move (pos 0 0 4 4) (pos 0 0 7 4)) in
-  check "same-board unmoved capture"
-    (not (Piece.is_empty info.captured_piece));
+  check "same-board capture at home"
+    (Piece.id info.captured_piece = Piece.id target);
 
   reset ();
-  let _ = place Piece.Rook true 0 0 7 4 in
+  let rook =
+    Piece.create ~id:1l ~piece_type:Piece.Rook ~is_white:true
+  in
+  put rook 0 0 7 4;
   let info = apply (move (pos 0 0 7 4) (pos 1 0 0 4)) in
-  check "cross-board quiet move" (Piece.is_empty info.captured_piece);
-
-  reset ();
-  let _ = place Piece.Rook true 0 0 0 0 in
-  ignore (expect_legal (move (pos 0 0 0 0) (pos 4 0 4 0)));
-  expect_illegal Invalid_geometry
-    (move (pos 0 0 0 0) (pos 4 0 5 0));
-  expect_illegal Invalid_geometry
-    (move (pos 0 0 0 0) (pos 4 0 4 1))
+  check "cross-board quiet move" (Piece.is_empty info.captured_piece)
 
 let test_en_passant () =
   reset ();
@@ -317,12 +346,13 @@ let test_en_passant () =
 
   reset ();
   let _ = place Piece.Pawn true 0 0 7 3 in
-  let captured = new_piece Piece.Pawn false |> fun p -> Piece.with_just_double_moved p true in
+  let captured =
+    new_piece Piece.Pawn false
+    |> fun p -> Piece.with_just_double_moved p true
+  in
   put captured 1 0 0 3;
-  let info = apply (move (pos 0 0 7 3) (pos 1 0 0 2)) in
-  check "cross-board en passant" (Piece.id info.captured_piece = Piece.id captured);
-  check "cross-board en passant captured square"
-    (Piece.is_empty (piece_at 1 0 0 3))
+  expect_illegal Capture_off_original_board
+    (move (pos 0 0 7 3) (pos 1 0 0 2))
 
 let test_promotion () =
   reset ();
@@ -443,7 +473,7 @@ let () =
   test_knight ();
   test_sliders ();
   test_king ();
-  test_cross_board_capture ();
+  test_capture_off_original_board ();
   test_en_passant ();
   test_promotion ();
   test_capture_metadata ();

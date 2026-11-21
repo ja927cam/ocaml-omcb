@@ -3,6 +3,11 @@ type plan = {
   sets : (Board.position * Piece.t) list;
 }
 
+let with_original_flag piece board =
+  Piece.with_on_original_board piece
+    (Piece.is_on_original_board ~board_x:board.Board.board_x
+       ~board_y:board.board_y piece)
+
 let normal_plan (info : Move_validator.move_info) =
   let dy = Board.world_y info.dst - Board.world_y info.src in
   let moving =
@@ -58,6 +63,7 @@ let normal_plan (info : Move_validator.move_info) =
         Piece.with_has_captured_other_type moving true
       else moving
   in
+  let moving = with_original_flag moving info.dst.board in
   { clears = [ info.src ]; sets = [ (info.dst, moving) ] }
 
 let en_passant_plan (info : Move_validator.move_info) captured_pos =
@@ -66,16 +72,24 @@ let en_passant_plan (info : Move_validator.move_info) captured_pos =
     |> Piece.increment_move_count
     |> Piece.increment_capture_count
     |> fun p -> Piece.with_just_double_moved p false
+    |> fun p -> with_original_flag p info.dst.board
   in
   {
     clears = [ info.src; captured_pos ];
     sets = [ (info.dst, moving) ];
   }
 
-let castle_plan board (info : Move_validator.move_info) rook_src rook_dst =
+let castle_plan board (info : Move_validator.move_info)
+    (rook_src : Board.position) (rook_dst : Board.position) =
   let rook = Board.get board rook_src in
-  let king = Piece.increment_move_count info.moving_piece in
-  let rook = Piece.increment_move_count rook in
+  let king =
+    Piece.increment_move_count info.moving_piece
+    |> fun p -> with_original_flag p info.dst.board
+  in
+  let rook =
+    Piece.increment_move_count rook
+    |> fun p -> with_original_flag p rook_dst.board
+  in
   {
     clears = [ info.src; rook_src ];
     sets = [ (info.dst, king); (rook_dst, rook) ];

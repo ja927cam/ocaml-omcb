@@ -131,11 +131,19 @@ let test_piece () =
   check "client byte en passant"
     (Piece.client_byte (Piece.with_just_double_moved white_pawn true) = 51);
   check "client byte moved pawn clears original"
-    (Piece.client_byte (Piece.increment_move_count white_pawn) = 3);
+    (Piece.client_byte
+       (Piece.with_on_original_board
+          (Piece.increment_move_count white_pawn)
+          false)
+    = 3);
   let white_rook = Piece.create ~id:12l ~piece_type:Piece.Rook ~is_white:true in
   check "client byte castling rook" (Piece.client_byte white_rook = 57);
   check "client byte moved rook"
-    (Piece.client_byte (Piece.increment_move_count white_rook) = 9);
+    (Piece.client_byte
+       (Piece.with_on_original_board
+          (Piece.increment_move_count white_rook)
+          false)
+    = 9);
   let black_bishop = Piece.create ~id:13l ~piece_type:Piece.Bishop ~is_white:false in
   check "client byte bishop before knight"
     (Piece.client_byte black_bishop = 20);
@@ -143,8 +151,17 @@ let test_piece () =
   check "client byte knight" (Piece.client_byte white_knight = 23);
   let promoted =
     Piece.promote (Piece.increment_move_count white_pawn) Piece.Promoted_pawn
+    |> fun p -> Piece.with_on_original_board p false
   in
   check "client byte promoted pawn is queen" (Piece.client_byte promoted = 11);
+  check "client byte at original board"
+    (Piece.client_byte_at ~board_x:0 ~board_y:0 white_pawn = 19);
+  check "client byte at foreign board"
+    (Piece.client_byte_at ~board_x:1 ~board_y:0 white_pawn = 3);
+  check "on original board default" (Piece.on_original_board white_pawn);
+  check "on original board cleared"
+    (not (Piece.on_original_board
+            (Piece.with_on_original_board white_pawn false)));
   check "client signature"
     (Piece.client_signature ~square:52 white_pawn = Int32.of_int ((52 lsl 8) lor 19));
   check "client empty signature"

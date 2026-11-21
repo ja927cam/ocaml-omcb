@@ -258,7 +258,7 @@ let rejection_empty_source = 2
 let rejection_invalid_geometry = 3
 let rejection_blocked_path = 4
 let rejection_invalid_destination = 5
-let rejection_cross_board_capture = 6
+let rejection_capture_off_original_board = 6
 let rejection_invalid_special_move = 7
 let rejection_invalid_request = 8
 let rejection_queue_full = 9
@@ -460,9 +460,12 @@ let client_byte_of_packed value =
       Int64.logand (Int64.shift_right_logical value 40) 0xFFFL |> Int64.to_int
     in
     let double = Int64.logand value (Int64.shift_left 1L 30) <> 0L in
+    let on_original =
+      Int64.logand value (Int64.shift_left 1L 38) <> 0L
+    in
     let byte = type_code lsl 1 in
     let byte = if white then byte lor 1 else byte in
-    let byte = if moves = 0 then byte lor 0x10 else byte in
+    let byte = if on_original then byte lor 0x10 else byte in
     match type_code with
     | 1 -> if double then byte lor 0x20 else byte
     | 4 | 6 -> if moves = 0 then byte lor 0x20 else byte

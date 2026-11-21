@@ -715,11 +715,57 @@ let main () =
               in
               let pawn = piece_type_code d.piece_byte = 1 in
               let king = piece_type_code d.piece_byte = 6 in
-              (* Original rule: a capture may cross a board boundary only if
-                 the captured piece has already moved. *)
+              (* Captures are only allowed on the mover's original board. If
+                 it is off that board, or the target is on another board, the
+                 drag snaps back without sending a request. *)
+              let en_passant_capture =
+                if pawn && abs dx = 1 && dst_piece = empty then begin
+                  let captured_world_x =
+                    (src_bx * 8) + (d.from mod 8) + dx
+                  in
+                  let captured_world_y =
+                    (src_by * 8) + (d.from / 8)
+                  in
+                  if
+                    captured_world_x >= 0 && captured_world_x < 8000
+                    && captured_world_y >= 0 && captured_world_y < 8000
+                  then begin
+                    let cbx = captured_world_x / 8 in
+                    let cby = captured_world_y / 8 in
+                    let captured =
+                      ((captured_world_y mod 8) * 8)
+                      + (captured_world_x mod 8)
+                    in
+                    let captured_state = state_of cbx cby in
+                    if captured_state.loaded then begin
+                      let captured_piece =
+                        Bytes.unsafe_get captured_state.pieces captured
+                      in
+                      if
+                        captured_piece <> empty
+                        && en_passantable captured_piece
+                        && white_byte captured_piece
+                           <> white_byte d.piece_byte
+                      then
+                        Some (captured_state, captured)
+                      else None
+                    end
+                    else None
+                  end
+                  else None
+                end
+                else None
+              in
+              let is_capture =
+                dst_piece <> empty
+                || (match en_passant_capture with
+                    | Some _ -> true
+                    | None -> false)
+              in
               let capture_blocked =
-                (not same_board) && dst_piece <> empty
-                && on_original_board dst_piece
+                is_capture
+                && ((not same_board)
+                   || not (on_original_board d.piece_byte))
               in
               let within_limit = abs dx <= 36 && abs dy <= 36 in
               if within_limit && not capture_blocked then begin
@@ -772,44 +818,6 @@ let main () =
                             rook_piece =
                               Bytes.unsafe_get rook_src_state.pieces rook_src;
                           }
-                      else None
-                    end
-                    else None
-                  end
-                  else None
-                in
-                let en_passant_capture =
-                  if pawn && abs dx = 1 && dst_piece = empty then begin
-                    let captured_world_x =
-                      (src_bx * 8) + (d.from mod 8) + dx
-                    in
-                    let captured_world_y =
-                      (src_by * 8) + (d.from / 8)
-                    in
-                    if
-                      captured_world_x >= 0 && captured_world_x < 8000
-                      && captured_world_y >= 0 && captured_world_y < 8000
-                    then begin
-                      let cbx = captured_world_x / 8 in
-                      let cby = captured_world_y / 8 in
-                      let captured =
-                        ((captured_world_y mod 8) * 8)
-                        + (captured_world_x mod 8)
-                      in
-                      let captured_state = state_of cbx cby in
-                      if captured_state.loaded then begin
-                        let captured_piece =
-                          Bytes.unsafe_get captured_state.pieces captured
-                        in
-                        if
-                          captured_piece <> empty
-                          && en_passantable captured_piece
-                          && white_byte captured_piece
-                             <> white_byte d.piece_byte
-                        then
-                          Some (captured_state, captured)
-                        else None
-                      end
                       else None
                     end
                     else None
@@ -945,8 +953,16 @@ let main () =
                       apply_castle c;
                       Bytes.unsafe_set c.king_dst_state.pieces c.king_dst
                         moved_byte;
+                      let same_rook_board =
+                        c.rook_src_state.bx = c.rook_dst_state.bx
+                        && c.rook_src_state.by = c.rook_dst_state.by
+                      in
+                      let rook_byte =
+                        (Char.code c.rook_piece land 0xCF)
+                        lor (if same_rook_board then 0x10 else 0)
+                      in
                       Bytes.unsafe_set c.rook_dst_state.pieces c.rook_dst
-                        (Char.chr (Char.code c.rook_piece land 0xCF))
+                        (Char.chr rook_byte)
                     | Special (En_passant e) ->
                       apply_en_passant e;
                       Bytes.unsafe_set e.dst_state.pieces e.dst moved_byte

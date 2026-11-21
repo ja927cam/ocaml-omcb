@@ -40,6 +40,9 @@ val queen_pawner : t -> bool
 val adopted_killer : t -> bool
 val has_captured_other_type : t -> bool
 val adopted : t -> bool
+val on_original_board : t -> bool
+(** [on_original_board p] is the cached bit saying [p] is currently on the
+    board encoded by its ID. Pieces are created with this set; moves update it. *)
 
 val move_count : t -> int
 val capture_count : t -> int
@@ -52,6 +55,7 @@ val with_queen_pawner : t -> bool -> t
 val with_adopted_killer : t -> bool -> t
 val with_has_captured_other_type : t -> bool -> t
 val with_adopted : t -> bool -> t
+val with_on_original_board : t -> bool -> t
 (** All update functions require a non-empty piece and preserve every other
     field. @raise Invalid_argument if the piece is empty. *)
 
@@ -64,11 +68,23 @@ val promote : t -> piece_type -> t
 (** Change the piece type, preserving ID, colour and all metadata.
     @raise Invalid_argument if the piece is empty. *)
 
+val original_board_id : t -> int
+(** [original_board_id p] is the board encoded in the piece ID:
+    [(id - 1) / 32]. It is stable across moves, promotion and adoption. *)
+
+val is_on_original_board : board_x:int -> board_y:int -> t -> bool
+(** [is_on_original_board ~board_x ~board_y p] compares the piece's encoded
+    original board with the supplied board. *)
+
 val client_byte : t -> int
 (** [client_byte p] is the compact one-byte snapshot encoding: white bit,
     type bits (0 empty, 1 pawn, 2 bishop, 3 knight, 4 rook, 5 queen, 6 king),
-    on-original-board bit, and en-passant/castling bit. Promoted pawns encode
-    as queens. *)
+    the cached on-original-board bit, and en-passant/castling bit. Promoted
+    pawns encode as queens. *)
+
+val client_byte_at : board_x:int -> board_y:int -> t -> int
+(** [client_byte_at] is {!client_byte} with the on-original-board bit computed
+    from the supplied board rather than the cached flag. *)
 
 val client_signature : square:int -> t -> int32
 (** [client_signature ~square p] combines a square index with {!client_byte}

@@ -3,7 +3,7 @@ type rejection =
   | Invalid_geometry
   | Blocked_path
   | Invalid_destination
-  | Cross_board_capture
+  | Capture_off_original_board
   | Invalid_special_move
 
 type move_kind =
@@ -104,6 +104,10 @@ let validate_en_passant t (move : Move.t) moving =
         || same_colour captured moving
         || not (Piece.just_double_moved captured)
       then Illegal Invalid_special_move
+      else if
+        boards_differ move.src move.dst
+        || not (Piece.on_original_board moving)
+      then Illegal Capture_off_original_board
       else legal (En_passant { captured_pos }) moving captured src dst
 
 let validate_pawn t (move : Move.t) ~dx ~dy moving ~captured =
@@ -121,37 +125,31 @@ let validate_pawn t (move : Move.t) ~dx ~dy moving ~captured =
   else legal Normal moving captured move.src move.dst
 
 let validate_normal t (move : Move.t) moving ~dx ~dy ~captured =
-  if
-    (not (Piece.is_empty captured))
-    && boards_differ move.src move.dst
-    && Piece.move_count captured = 0
-  then Illegal Cross_board_capture
-  else
-    let adx = abs_int dx and ady = abs_int dy in
-    match Piece.piece_type moving with
-    | Piece.Pawn -> validate_pawn t move ~dx ~dy moving ~captured
-    | Piece.Knight ->
-      if (adx = 1 && ady = 2) || (adx = 2 && ady = 1) then
-        legal Normal moving captured move.src move.dst
-      else Illegal Invalid_geometry
-    | Piece.Bishop ->
-      if adx <> ady || adx = 0 then Illegal Invalid_geometry
-      else if not (path_clear t move.src move.dst) then Illegal Blocked_path
-      else legal Normal moving captured move.src move.dst
-    | Piece.Rook ->
-      if (adx = 0) = (ady = 0) then Illegal Invalid_geometry
-      else if not (path_clear t move.src move.dst) then Illegal Blocked_path
-      else legal Normal moving captured move.src move.dst
-    | Piece.Queen | Piece.Promoted_pawn ->
-      let diagonal = adx = ady && adx > 0 in
-      let straight = (adx = 0) <> (ady = 0) in
-      if not (diagonal || straight) then Illegal Invalid_geometry
-      else if not (path_clear t move.src move.dst) then Illegal Blocked_path
-      else legal Normal moving captured move.src move.dst
-    | Piece.King ->
-      if adx <= 1 && ady <= 1 && not (boards_differ move.src move.dst) then
-        legal Normal moving captured move.src move.dst
-      else Illegal Invalid_geometry
+  let adx = abs_int dx and ady = abs_int dy in
+  match Piece.piece_type moving with
+  | Piece.Pawn -> validate_pawn t move ~dx ~dy moving ~captured
+  | Piece.Knight ->
+    if (adx = 1 && ady = 2) || (adx = 2 && ady = 1) then
+      legal Normal moving captured move.src move.dst
+    else Illegal Invalid_geometry
+  | Piece.Bishop ->
+    if adx <> ady || adx = 0 then Illegal Invalid_geometry
+    else if not (path_clear t move.src move.dst) then Illegal Blocked_path
+    else legal Normal moving captured move.src move.dst
+  | Piece.Rook ->
+    if (adx = 0) = (ady = 0) then Illegal Invalid_geometry
+    else if not (path_clear t move.src move.dst) then Illegal Blocked_path
+    else legal Normal moving captured move.src move.dst
+  | Piece.Queen | Piece.Promoted_pawn ->
+    let diagonal = adx = ady && adx > 0 in
+    let straight = (adx = 0) <> (ady = 0) in
+    if not (diagonal || straight) then Illegal Invalid_geometry
+    else if not (path_clear t move.src move.dst) then Illegal Blocked_path
+    else legal Normal moving captured move.src move.dst
+  | Piece.King ->
+    if adx <= 1 && ady <= 1 && not (boards_differ move.src move.dst) then
+      legal Normal moving captured move.src move.dst
+    else Illegal Invalid_geometry
 
 let validate t (move : Move.t) =
   if not (Board.in_bounds move.src) then Illegal Empty_source
@@ -179,4 +177,9 @@ let validate t (move : Move.t) =
           Piece.piece_type moving = Piece.Pawn
           && abs_int dx = 1 && Piece.is_empty captured
         then validate_en_passant t move moving
+        else if
+          (not (Piece.is_empty captured))
+          && (boards_differ move.src move.dst
+             || not (Piece.on_original_board moving))
+        then Illegal Capture_off_original_board
         else validate_normal t move moving ~dx ~dy ~captured

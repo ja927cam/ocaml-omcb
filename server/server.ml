@@ -21,8 +21,8 @@ let rejection_code = function
      | Move_validator.Blocked_path -> Protocol.Types.rejection_blocked_path
      | Move_validator.Invalid_destination ->
        Protocol.Types.rejection_invalid_destination
-     | Move_validator.Cross_board_capture ->
-       Protocol.Types.rejection_cross_board_capture
+     | Move_validator.Capture_off_original_board ->
+       Protocol.Types.rejection_capture_off_original_board
      | Move_validator.Invalid_special_move ->
        Protocol.Types.rejection_invalid_special_move)
 
@@ -99,7 +99,10 @@ let snapshot_failure ?(request_id = 0l) ?(board_x = 0) ?(board_y = 0) () =
 
 let snapshot_success (request : Protocol.Types.snapshot_request) board =
   let encoded =
-    Bytes.init 64 (fun i -> Char.chr (Piece.client_byte board.(i)))
+    Bytes.init 64 (fun i ->
+        Char.chr
+          (Piece.client_byte_at ~board_x:request.board_x
+             ~board_y:request.board_y board.(i)))
   in
   Protocol.Types.
     {

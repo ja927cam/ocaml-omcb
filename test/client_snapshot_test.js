@@ -369,6 +369,18 @@ async function main() {
     }
     await settle();
 
+    // The rook is now off its original board, so even a same-board capture is
+    // blocked until it returns home.
+    const beforeOffHomeCapture = await evaluate("window.__moveRequests.length");
+    await drag({ boardX: BOARD.x, boardY: BOARD.y, col: 7, row: 5 },
+      { boardX: BOARD.x, boardY: BOARD.y, col: 7, row: 1 });
+    if ((await evaluate("window.__moveRequests.length")) !== beforeOffHomeCapture) {
+      fail("an off-home same-board capture sent a move request");
+    }
+    if ((await piecePixels(BOARD.x, BOARD.y, 7, 1)) <= 20) {
+      fail("the target pawn disappeared after a blocked off-home capture");
+    }
+
     // Every request must fall inside the 25x25 window of a centre the test
     // actually visited: BOARD.x - 1, BOARD.x or BOARD.x + 1.
     const requests = await evaluate("window.__snapshotRequests");
