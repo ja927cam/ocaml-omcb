@@ -715,34 +715,34 @@ Machine-specific numbers, useful for relative comparisons:
 | Benchmark | Variant | ns/op |
 |---|---:|---:|
 | Board index | checked | ~6.1 |
-| Board index | raw arithmetic | ~2.6 |
-| Board read | checked position | ~13.7 |
-| Board read | `get_world` | ~11.1 |
-| Piece create | packed int64 | ~7.4 |
-| Piece inspect | id/type/flags | ~9.3 |
-| Piece metadata | immutable flags | ~19.0 |
+| Board index | raw arithmetic | ~2.7 |
+| Board read | checked position | ~14.1 |
+| Board read | `get_world` | ~11.5 |
+| Piece create | packed int64 | ~8.6 |
+| Piece inspect | id/type/flags | ~9.7 |
+| Piece metadata | immutable flags | ~18.2 |
 | Protocol move | encode/decode | ~24 / ~19 |
-| Protocol request | encode/decode | ~59 / ~39 |
-| Protocol wire response | encode/decode | ~535 / ~49 |
-| Protocol snapshot response | encode/decode | ~33 / ~21 |
-| Validation path | record + checked get | ~556 |
-| Validation path | `get_world` | ~249 |
-| Validation long queen | 36 squares | ~300 |
-| Processing prepare | queen long move | ~15 |
-| Processing `apply_plan` | queen long move | ~27 |
+| Protocol request | encode/decode | ~59 / ~40 |
+| Protocol wire response | encode/decode | ~565 / ~49 |
+| Protocol snapshot response | encode/decode | ~34 / ~21 |
+| Validation path | record + checked get | ~517 |
+| Validation path | `get_world` | ~250 |
+| Validation long queen | 36 squares | ~302 |
+| Processing prepare | queen long move | ~27 |
+| Processing `apply_plan` | queen long move | ~25 |
 | Ledger append | 1M circular | ~16 |
 | Ledger event read | decoded | ~14 |
-| Snapshot board | 64-piece copy | ~314 |
-| Engine process | full move | ~183 |
-| Worker submit/process | sequential awaiter | ~2,046 |
-| Worker submit/process | pipelined 4,000 | ~1,658 |
-| Worker snapshot | pipelined 4,000 | ~3,409 |
+| Snapshot board | 64-piece copy | ~293 |
+| Engine process | full move | ~192 |
+| Worker submit/process | sequential awaiter | ~2,097 |
+| Worker submit/process | pipelined 4,000 | ~2,097 |
+| Worker snapshot | pipelined 4,000 | ~3,499 |
 
 Startup single-shot on the same run:
 
-- allocation: ~49 ms (512 MB board + 16 MB ledger);
-- full world initialisation: ~327 ms;
-- occupied scan verification: ~172 ms.
+- allocation: ~45 ms (512 MB board + 16 MB ledger);
+- full world initialisation: ~323 ms;
+- occupied scan verification: ~149 ms.
 
 The wire-response encode figure includes allocating and zero-filling the
 4,096-byte frame that forces Dream to flush each WebSocket response. That is

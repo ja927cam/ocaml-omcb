@@ -1344,11 +1344,11 @@ These are deliberate and are not conventional chess:
 - `docs/ALGORITHMS.md` explains the algorithm choices, complexity, benchmark
   methodology, test evidence and formal-verification opportunities.
 
-Example relative results on the benchmark machine: raw board indexing ~2.6 ns,
-checked indexing ~6.2 ns; checked board read ~14.4 ns vs direct world read
-~11.5 ns; a 127-square sliding path ~1,797 ns with record construction vs
-~887 ns with direct world reads; ledger append ~15 ns; full engine process
-~180 ns; Lwt worker round trip ~1.8 µs. See `bench/results.json` for the
+Example relative results on the benchmark machine: raw board indexing ~2.7 ns,
+checked indexing ~6.1 ns; checked board read ~14.1 ns vs direct world read
+~11.5 ns; a 36-square sliding path ~517 ns with record construction vs
+~250 ns with direct world reads; ledger append ~16 ns; full engine process
+~192 ns; Lwt worker round trip ~2.1 µs. See `bench/results.json` for the
 current run.
 
 ---
