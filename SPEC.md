@@ -1042,14 +1042,15 @@ handler returns. A move that has already committed is never rolled back.
 
 - The canvas fills the viewport (`100vw x 100vh`), and its backing size tracks
   `window.innerWidth x window.innerHeight`.
-- The world contains 1000 x 1000 boards. Each board is 168 x 168 backing
-  pixels (21 px per square), so a 512 px span shows about 3.05 boards. On a
-  typical desktop viewport the nine centre boards are fully visible (except at
-  world edges), with additional boards at the edges.
-- An 8 x 8 board tile is rendered once to a 168 x 168 offscreen canvas. Each
-  visible board is one `drawImage` blit, not 64 rectangle fills. Pieces are
-  drawn only for loaded boards, so an unloaded board shows an empty grid
-  rather than invented pieces.
+- The world contains 1000 x 1000 boards. Each board is 216 x 216 backing
+  pixels (27 px per square), so three boards span 648 px. On a typical desktop
+  viewport the nine centre boards are fully visible (except at world edges),
+  with additional boards at the edges.
+- An 8 x 8 board tile is rendered once to a 216 x 216 offscreen canvas with a
+  one-pixel dark inner border. Each visible board is one `drawImage` blit, not
+  64 rectangle fills, and adjacent borders make the board boundaries clear.
+  Pieces are drawn only for loaded boards, so an unloaded board shows an empty
+  grid rather than invented pieces.
 - Piece glyphs are rendered once into a 6 x 2 offscreen atlas: pawn, knight,
   bishop, rook, queen, king; white and black rows.
 - Rendering is dirty-flag driven: at most one `requestAnimationFrame` is

@@ -1,7 +1,9 @@
 open Brr
 open Brr_canvas
 
-let board_px = 168.
+(* 216 px boards are a comfortable zoom: three fit vertically in a 700 px
+   window, while larger screens show more context. *)
+let board_px = 216.
 let cell_px = board_px /. 8.
 let max_coord = 999
 let empty = '\000'
@@ -209,6 +211,14 @@ let main () =
         ~w:cell_px ~h:cell_px
     done
   done;
+  (* A one-pixel inner border makes adjacent boards visually distinct. *)
+  let border = C2d.color (Jstr.v "rgba(25, 18, 12, 0.65)") in
+  C2d.set_fill_style board_ctx border;
+  let edge = float (int_of_float board_px) in
+  C2d.fill_rect board_ctx ~x:0. ~y:0. ~w:edge ~h:1.;
+  C2d.fill_rect board_ctx ~x:0. ~y:(edge -. 1.) ~w:edge ~h:1.;
+  C2d.fill_rect board_ctx ~x:0. ~y:0. ~w:1. ~h:edge;
+  C2d.fill_rect board_ctx ~x:(edge -. 1.) ~y:0. ~w:1. ~h:edge;
   let board_tile = C2d.image_src_of_el (Canvas.to_el board_canvas) in
 
   let atlas_canvas = Canvas.create ~w:(6 * 64) ~h:(2 * 64) [] in

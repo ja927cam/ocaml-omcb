@@ -5,7 +5,7 @@
  * Requires the game server at http://localhost:8080, Node with fetch/WebSocket,
  * and chromium on PATH. It spawns its own headless browser.
  *
- * The client renders the world full-screen at 168 px per board, so a 3x3
+ * The client renders the world full-screen at 216 px per board, so a 3x3
  * region is fully visible with more boards at the edges. It caches at most a
  * 25x25 board window around the centre.
  * This test checks nine visible boards, one-board camera pans in both
@@ -21,7 +21,7 @@ const path = require("path");
 
 const CDP_PORT = 9223 + Math.floor(Math.random() * 500);
 const SERVER = "http://localhost:8080/";
-const BOARD_SCALE = 168;
+const BOARD_SCALE = 216;
 const CELL = BOARD_SCALE / 8;
 // Pick a fresh board each run: moves are authoritative and persist on the
 // long-running test server.

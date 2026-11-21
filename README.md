@@ -40,8 +40,8 @@ The board grid fills the whole window.
   capturable bit and returning restores it.
 - The current centre is shown in the top-right corner.
 - `?x=<board_x>&y=<board_y>` opens the client centred on that board.
-- At the default 168 px per board, a 512 px span shows about three boards;
-  larger windows show more of the world.
+- At 216 px per board, roughly three boards fit vertically in a 700 px
+  window; larger windows show more of the world.
 
 ## Documentation
 
