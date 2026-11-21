@@ -729,9 +729,17 @@ boards, not a single board:
 - Messages: 4096-byte wire frames with a kind byte. The client dispatches on
   the kind and parses move responses, snapshots or live events.
 - The route uses `Dream.websocket ~close:false` to avoid Dream
-  1.0.0~alpha8’s busy-looping close path on abrupt peer teardown. Sends have a
-  two-second timeout, the receive loop catches connection errors, and pending
-  worker work remains bounded by the queue.
+  1.0.0~alpha8’s busy-looping close path on abrupt peer teardown. The close
+  path serialises a four-byte close frame into the WebSocket writer. If the
+  peer has already reset the connection, `writev` returns `EPIPE`; Dream’s
+  writer is closed without discarding the still-pending close frame, so
+  `Faraday.operation` keeps returning the same write and the Gluten write loop
+  spins. `close:false` avoids scheduling that frame. The trade-off is that a
+  clean client `WebSocket.close()` does not receive a server close frame; the
+  connection is released when the client’s TCP stack closes, which the load
+  harness confirms happens when the client process exits.
+- Sends have a two-second timeout, the receive loop catches connection errors,
+  and pending worker work remains bounded by the queue.
 - The client still closes the WebSocket on `beforeunload`.
 - Live events are not replayed; a missed revision gap is repaired by a
   snapshot. No reconnect/resume is implemented.
@@ -816,6 +824,48 @@ The path and read comparisons demonstrate why the `get_world` fast path was
 introduced: it removes per-square record allocation and repeated position
 validation from sliding movement.
 
+### Live load test
+
+The microbenchmarks isolate code paths. `bench/load_test.js` complements them
+with an end-to-end flood that exercises the HTTP/WebSocket stack, the state
+worker, the connection manager, event fan-out and the client protocol together.
+
+It opens 40–80 active WebSocket clients plus four silent clients, gives every
+client a 25 × 25 subscription window, issues 400–800 snapshots, drives 100–200
+moves from 20–40 clients, and checks every event frame received by every
+client. Clients issue one request at a time, matching the browser client; the
+load comes from connection concurrency.
+
+Checks include:
+
+- every move accepted exactly once with a unique sequence and matching request
+  ID;
+- every active client sees every sequence exactly once, for the right board,
+  revision, request ID and changed squares;
+- silent clients on an unrelated window receive no events;
+- no unexpected closes;
+- snapshot contents agree across clients and match the starting position.
+
+Recorded on the benchmark machine (loopback, one server process):
+
+| Profile | Clients | Requests | Throughput | Snapshot p50 | Move p50 | Event lag p50 | CPU avg/peak | RSS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `default` | 40 + 4 | 596 | ~1,592/s | 1.9 ms | 12.4 ms | 12.1 ms | 21.4% / 69.3% | 511 → 524 MiB |
+| `stress` | 80 + 4 | 1,176 | ~2,068/s | 3.2 ms | 51.2 ms | 50.4 ms | 45.7% / 89.1% | 511 → 536 MiB |
+
+Both runs had 100% move acceptance, 100% valid snapshots, no missing,
+duplicate or extra events, no cross-window leakage and no unexpected closes.
+Server fds peaked at 7 + one per connection (51 and 91) and returned to 6 after
+the load process exited.
+
+The stress run shows the expected queuing cost of fan-out: at 80 subscribers,
+each move is encoded once and queued to 80 per-client outboxes, so move RTT p50
+rises from about 12 ms to about 51 ms even though CPU remains below 90% of one
+core. The limit is the serialised per-connection send path and the event burst,
+not move processing itself.
+
+See `bench/README.md` for the exact commands and the generated result files.
+
 ### Extending the suite
 
 Add a `run_bench` call with a new group/name. To compare two algorithms, use
@@ -874,6 +924,9 @@ It covers:
 - a WebSocket teardown regression test that repeatedly SIGKILLs Chromium,
   checks server CPU returns to idle, checks file descriptors do not grow, and
   confirms a fresh snapshot request still works;
+- a live load harness that runs 40–80 concurrent clients, exercises
+  subscriptions, snapshots and moves, and checks latency, throughput, every
+  event frame, cross-window isolation and server CPU/RSS/fds.
 - client rollback behaviour was also exercised manually in headless Chromium.
 
 What is tested is not the same as a formal proof. The strongest evidence today

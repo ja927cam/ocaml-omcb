@@ -100,6 +100,8 @@ let rec drain conn =
          | None -> ());
         drain conn)
       (fun exn ->
+        Printf.eprintf "connection %d send failed: %s\n%!" conn.id
+          (Printexc.to_string exn);
         (match resolver with
          | Some resolver -> Lwt.wakeup_later_exn resolver exn
          | None -> ());

@@ -54,6 +54,15 @@
     .stat .v { font-size: 19px; margin-top: 4px; }
     .note { color: var(--muted); font-size: 11px; margin-top: 10px; }
     .empty { color: var(--muted); }
+    .load-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 14px; margin-top: 10px; }
+    .load-card h3 { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .load-card .badge { font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+    .load-card .badge.ok { color: var(--accent); }
+    .load-card .badge.bad { color: #ff8a8a; }
+    .metrics { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; margin-top: 12px; }
+    .metrics .k { color: var(--muted); font-size: 12px; }
+    .metrics .v { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; font-size: 12px; }
+    .load-note { color: var(--muted); font-size: 11px; margin-top: 10px; }
     footer { color: var(--muted); border-top: 1px solid var(--line); padding: 18px clamp(20px, 5vw, 64px); font-size: 12px; }
     code { color: var(--text); }
     a { color: var(--accent-2); }
@@ -76,12 +85,16 @@
     <div class="stat"><div class="k">slowest loop</div><div class="v" id="slowest">—</div></div>
   </div>
 </header>
-<main id="app"></main>
+<main>
+  <div id="load"></div>
+  <div id="app"></div>
+</main>
 <footer>
   Run <code>dune exec bench/bench.exe</code> from the repository root, then open
   <code>bench/dashboard.html</code>. Bars are scaled so the fastest variant in
   each benchmark is full width; lower ns/op is better. Startup and worker
-  single-shot results show milliseconds as well.
+  single-shot results show milliseconds as well. Live load cards come from
+  <code>load_default_results.js</code> and <code>load_stress_results.js</code>.
 </footer>
 <script src="results.js"></script>
 <script>
@@ -212,6 +225,80 @@
     frag.appendChild(grid);
   }
   app.appendChild(frag);
+})();
+</script>
+<script src="load_default_results.js"></script>
+<script src="load_stress_results.js"></script>
+<script>
+(() => {
+  const root = document.getElementById("load");
+  if (!root) return;
+  const data = window.LOAD_RESULTS;
+  const runs = data ? Object.values(data) : [];
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+  const num = (n, d = 1) => (n === null || n === undefined ? "—" : Number(n).toFixed(d));
+  const int = (n) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("en-GB"));
+  const ms = (n) => (n === null || n === undefined ? "—" : num(n) + " ms");
+
+  if (!runs.length) {
+    root.innerHTML = '<h2>Live load test</h2><p class="empty">No load results. Run <code>node bench/load_test.js</code> with a fresh server.</p>';
+    return;
+  }
+
+  const load_card = (run) => {
+    const p = run.profile || {};
+    const t = run.totals || {};
+    const a = run.accuracy || {};
+    const e = a.events || {};
+    const r = run.resources || {};
+    const clean =
+      a.snapshot_errors === 0 &&
+      a.silent_snapshot_errors === 0 &&
+      a.moves_rejected === 0 &&
+      a.move_request_id_mismatches === 0 &&
+      a.duplicate_move_sequences === 0 &&
+      e.missing_clients === 0 &&
+      e.duplicate_clients === 0 &&
+      e.extra_clients === 0 &&
+      e.silent_events === 0 &&
+      e.unexpected_closes === 0 &&
+      e.wrong_board_events === 0 &&
+      e.wrong_revision_events === 0 &&
+      e.wrong_change_events === 0 &&
+      e.wrong_request_id_events === 0 &&
+      e.wrong_board_count_events === 0;
+    const rows = [
+      ["Clients", `${int(p.clients)} active + ${int(p.silent_clients)} silent`],
+      ["Requests", `${int(t.requests)} (${int(t.snapshots)} snapshots, ${int(t.moves)} moves)`],
+      ["Duration", `${num(run.duration_ms, 0)} ms`],
+      ["Throughput", `${num(run.throughput_requests_per_second, 0)} req/s`],
+      ["Snapshot RTT", `p50 ${ms(run.snapshot_rtt?.p50_ms)} · p95 ${ms(run.snapshot_rtt?.p95_ms)} · p99 ${ms(run.snapshot_rtt?.p99_ms)}`],
+      ["Move RTT", `p50 ${ms(run.move_rtt?.p50_ms)} · p95 ${ms(run.move_rtt?.p95_ms)} · p99 ${ms(run.move_rtt?.p99_ms)}`],
+      ["Event lag", `p50 ${ms(run.event_delivery_lag?.p50_ms)} · p95 ${ms(run.event_delivery_lag?.p95_ms)} · p99 ${ms(run.event_delivery_lag?.p99_ms)}`],
+      ["Moves", `${int(a.moves_accepted)}/${int(t.moves)} accepted, ${int(a.moves_rejected)} rejected`],
+      ["Snapshots", `${int(a.snapshots_ok)} active + ${int(a.silent_snapshots_ok)} silent valid`],
+      ["Events per client", `${int(e.min_events)}–${int(e.max_events)}`],
+      ["Event errors", `${int((e.missing_clients || 0) + (e.duplicate_clients || 0) + (e.extra_clients || 0))} clients, ${int((e.wrong_board_events || 0) + (e.wrong_revision_events || 0) + (e.wrong_change_events || 0) + (e.wrong_request_id_events || 0) + (e.wrong_board_count_events || 0))} frames`],
+      ["Isolation", `${int(e.silent_events)} leaks, ${int(e.unexpected_closes)} unexpected closes`],
+      ["Server RSS", `${num((r.rss_baseline_kb || 0) / 1024, 0)} → ${num((r.rss_peak_kb || 0) / 1024, 0)} MiB`],
+      ["Server fds", `${int(r.fds_baseline)} → ${int(r.fds_peak)} peak → ${int(r.fds_after_exit ?? r.fds_after_close_requests)} after exit`],
+      ["Server CPU", `${num(r.cpu_average_percent)}% avg · ${num(r.cpu_peak_percent)}% peak`],
+    ];
+    return `<section class="card load-card">
+      <h3><span>${esc(run.label || "run")}</span><span class="badge ${clean ? "ok" : "bad"}">${clean ? "all checks passed" : "checks failed"}</span></h3>
+      <div class="sub">${int(p.drivers)} drivers · ${int(p.block)}×${int(p.block)} fresh block · ${int(p.window_radius) * 2 + 1}×${int(p.window_radius) * 2 + 1} window · ${esc(run.generated || "")}</div>
+      <div class="metrics">${rows.map(([k, v]) =>
+        `<div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>`).join("")}</div>
+      <div class="load-note">Post-exit fds measured after the load process exited. ${r.cpu_idle_after_exit_ticks_per_second === undefined
+        ? ""
+        : `Idle ${int(r.cpu_idle_after_exit_ticks_per_second)} ticks/s.`}</div>
+    </section>`;
+  };
+
+  root.innerHTML = '<h2>Live load test</h2><div class="load-grid">' +
+    runs.map(load_card).join("") + '</div>';
 })();
 </script>
 </body>

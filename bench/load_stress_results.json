@@ -1,0 +1,102 @@
+{
+  "generated": "2026-11-21T23:14:33.824Z",
+  "label": "stress",
+  "profile": {
+    "clients": 80,
+    "silent_clients": 4,
+    "snapshots_per_client": 10,
+    "moves": 200,
+    "drivers": 40,
+    "block": 15,
+    "window_radius": 12
+  },
+  "totals": {
+    "connections": 84,
+    "subscriptions": 84,
+    "snapshots": 808,
+    "moves": 200,
+    "requests": 1176
+  },
+  "duration_ms": 568.74995,
+  "throughput_requests_per_second": 2067.692489467471,
+  "snapshot_rtt": {
+    "n": 800,
+    "mean_ms": 4.948931638750002,
+    "p50_ms": 3.219243000000006,
+    "p95_ms": 17.860871999999972,
+    "p99_ms": 19.676373000000012,
+    "max_ms": 22.10897
+  },
+  "silent_snapshot_rtt": {
+    "n": 8,
+    "mean_ms": 0.48193962500000254,
+    "p50_ms": 0.7300290000000018,
+    "p95_ms": 0.9135160000000155,
+    "p99_ms": 0.9135160000000155,
+    "max_ms": 0.9135160000000155
+  },
+  "move_rtt": {
+    "n": 200,
+    "mean_ms": 47.86256873499997,
+    "p50_ms": 51.224860999999976,
+    "p95_ms": 56.939651000000026,
+    "p99_ms": 61.05635100000006,
+    "max_ms": 61.212054999999964
+  },
+  "event_delivery_lag": {
+    "n": 16000,
+    "mean_ms": 47.15315749750014,
+    "p50_ms": 50.40969100000001,
+    "p95_ms": 56.141593,
+    "p99_ms": 59.83417100000008,
+    "max_ms": 69.08197700000005
+  },
+  "accuracy": {
+    "snapshots_ok": 800,
+    "snapshot_errors": 0,
+    "silent_snapshots_ok": 8,
+    "silent_snapshot_errors": 0,
+    "moves_accepted": 200,
+    "moves_rejected": 0,
+    "move_request_id_mismatches": 0,
+    "duplicate_move_sequences": 0,
+    "events": {
+      "expected_per_client": 200,
+      "min_events": 200,
+      "max_events": 200,
+      "missing_clients": 0,
+      "duplicate_clients": 0,
+      "extra_clients": 0,
+      "wrong_board_events": 0,
+      "wrong_revision_events": 0,
+      "wrong_change_events": 0,
+      "wrong_request_id_events": 0,
+      "wrong_board_count_events": 0,
+      "silent_events": 0,
+      "unexpected_closes": 0,
+      "wrong_board": null,
+      "wrong_revision": null,
+      "wrong_changes": null,
+      "wrong_request_id": null,
+      "wrong_board_count": null
+    }
+  },
+  "resources": {
+    "rss_baseline_kb": 523632,
+    "rss_before_kb": 525100,
+    "rss_peak_kb": 548928,
+    "fds_baseline": 7,
+    "fds_before": 91,
+    "fds_peak": 91,
+    "cpu_average_percent": 45.71428973312437,
+    "cpu_peak_percent": 89.08873185229119,
+    "fds_after_close_requests": 91,
+    "rss_after_close_requests_kb": 548892,
+    "cpu_idle_ticks_per_second": 0,
+    "rss_after_exit_kb": 548908,
+    "fds_after_exit": 6,
+    "cpu_idle_after_exit_ticks_per_second": 0,
+    "cpu_peak_window_ms": 100
+  },
+  "post_exit_measured_at": "2026-11-21T23:14:39.384Z"
+}

@@ -1131,13 +1131,18 @@ never rolled back.
   a lost write-acknowledgement path in Dream’s stream pipe.
 - The route uses `Dream.websocket ~close:false`. Dream 1.0.0~alpha8’s close
   path can busy-loop when a peer disappears without a clean close handshake.
-  With `close:false`, the handler returns and Dream closes the underlying HTTP
-  connection without scheduling that close frame.
+  The close path serialises a four-byte close frame; if the peer has reset the
+  connection, the write fails and Dream closes the writer without discarding
+  the pending frame, so the write loop retries it forever. With `close:false`,
+  the handler returns and Dream closes the underlying HTTP connection without
+  scheduling that close frame.
 - The receive loop is wrapped in `Lwt.catch`, so EOF/connection errors and
   send timeouts end only that handler. Pending worker items are bounded by the
   normal worker queue capacity.
 - The client still closes the WebSocket on `beforeunload`; the server simply
-  does not send a WebSocket close frame in response.
+  does not send a WebSocket close frame in response. A cleanly closed client
+  socket is released when the client’s TCP stack closes, not when
+  `WebSocket.close()` is called.
 - `test/ws_teardown_test.js` kills Chromium repeatedly and checks idle CPU,
   stable file descriptors and a working snapshot request afterwards.
 
@@ -1463,6 +1468,19 @@ These are deliberate and are not conventional chess:
 - Asserts server CPU returns to idle, file descriptors do not grow, and a
   fresh WebSocket snapshot request still gets a valid response.
 
+### `load_test.js` (Linux, server running)
+
+- Runs the `default` profile (40 active + 4 silent clients, 400 snapshots,
+  100 moves) or `stress` profile (80 + 4, 800 snapshots, 200 moves).
+- Gives every active client a 25 × 25 subscription window and checks that
+  every client receives exactly one event per move, with the expected board,
+  revision, request ID and changed squares.
+- Checks silent clients on an unrelated window receive no events.
+- Measures snapshot/move RTT, event delivery lag, throughput, move acceptance,
+  server CPU/RSS/fds, post-exit fds and idle CPU.
+- Writes `bench/load_default_results.*` and `bench/load_stress_results.*`;
+  `bench/load_after.js` appends the after-exit measurements.
+
 ---
 
 ## 19. Known limitations / explicitly out of scope
@@ -1483,6 +1501,10 @@ These are deliberate and are not conventional chess:
 - Server responses are padded to 4096 bytes to work around Dream 1.0.0~alpha8
   WebSocket buffering, so small acknowledgements use more bandwidth than their
   logical 26-byte payload.
+- A clean WebSocket close does not receive a server close frame (see the
+  `close:false` workaround), so the server releases the connection when the
+  client’s TCP stack closes it. Abrupt teardown is still cleaned up and leaves
+  the server idle.
 - Client promotion is not re-glyphed locally before commit; the live event or
   response supplies the promoted byte immediately after acceptance.
 - No persistence.
@@ -1498,8 +1520,10 @@ These are deliberate and are not conventional chess:
 ## 20. Benchmarks and engineering notes
 
 - `bench/bench.ml` runs the speed suite; `dune exec bench/bench.exe`.
+- `bench/load_test.js` runs the end-to-end live load test against a running
+  server; see `bench/README.md`.
 - `bench/dashboard.html` is a dependency-free static dashboard reading
-  `bench/results.js`.
+  `bench/results.js` and the load result `.js` files.
 - The suite covers board indexing/reads, packed pieces, protocol codecs,
   validation path variants, processing prepare/apply, ledger operations,
   snapshots, the full engine, the worker and startup phases.
@@ -1512,6 +1536,15 @@ checked indexing ~6.1 ns; checked board read ~14.1 ns vs direct world read
 ~250 ns with direct world reads; ledger append ~16 ns; full engine process
 ~215 ns; Lwt worker round trip ~2.5 µs. See `bench/results.json` for the
 current run.
+
+End-to-end load on the same machine: the `default` profile sends 596 requests
+from 44 concurrent clients and completes in ~374 ms (~1,592 requests/s) with
+move RTT p50 12.4 ms and event lag p50 12.1 ms; the `stress` profile sends
+1,176 requests from 84 clients in ~569 ms (~2,068 requests/s) with move RTT p50
+51.2 ms and event lag p50 50.4 ms. Both runs accepted every move, delivered
+every event exactly once, leaked no events to unrelated windows, and returned
+to 6 fds and idle CPU after the client process exited. See
+`bench/load_default_results.json` and `bench/load_stress_results.json`.
 
 ---
 

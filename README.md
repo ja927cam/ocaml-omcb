@@ -74,6 +74,27 @@ Then open `bench/dashboard.html`. The suite measures board indexing and reads,
 packed pieces, protocol codecs, move validation/application, ledger operations,
 the full move engine, the Lwt worker, board snapshots, and startup phases.
 
+## Live load test
+
+With a freshly started server, run the representative end-user flood:
+
+```bash
+LOAD_PROFILE=default node bench/load_test.js
+```
+
+Restart the server, then run the larger profile:
+
+```bash
+LOAD_PROFILE=stress node bench/load_test.js
+```
+
+Each run opens 40–80 active WebSocket clients plus four silent clients,
+subscribes them to 25 × 25 windows, issues hundreds of snapshots and 100–200
+moves, and checks every event frame. Results are written to
+`bench/load_default_results.*` and `bench/load_stress_results.*`; the dashboard
+shows both profiles. See `bench/README.md` for the methodology and recorded
+numbers.
+
 ## Repository map
 
 | Path | Contents |
