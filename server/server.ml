@@ -85,7 +85,10 @@ let response_of_result request_id
     rejected_response ~request_id Protocol.Types.rejection_invalid_request
 
 let send_bytes socket bytes =
-  Dream.send ~text_or_binary:`Binary socket (Bytes.to_string bytes)
+  (* A peer can disappear in the middle of a write. Do not let the handler wait
+     forever on a promise that will never resolve. *)
+  Lwt_unix.with_timeout 2.0 (fun () ->
+      Dream.send ~text_or_binary:`Binary socket (Bytes.to_string bytes))
 
 let snapshot_failure ?(request_id = 0l) ?(board_x = 0) ?(board_y = 0) () =
   Protocol.Types.
@@ -179,7 +182,9 @@ let handle_socket worker socket =
           Printf.eprintf "ws send failed: %s\n%!" (Printexc.to_string exn);
           Lwt.return_unit)
   in
-  loop ()
+  Lwt.catch loop (fun exn ->
+      Printf.eprintf "ws handler ended: %s\n%!" (Printexc.to_string exn);
+      Lwt.return_unit)
 
 let () =
   let total_started = now_ns () in
@@ -212,5 +217,9 @@ let () =
          Dream.get "/**" (Dream.static "_build/default/client");
        ];
        Dream.get "/ws" (fun _req ->
-         Dream.websocket (fun socket -> handle_socket worker socket));
+         (* Dream 1.0.0~alpha8's WebSocket close path can busy-loop when the
+            peer disconnects abruptly. Let the HTTP connection close when the
+            handler returns instead of scheduling Dream's close frame. *)
+         Dream.websocket ~close:false (fun socket ->
+           handle_socket worker socket));
      ]
