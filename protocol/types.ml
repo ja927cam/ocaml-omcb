@@ -251,6 +251,7 @@ let response_bytes = 26
 let wire_response_bytes = 4096
 let wire_kind_move = 1
 let wire_kind_snapshot = 2
+let wire_kind_event = 3
 
 let rejection_none = 0
 let rejection_stale_piece = 1
@@ -298,7 +299,7 @@ let response_of_bytes b =
 
 let snapshot_message_type = 0x02
 let snapshot_request_bytes = 9
-let snapshot_response_bytes = 9 + 64
+let snapshot_response_bytes = 9 + 4 + 64
 
 let get_u16_le b off =
   Char.code (Bytes.get b off) lor (Char.code (Bytes.get b (off + 1)) lsl 8)
@@ -324,6 +325,7 @@ type snapshot_response = {
   board_x : int;
   board_y : int;
   status : snapshot_status;
+  revision : int32; (* monotonic per-board revision *)
   board : Bytes.t; (* 64 one-byte client pieces, row-major *)
 }
 
@@ -373,7 +375,8 @@ let snapshot_response_to_bytes (response : snapshot_response) =
   set_i32_le b 1 response.request_id;
   set_u16_le b 5 response.board_x;
   set_u16_le b 7 response.board_y;
-  if success then Bytes.blit response.board 0 b 9 64;
+  set_i32_le b 9 (if success then response.revision else 0l);
+  if success then Bytes.blit response.board 0 b 13 64;
   b
 
 let snapshot_response_of_bytes b : snapshot_response option =
@@ -387,13 +390,15 @@ let snapshot_response_of_bytes b : snapshot_response option =
     let board_x = get_u16_le b 5 and board_y = get_u16_le b 7 in
     if not (valid_board_coord board_x && valid_board_coord board_y) then None
     else
-      let board = Bytes.sub b 9 64 in
+      let revision = get_i32_le b 9 in
+      let board = Bytes.sub b 13 64 in
       Some
         {
           request_id = get_i32_le b 1;
           board_x;
           board_y;
           status;
+          revision;
           board;
         }
 
@@ -406,21 +411,129 @@ let snapshot_response_of_bytes b : snapshot_response option =
    the encoded response and zero padding. This makes each send cross Dream's
    flush threshold immediately, at the cost of some padding on the wire. *)
 
+type event_change = {
+  square : int;
+  piece : int;
+}
+
+type event_board = {
+  board_x : int;
+  board_y : int;
+  revision : int32;
+  changes : event_change list;
+}
+
+type move_event = {
+  sequence : int64;
+  request_id : int32;
+  boards : event_board list;
+}
+
 type wire_response =
   | Wire_move of response
   | Wire_snapshot of snapshot_response
+  | Wire_event of move_event
 
-let wire_response_to_bytes response =
-  let kind, payload =
-    match response with
-    | Wire_move response -> (wire_kind_move, response_to_bytes response)
-    | Wire_snapshot response ->
-      (wire_kind_snapshot, snapshot_response_to_bytes response)
-  in
+let wrap_wire kind payload =
   let bytes = Bytes.make wire_response_bytes '\000' in
   Bytes.set bytes 0 (Char.chr kind);
   Bytes.blit payload 0 bytes 1 (Bytes.length payload);
   bytes
+
+let move_event_to_bytes (event : move_event) =
+  let board_count = List.length event.boards in
+  if board_count > 255 then
+    invalid_arg "Protocol.Types.move_event_to_bytes: too many boards";
+  let bytes = Bytes.make wire_response_bytes '\000' in
+  Bytes.set bytes 0 (Char.chr wire_kind_event);
+  set_i64_le bytes 1 event.sequence;
+  set_i32_le bytes 9 event.request_id;
+  Bytes.set bytes 13 (Char.chr board_count);
+  let offset = ref 14 in
+  List.iter
+    (fun (board : event_board) ->
+      if not (valid_board_coord board.board_x && valid_board_coord board.board_y)
+      then
+        invalid_arg
+          "Protocol.Types.move_event_to_bytes: board coordinates out of range";
+      let change_count = List.length board.changes in
+      if change_count > 255 then
+        invalid_arg "Protocol.Types.move_event_to_bytes: too many changes";
+      if !offset + 9 + (change_count * 2) > wire_response_bytes then
+        invalid_arg "Protocol.Types.move_event_to_bytes: event does not fit";
+      set_u16_le bytes !offset board.board_x;
+      set_u16_le bytes (!offset + 2) board.board_y;
+      set_i32_le bytes (!offset + 4) board.revision;
+      Bytes.set bytes (!offset + 8) (Char.chr change_count);
+      offset := !offset + 9;
+      List.iter
+        (fun (change : event_change) ->
+          if change.square < 0 || change.square >= 64 then
+            invalid_arg
+              "Protocol.Types.move_event_to_bytes: square out of range";
+          if change.piece < 0 || change.piece > 255 then
+            invalid_arg
+              "Protocol.Types.move_event_to_bytes: piece byte out of range";
+          Bytes.set bytes !offset (Char.chr change.square);
+          Bytes.set bytes (!offset + 1) (Char.chr change.piece);
+          offset := !offset + 2)
+        board.changes)
+    event.boards;
+  bytes
+
+let move_event_of_bytes bytes =
+  if Bytes.length bytes <> wire_response_bytes then None
+  else if Char.code (Bytes.get bytes 0) <> wire_kind_event then None
+  else
+    let board_count = Char.code (Bytes.get bytes 13) in
+    if board_count = 0 || board_count > 2 then None
+    else
+      let offset = ref 14 in
+      let boards = ref [] in
+      let ok = ref true in
+      for _ = 1 to board_count do
+        if !offset + 9 > wire_response_bytes then ok := false
+        else begin
+          let board_x = get_u16_le bytes !offset in
+          let board_y = get_u16_le bytes (!offset + 2) in
+          let revision = get_i32_le bytes (!offset + 4) in
+          let change_count = Char.code (Bytes.get bytes (!offset + 8)) in
+          offset := !offset + 9;
+          if
+            (not (valid_board_coord board_x && valid_board_coord board_y))
+            || !offset + (change_count * 2) > wire_response_bytes
+          then ok := false
+          else begin
+            let changes = ref [] in
+            for _ = 1 to change_count do
+              let square = Char.code (Bytes.get bytes !offset) in
+              let piece = Char.code (Bytes.get bytes (!offset + 1)) in
+              if square >= 64 || piece > 255 then ok := false;
+              changes := { square; piece } :: !changes;
+              offset := !offset + 2
+            done;
+            boards :=
+              { board_x; board_y; revision; changes = List.rev !changes }
+              :: !boards
+          end
+        end
+      done;
+      if not !ok then None
+      else
+        Some
+          {
+            sequence = get_i64_le bytes 1;
+            request_id = get_i32_le bytes 9;
+            boards = List.rev !boards;
+          }
+
+let wire_response_to_bytes response =
+  match response with
+  | Wire_move response ->
+    wrap_wire wire_kind_move (response_to_bytes response)
+  | Wire_snapshot response ->
+    wrap_wire wire_kind_snapshot (snapshot_response_to_bytes response)
+  | Wire_event event -> move_event_to_bytes event
 
 let wire_response_of_bytes bytes =
   if Bytes.length bytes <> wire_response_bytes then None
@@ -432,6 +545,8 @@ let wire_response_of_bytes bytes =
     | kind when kind = wire_kind_snapshot ->
       snapshot_response_of_bytes (Bytes.sub bytes 1 snapshot_response_bytes)
       |> Option.map (fun response -> Wire_snapshot response)
+    | kind when kind = wire_kind_event ->
+      move_event_of_bytes bytes |> Option.map (fun event -> Wire_event event)
     | _ -> None
 
 (* Project a packed piece to the one-byte client snapshot representation.
@@ -471,3 +586,87 @@ let client_byte_of_packed value =
     | 4 | 6 -> if moves = 0 then byte lor 0x20 else byte
     | _ -> byte
   end
+
+(* {2 Board subscriptions}
+
+   Clients announce the 25 x 25 (or arbitrary radius) window they cache with a
+   single window message, or adjust individual boards with subscribe /
+   unsubscribe messages. All messages are connection-local. *)
+
+type subscription_kind =
+  | Subscribe
+  | Unsubscribe
+
+let subscribe_message_type = 0x03
+let unsubscribe_message_type = 0x04
+let subscription_window_message_type = 0x05
+let board_subscription_bytes = 5
+let subscription_window_bytes = 6
+
+let board_subscription_to_bytes kind board_x board_y =
+  if not (valid_board_coord board_x && valid_board_coord board_y) then
+    invalid_arg
+      "Protocol.Types.board_subscription_to_bytes: board coordinates out of range";
+  let b = Bytes.create board_subscription_bytes in
+  Bytes.set b 0
+    (Char.chr
+       (match kind with Subscribe -> subscribe_message_type | Unsubscribe ->
+         unsubscribe_message_type));
+  set_u16_le b 1 board_x;
+  set_u16_le b 3 board_y;
+  b
+
+let board_subscription_of_bytes b =
+  if Bytes.length b <> board_subscription_bytes then None
+  else
+    let kind =
+      match Char.code (Bytes.get b 0) with
+      | 3 -> Some Subscribe
+      | 4 -> Some Unsubscribe
+      | _ -> None
+    in
+    match kind with
+    | None -> None
+    | Some kind ->
+      let board_x = get_u16_le b 1 and board_y = get_u16_le b 3 in
+      if valid_board_coord board_x && valid_board_coord board_y then
+        Some (kind, board_x, board_y)
+      else None
+
+type subscription_window = {
+  center_x : int;
+  center_y : int;
+  radius : int;
+}
+
+let subscription_window_to_bytes window =
+  if
+    not
+      (valid_board_coord window.center_x
+      && valid_board_coord window.center_y)
+  then
+    invalid_arg
+      "Protocol.Types.subscription_window_to_bytes: centre out of range";
+  if window.radius < 0 || window.radius > 100 then
+    invalid_arg
+      "Protocol.Types.subscription_window_to_bytes: radius out of range";
+  let b = Bytes.create subscription_window_bytes in
+  Bytes.set b 0 (Char.chr subscription_window_message_type);
+  set_u16_le b 1 window.center_x;
+  set_u16_le b 3 window.center_y;
+  Bytes.set b 5 (Char.chr window.radius);
+  b
+
+let subscription_window_of_bytes b =
+  if Bytes.length b <> subscription_window_bytes then None
+  else if Char.code (Bytes.get b 0) <> subscription_window_message_type then
+    None
+  else
+    let center_x = get_u16_le b 1
+    and center_y = get_u16_le b 3
+    and radius = Char.code (Bytes.get b 5) in
+    if
+      valid_board_coord center_x && valid_board_coord center_y
+      && radius >= 0 && radius <= 100
+    then Some { center_x; center_y; radius }
+    else None

@@ -7,6 +7,7 @@ type accepted = {
   sequence : int64;
   moved_piece : Piece.t;
   captured_piece : Piece.t;
+  changes : (Board.position * Piece.t) list;
 }
 
 type result =
@@ -86,6 +87,7 @@ let process state (request : Move_request.t) =
              before the first board write. *)
           Ledger.validate_event move moved_id captured_id flags;
           let plan = Move_processor.prepare board info in
+          let changes = Move_processor.changes plan in
           Move_processor.apply_plan board plan;
           let recorded = Ledger.append ledger move moved_id captured_id flags in
           if not (Int64.equal recorded next) then
@@ -98,4 +100,5 @@ let process state (request : Move_request.t) =
                 sequence = next;
                 moved_piece;
                 captured_piece = info.captured_piece;
+                changes;
               } ))

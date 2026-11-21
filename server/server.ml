@@ -97,15 +97,17 @@ let snapshot_failure ?(request_id = 0l) ?(board_x = 0) ?(board_y = 0) () =
       board_x;
       board_y;
       status = Snapshot_failed;
+      revision = 0l;
       board = Bytes.make 64 '\000';
     }
 
-let snapshot_success (request : Protocol.Types.snapshot_request) board =
+let snapshot_success (request : Protocol.Types.snapshot_request)
+    (snapshot : State_worker.snapshot) =
   let encoded =
     Bytes.init 64 (fun i ->
         Char.chr
           (Piece.client_byte_at ~board_x:request.board_x
-             ~board_y:request.board_y board.(i)))
+             ~board_y:request.board_y snapshot.board.(i)))
   in
   Protocol.Types.
     {
@@ -113,77 +115,114 @@ let snapshot_success (request : Protocol.Types.snapshot_request) board =
       board_x = request.board_x;
       board_y = request.board_y;
       status = Snapshot_ok;
+      revision = snapshot.revision;
       board = encoded;
     }
 
-let handle_socket worker socket =
+type socket_response =
+  [ `Move of Protocol.Types.response
+  | `Snapshot of Protocol.Types.snapshot_response ]
+
+let handle_socket manager worker socket =
+  let conn =
+    Connection_manager.register manager ~send_raw:(send_bytes socket)
+  in
   let rec loop () =
     match%lwt Dream.receive socket with
     | None -> Lwt.return_unit
     | Some data ->
       let bytes = Bytes.of_string data in
-      let response_lwt =
+      let response_lwt : socket_response option Lwt.t =
         match String.length data with
+        | 5 ->
+          (match Protocol.Types.board_subscription_of_bytes bytes with
+           | Some (Protocol.Types.Subscribe, board_x, board_y) ->
+             Connection_manager.subscribe conn board_x board_y
+           | Some (Protocol.Types.Unsubscribe, board_x, board_y) ->
+             Connection_manager.unsubscribe conn board_x board_y
+           | None -> ());
+          Lwt.return_none
+        | 6 ->
+          (match Protocol.Types.subscription_window_of_bytes bytes with
+           | Some window ->
+             Connection_manager.set_window conn
+               ~center_x:window.center_x ~center_y:window.center_y
+               ~radius:window.radius
+           | None -> ());
+          Lwt.return_none
         | 14 ->
           (match Protocol.Types.move_request_of_bytes bytes with
            | None ->
-             Lwt.return
+             Lwt.return_some
                (`Move
                   (rejected_response Protocol.Types.rejection_invalid_request))
            | Some wire ->
              (match to_request wire with
               | exception Invalid_argument _ ->
-                Lwt.return
+                Lwt.return_some
                   (`Move
                      (rejected_response ~request_id:wire.request_id
                         Protocol.Types.rejection_invalid_request))
               | request ->
                 Lwt.map
                   (fun result ->
+                    (match result with
+                     | Ok (Move_engine.Accepted accepted) ->
+                       Connection_manager.flush_through manager
+                         accepted.sequence
+                     | _ -> ());
                     match result with
                     | Ok result ->
-                      `Move
-                        (response_of_result request.request_id (Ok result))
+                      Some
+                        (`Move
+                           (response_of_result request.request_id (Ok result)))
                     | Error error ->
-                      `Move
-                        (response_of_result request.request_id (Error error)))
+                      Some
+                        (`Move
+                           (response_of_result request.request_id
+                              (Error error))))
                   (State_worker.submit worker request)))
         | 9 ->
           (match Protocol.Types.snapshot_request_of_bytes bytes with
-           | None -> Lwt.return (`Snapshot (snapshot_failure ()))
+           | None -> Lwt.return_some (`Snapshot (snapshot_failure ()))
            | Some request ->
              Lwt.map
                (fun result ->
                  match result with
-                 | Ok board -> `Snapshot (snapshot_success request board)
+                 | Ok snapshot ->
+                   Some (`Snapshot (snapshot_success request snapshot))
                  | Error _ ->
-                   `Snapshot
-                     (snapshot_failure ~request_id:request.request_id
-                        ~board_x:request.board_x ~board_y:request.board_y ()))
+                   Some
+                     (`Snapshot
+                        (snapshot_failure ~request_id:request.request_id
+                           ~board_x:request.board_x
+                           ~board_y:request.board_y ())))
                (State_worker.submit_snapshot worker
                   ~board_x:request.board_x ~board_y:request.board_y))
         | _ ->
-          Lwt.return
+          Lwt.return_some
             (`Move
                (rejected_response Protocol.Types.rejection_invalid_request))
       in
-      let%lwt response = response_lwt in
-      Lwt.catch
-        (fun () ->
-          let wire_response =
-            match response with
-            | `Move response -> Protocol.Types.Wire_move response
-            | `Snapshot response -> Protocol.Types.Wire_snapshot response
-          in
-          let bytes = Protocol.Types.wire_response_to_bytes wire_response in
-          let%lwt () = send_bytes socket bytes in
-          loop ())
-        (fun exn ->
-          Printf.eprintf "ws send failed: %s\n%!" (Printexc.to_string exn);
-          Lwt.return_unit)
+      (match%lwt response_lwt with
+       | None -> loop ()
+       | Some response ->
+         let wire_response =
+           match response with
+           | `Move response -> Protocol.Types.Wire_move response
+           | `Snapshot response -> Protocol.Types.Wire_snapshot response
+         in
+         let bytes = Protocol.Types.wire_response_to_bytes wire_response in
+         let%lwt () = Connection_manager.send conn bytes in
+         loop ())
   in
-  Lwt.catch loop (fun exn ->
-      Printf.eprintf "ws handler ended: %s\n%!" (Printexc.to_string exn);
+  Lwt.finalize
+    (fun () ->
+      Lwt.catch loop (fun exn ->
+          Printf.eprintf "ws handler ended: %s\n%!" (Printexc.to_string exn);
+          Lwt.return_unit))
+    (fun () ->
+      Connection_manager.unregister manager conn;
       Lwt.return_unit)
 
 let () =
@@ -201,8 +240,11 @@ let () =
     failwith "initial world does not contain 32,000,000 pieces";
   log_phase "initialisation verification" verify_started;
   let worker_started = now_ns () in
+  let manager = Connection_manager.create () in
   let worker =
-    State_worker.start ~config:State_worker.default_config state
+    State_worker.start
+      ~on_commit:(Connection_manager.enqueue_move manager)
+      ~config:State_worker.default_config state
   in
   log_phase "state worker startup" worker_started;
   log_phase "total startup" total_started;
@@ -221,5 +263,5 @@ let () =
             peer disconnects abruptly. Let the HTTP connection close when the
             handler returns instead of scheduling Dream's close frame. *)
          Dream.websocket ~close:false (fun socket ->
-           handle_socket worker socket));
+           handle_socket manager worker socket));
      ]

@@ -13,6 +13,24 @@ type submit_error =
   | Worker_failed
   | Invalid_request
 
+type snapshot = {
+  board : Piece.t array;
+  revision : int32;
+}
+
+type event_board = {
+  board_x : int;
+  board_y : int;
+  revision : int32;
+  changes : (int * Piece.t) list;
+}
+
+type committed = {
+  sequence : int64;
+  request_id : int32;
+  boards : event_board list;
+}
+
 type metrics = {
   queue_depth : int;
   queue_capacity : int;
@@ -29,9 +47,13 @@ type t
 val default_config : config
 (** [queue_capacity = 4096]. *)
 
-val start : config:config -> Game_state.t -> t
+val start :
+  ?on_commit:(committed -> unit) -> config:config -> Game_state.t -> t
 (** Transfer ownership of [state] to the worker and start the processing
-    task. @raise Invalid_argument if [queue_capacity] is not positive. *)
+    task. [on_commit] runs synchronously after a successful move commit and
+    must only enqueue work (no I/O or yielding). It receives the committed
+    sequence, request ID, affected boards, their new revisions and changed
+    squares. @raise Invalid_argument if [queue_capacity] is not positive. *)
 
 val submit :
   t -> Move_request.t -> (Move_engine.result, submit_error) result Lwt.t
@@ -41,9 +63,10 @@ val submit_snapshot :
   t ->
   board_x:int ->
   board_y:int ->
-  (Piece.t array, submit_error) result Lwt.t
+  (snapshot, submit_error) result Lwt.t
 (** Snapshot a board through the same FIFO queue. Returns a 64-element copy in
-    row-major order. Invalid coordinates return [Invalid_request]. *)
+    row-major order plus the board revision. Invalid coordinates return
+    [Invalid_request]. *)
 
 val stop : t -> unit Lwt.t
 (** Stop accepting new requests, finish queued requests, then resolve. *)

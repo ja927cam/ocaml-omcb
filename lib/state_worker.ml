@@ -23,9 +23,27 @@ type request =
   | Move of Move_request.t
   | Snapshot of { board_x : int; board_y : int }
 
+type snapshot = {
+  board : Piece.t array;
+  revision : int32;
+}
+
+type event_board = {
+  board_x : int;
+  board_y : int;
+  revision : int32;
+  changes : (int * Piece.t) list;
+}
+
+type committed = {
+  sequence : int64;
+  request_id : int32;
+  boards : event_board list;
+}
+
 type response =
   | Move_result of Move_engine.result
-  | Snapshot_result of Piece.t array
+  | Snapshot_result of snapshot
 
 type item = {
   request : request;
@@ -51,6 +69,7 @@ type t = {
   finished : unit Lwt.t;
   finished_u : unit Lwt.u;
   mutable finished_done : bool;
+  on_commit : committed -> unit;
 }
 
 let default_config = { queue_capacity = 4096 }
@@ -88,6 +107,36 @@ let update_metrics t ~started_ns ~finished_ns item =
 
 let batch_size = 64
 
+let committed_of_accepted t (accepted : Move_engine.accepted) =
+  let groups : (int, int * int * (int * Piece.t) list ref) Hashtbl.t =
+    Hashtbl.create 2
+  in
+  List.iter
+    (fun ((pos : Board.position), piece) ->
+      let board_x = pos.board.board_x and board_y = pos.board.board_y in
+      let key = (board_y * 1000) + board_x in
+      let square = (pos.square.y * 8) + pos.square.x in
+      match Hashtbl.find_opt groups key with
+      | Some (_, _, changes) -> changes := (square, piece) :: !changes
+      | None -> Hashtbl.add groups key (board_x, board_y, ref [ (square, piece) ]))
+    accepted.Move_engine.changes;
+  let boards =
+    Hashtbl.fold
+      (fun _ (board_x, board_y, changes) acc ->
+        let revision =
+          Game_state.bump_board_revision t.state ~board_x ~board_y
+        in
+        {
+          board_x;
+          board_y;
+          revision;
+          changes = List.rev !changes;
+        }
+        :: acc)
+      groups []
+  in
+  { sequence = accepted.sequence; request_id = accepted.request_id; boards }
+
 let process_one t item =
   let started_ns = now_ns () in
   match item.request with
@@ -96,16 +145,23 @@ let process_one t item =
     let finished_ns = now_ns () in
     update_metrics t ~started_ns ~finished_ns item;
     (match result with
-     | Move_engine.Accepted _ -> ()
+     | Move_engine.Accepted accepted ->
+       (try t.on_commit (committed_of_accepted t accepted) with
+        | exn ->
+          Printf.eprintf "state worker on_commit failed: %s\n%!"
+            (Printexc.to_string exn))
      | Move_engine.Rejected _ ->
        t.requests_rejected <- Int64.succ t.requests_rejected);
     Lwt.wakeup_later item.promise (Ok (Move_result result));
     true
   | Snapshot { board_x; board_y } ->
-    let board = Game_state.snapshot_board t.state ~board_x ~board_y in
+    let snapshot =
+      Game_state.snapshot_board_with_revision t.state ~board_x ~board_y
+    in
     let finished_ns = now_ns () in
     update_metrics t ~started_ns ~finished_ns item;
-    Lwt.wakeup_later item.promise (Ok (Snapshot_result board));
+    let snapshot = { board = fst snapshot; revision = snd snapshot } in
+    Lwt.wakeup_later item.promise (Ok (Snapshot_result snapshot));
     true
   | exception exn ->
     fail_queue t exn;
@@ -129,7 +185,7 @@ let rec loop t budget =
     if process_one t item then loop t (budget - 1) else Lwt.return_unit
   end
 
-let start ~(config : config) state =
+let start ?(on_commit = fun _ -> ()) ~(config : config) state =
   if config.queue_capacity <= 0 then
     invalid_arg "State_worker.start: queue_capacity must be positive";
   let finished, finished_u = Lwt.wait () in
@@ -152,6 +208,7 @@ let start ~(config : config) state =
       finished;
       finished_u;
       finished_done = false;
+      on_commit;
     }
   in
   Lwt.async (fun () -> loop worker batch_size);
@@ -199,7 +256,7 @@ let submit_snapshot t ~board_x ~board_y =
   else
     Lwt.map
       (function
-        | Ok (Snapshot_result board) -> Ok board
+        | Ok (Snapshot_result snapshot) -> Ok snapshot
         | Ok (Move_result _) -> assert false
         | Error error -> Error error)
       (enqueue t (Snapshot { board_x; board_y }))

@@ -103,6 +103,9 @@ let prepare board (info : Move_validator.move_info) =
   | Move_validator.En_passant { captured_pos } ->
     en_passant_plan info captured_pos
 
+let changes plan =
+  List.map (fun p -> (p, Piece.empty)) plan.clears @ plan.sets
+
 let apply_plan board plan =
   List.iter (fun p -> Board.clear board p) plan.clears;
   List.iter (fun (p, piece) -> Board.set board p piece) plan.sets

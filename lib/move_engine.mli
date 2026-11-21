@@ -11,6 +11,7 @@ type accepted = {
   sequence : int64;
   moved_piece : Piece.t;
   captured_piece : Piece.t;
+  changes : (Board.position * Piece.t) list;
 }
 
 type result =

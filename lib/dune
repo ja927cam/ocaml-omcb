@@ -1,7 +1,7 @@
 (library
  (name sim_map_lib)
  (wrapped false)
- (libraries lwt.unix mtime.clock.os)
+ (libraries lwt.unix mtime.clock.os protocol)
  (modules
   piece
   board
@@ -13,4 +13,5 @@
   game_state
   move_request
   move_engine
-  state_worker))
+  state_worker
+  connection_manager))

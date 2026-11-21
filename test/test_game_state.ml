@@ -130,4 +130,21 @@ let () =
   (match Game_state.snapshot_board state ~board_x:1000 ~board_y:0 with
    | exception Invalid_argument _ -> ()
    | _ -> failwith "FAIL: invalid snapshot coordinates");
+
+  (* Per-board revisions. *)
+  check "initial revision"
+    (Game_state.board_revision state ~board_x:0 ~board_y:0 = 0l);
+  check "first bump"
+    (Game_state.bump_board_revision state ~board_x:0 ~board_y:0 = 1l);
+  check "second bump"
+    (Game_state.bump_board_revision state ~board_x:0 ~board_y:0 = 2l);
+  let _, revision =
+    Game_state.snapshot_board_with_revision state ~board_x:0 ~board_y:0
+  in
+  check "snapshot revision" (revision = 2l);
+  check "other board revision"
+    (Game_state.board_revision state ~board_x:1 ~board_y:0 = 0l);
+  (match Game_state.board_revision state ~board_x:1000 ~board_y:0 with
+   | exception Invalid_argument _ -> ()
+   | _ -> failwith "FAIL: invalid revision coordinates");
   Printf.printf "All Game_state initialisation tests passed.\n"

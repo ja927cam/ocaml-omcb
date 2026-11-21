@@ -16,6 +16,7 @@ type board_state = {
   bx : int;
   by : int;
   mutable pieces : Bytes.t; (* 64 one-byte client pieces *)
+  mutable revision : int32;
   mutable loaded : bool;
   mutable pending_request : int32 option;
 }
@@ -76,7 +77,11 @@ type pending_action =
   | Normal of normal_undo
   | Special of special_action
 
-type pending = { request_id : int32; action : pending_action }
+type pending = {
+  request_id : int32;
+  action : pending_action;
+  mutable event_applied : bool;
+}
 
 let board_key bx by = (by * 1000) + bx
 let clamp_int v lo hi = max lo (min hi v)
@@ -128,6 +133,12 @@ let draw_piece ctx atlas piece x y size =
 (* ------------------------------------------------------------------------- *)
 (* Main                                                                      *)
 (* ------------------------------------------------------------------------- *)
+
+let random_request_id () =
+  let math = Jv.get Jv.global "Math" in
+  let value : Jv.t = Jv.call' math (Jstr.v "random") [||] in
+  let r = Jv.to_float value in
+  Int32.of_float (1. +. (r *. 2_147_483_646.))
 
 let main () =
   let canvas_el =
@@ -257,7 +268,8 @@ let main () =
   let panning : pan option ref = ref None in
   let pending : pending option ref = ref None in
   let ws = ref None in
-  let next_request_id = ref 0l in
+  let next_request_id = ref (random_request_id ()) in
+  let last_subscription = ref None in
 
   let centre_of_view () =
     ( clamp_int
@@ -330,6 +342,7 @@ let main () =
           bx;
           by;
           pieces = empty_board ();
+          revision = 0l;
           loaded = false;
           pending_request = None;
         }
@@ -387,6 +400,16 @@ let main () =
 
   let ensure_window () =
     let center_x, center_y = centre_of_view () in
+    (match !last_subscription with
+     | Some (x, y) when x = center_x && y = center_y -> ()
+     | _ ->
+       let window : Protocol.Types.subscription_window =
+         { center_x; center_y; radius = 12 }
+       in
+       if
+         send_binary
+           (Protocol.Types.subscription_window_to_bytes window)
+       then last_subscription := Some (center_x, center_y));
     let x0 = max 0 (center_x - 12) and x1 = min max_coord (center_x + 12) in
     let y0 = max 0 (center_y - 12) and y1 = min max_coord (center_y + 12) in
     let out_of_window =
@@ -589,6 +612,52 @@ let main () =
     select_center cx cy
   in
   ignore (Ev.listen Ev.resize on_resize (Window.as_target G.window));
+
+  let apply_move_event (event : Protocol.Types.move_event) =
+    let resync = ref false in
+    let changed = ref false in
+    List.iter
+      (fun (board : Protocol.Types.event_board) ->
+        let key = board_key board.board_x board.board_y in
+        match Hashtbl.find_opt boards key with
+        | Some state when state.loaded ->
+          let revision = board.revision in
+          let cmp = Int32.compare revision state.revision in
+          if cmp <= 0 then begin
+            (* Duplicate or older than the current cache. *)
+            (match !pending with
+             | Some p when p.request_id = event.request_id ->
+               p.event_applied <- true
+             | _ -> ())
+          end
+          else if Int32.equal revision (Int32.succ state.revision) then begin
+            List.iter
+              (fun (change : Protocol.Types.event_change) ->
+                if
+                  change.square >= 0 && change.square < 64
+                  && change.piece >= 0 && change.piece <= 255
+                then
+                  Bytes.unsafe_set state.pieces change.square
+                    (Char.chr change.piece))
+              board.changes;
+            state.revision <- revision;
+            changed := true;
+            (match !pending with
+             | Some p when p.request_id = event.request_id ->
+               p.event_applied <- true
+             | _ -> ())
+          end
+          else begin
+            (* A revision was skipped: discard the cache and re-snapshot. *)
+            state.loaded <- false;
+            forget_pending state;
+            resync := true
+          end
+        | _ -> ())
+      event.boards;
+    if !changed then request_draw ();
+    if !resync then ensure_window ()
+  in
 
   let send_move ~request_id ~expected_piece_id ~src_board ~dst_board src dst =
     let position (bx, by) sq =
@@ -870,7 +939,8 @@ let main () =
                 match action with
                 | None -> ()
                 | Some action ->
-                  pending := Some { request_id; action };
+                  pending :=
+                   Some { request_id; action; event_applied = false };
                   set_move_pending true;
                   if
                     not
@@ -911,6 +981,7 @@ let main () =
       Jstr.v
         (scheme ^ "://" ^ Jstr.to_string (Jv.Jstr.get location "host") ^ "/ws")
     in
+    last_subscription := None;
     let socket = Brr_io.Websocket.create url in
     Brr_io.Websocket.set_binary_type socket
       Brr_io.Websocket.Binary_type.arraybuffer;
@@ -934,13 +1005,23 @@ let main () =
                   when state.pending_request = Some response.request_id ->
                   state.pending_request <- None;
                   if response.status = Protocol.Types.Snapshot_ok then begin
-                    state.pieces <- response.board;
-                    state.loaded <- true
+                    if
+                      Int32.compare response.revision state.revision >= 0
+                    then begin
+                      state.pieces <- response.board;
+                      state.revision <- response.revision;
+                      state.loaded <- true
+                    end
+                    else if not state.loaded then
+                      (* A resync snapshot was superseded by an event. *)
+                      ensure_window ()
                   end
                   else state.loaded <- false;
                   request_draw ()
                 | _ -> ());
                pump_snapshots ()
+             | Some (Protocol.Types.Wire_event event) ->
+               apply_move_event event
              | Some (Protocol.Types.Wire_move response) ->
                Metrics.received ();
                (match !pending with
@@ -951,35 +1032,39 @@ let main () =
                     response.status = Protocol.Types.Accepted
                   in
                   if accepted then begin
-                    let moved_byte =
-                      Char.chr
-                        (Protocol.Types.client_byte_of_packed
-                           response.moved_piece)
-                    in
-                    match p.action with
-                    | Normal undo ->
-                      Bytes.unsafe_set undo.dst_state.pieces undo.dst moved_byte
-                    | Special (Castle c) ->
-                      apply_castle c;
-                      Bytes.unsafe_set c.king_dst_state.pieces c.king_dst
-                        moved_byte;
-                      let same_rook_board =
-                        c.rook_src_state.bx = c.rook_dst_state.bx
-                        && c.rook_src_state.by = c.rook_dst_state.by
+                    if not p.event_applied then begin
+                      let moved_byte =
+                        Char.chr
+                          (Protocol.Types.client_byte_of_packed
+                             response.moved_piece)
                       in
-                      let rook_byte =
-                        (Char.code c.rook_piece land 0xCF)
-                        lor (if same_rook_board then 0x10 else 0)
-                      in
-                      Bytes.unsafe_set c.rook_dst_state.pieces c.rook_dst
-                        (Char.chr rook_byte)
-                    | Special (En_passant e) ->
-                      apply_en_passant e;
-                      Bytes.unsafe_set e.dst_state.pieces e.dst moved_byte
+                      match p.action with
+                      | Normal undo ->
+                        Bytes.unsafe_set undo.dst_state.pieces undo.dst
+                          moved_byte
+                      | Special (Castle c) ->
+                        apply_castle c;
+                        Bytes.unsafe_set c.king_dst_state.pieces c.king_dst
+                          moved_byte;
+                        let same_rook_board =
+                          c.rook_src_state.bx = c.rook_dst_state.bx
+                          && c.rook_src_state.by = c.rook_dst_state.by
+                        in
+                        let rook_byte =
+                          (Char.code c.rook_piece land 0xCF)
+                          lor (if same_rook_board then 0x10 else 0)
+                        in
+                        Bytes.unsafe_set c.rook_dst_state.pieces c.rook_dst
+                          (Char.chr rook_byte)
+                      | Special (En_passant e) ->
+                        apply_en_passant e;
+                        Bytes.unsafe_set e.dst_state.pieces e.dst moved_byte
+                    end
                   end
                   else
                     (match p.action with
-                     | Normal undo -> restore_normal undo
+                     | Normal undo ->
+                       if not p.event_applied then restore_normal undo
                      | Special _ -> ());
                   request_draw ();
                   Console.(

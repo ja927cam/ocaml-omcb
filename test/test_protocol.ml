@@ -138,11 +138,12 @@ let () =
       board_x = 999;
       board_y = 999;
       status = Protocol.Types.Snapshot_ok;
+      revision = 7l;
       board;
     }
   in
   let rb = Protocol.Types.snapshot_response_to_bytes snap_response in
-  check "snapshot response length" (Bytes.length rb = 73);
+  check "snapshot response length" (Bytes.length rb = 77);
   (match Protocol.Types.snapshot_response_of_bytes rb with
    | None -> failwith "snapshot response decoded to None"
    | Some r ->
@@ -151,6 +152,7 @@ let () =
      check "snapshot response id" (r.request_id = 92l);
      check "snapshot response x" (r.board_x = 999);
      check "snapshot response y" (r.board_y = 999);
+     check "snapshot response revision" (r.revision = 7l);
      check "snapshot response board length" (Bytes.length r.board = 64);
      check "snapshot response empty square" (Bytes.get r.board 0 = '\000');
      check "snapshot response piece" (Bytes.get r.board 1 = Char.chr 2));
@@ -167,6 +169,7 @@ let () =
    | None -> failwith "failed snapshot decoded to None"
    | Some r ->
      check "failed snapshot status" (r.status = Protocol.Types.Snapshot_failed);
+     check "failed snapshot revision" (r.revision = 0l);
      check "failed snapshot board is zero"
        (Bytes.for_all (fun c -> c = '\000') r.board));
 
@@ -174,7 +177,7 @@ let () =
       Protocol.Types.snapshot_response_to_bytes
         { snap_response with board = Bytes.make 63 '\000' });
   check "snapshot response wrong length"
-    (Protocol.Types.snapshot_response_of_bytes (Bytes.create 72) = None);
+    (Protocol.Types.snapshot_response_of_bytes (Bytes.create 76) = None);
 
   (* Packed-to-client-byte projection used by move acknowledgements. *)
   let packed ?(white = false) ?(moves = 0) ?(double = false)
@@ -213,6 +216,80 @@ let () =
        (packed ~white:true ~moves:1 ~double:true 1) = 35);
   check "client byte promoted pawn"
     (Protocol.Types.client_byte_of_packed (packed ~moves:1 7) = 10);
+
+  (* Subscription messages. *)
+  let sub = Protocol.Types.board_subscription_to_bytes Subscribe 12 34 in
+  check "subscribe length" (Bytes.length sub = 5);
+  (match Protocol.Types.board_subscription_of_bytes sub with
+   | Some (Protocol.Types.Subscribe, x, y) ->
+     check "subscribe x" (x = 12);
+     check "subscribe y" (y = 34)
+   | _ -> failwith "subscribe decoded incorrectly");
+  let unsub = Protocol.Types.board_subscription_to_bytes Unsubscribe 12 34 in
+  (match Protocol.Types.board_subscription_of_bytes unsub with
+   | Some (Protocol.Types.Unsubscribe, x, y) ->
+     check "unsubscribe x" (x = 12);
+     check "unsubscribe y" (y = 34)
+   | _ -> failwith "unsubscribe decoded incorrectly");
+  check "subscription wrong length"
+    (Protocol.Types.board_subscription_of_bytes (Bytes.create 4) = None);
+  let window =
+    Protocol.Types.{ center_x = 500; center_y = 600; radius = 12 }
+  in
+  let wb = Protocol.Types.subscription_window_to_bytes window in
+  check "window length" (Bytes.length wb = 6);
+  (match Protocol.Types.subscription_window_of_bytes wb with
+   | Some decoded ->
+     check "window x" (decoded.center_x = 500);
+     check "window y" (decoded.center_y = 600);
+     check "window radius" (decoded.radius = 12)
+   | None -> failwith "window decoded incorrectly");
+  expect_invalid "window radius" (fun () ->
+      Protocol.Types.subscription_window_to_bytes
+        { window with radius = 101 });
+
+  (* Live move event framing. *)
+  let change square piece = Protocol.Types.{ square; piece } in
+  let event =
+    Protocol.Types.
+      {
+        sequence = 99L;
+        request_id = 123l;
+        boards =
+          [
+            {
+              board_x = 500;
+              board_y = 400;
+              revision = 8l;
+              changes = [ change 52 0; change 36 51 ];
+            };
+            {
+              board_x = 501;
+              board_y = 400;
+              revision = 3l;
+              changes = [ change 0 0; change 7 25 ];
+            };
+          ];
+      }
+  in
+  let eb = Protocol.Types.wire_response_to_bytes (Protocol.Types.Wire_event event) in
+  check "event frame length"
+    (Bytes.length eb = Protocol.Types.wire_response_bytes);
+  check "event kind"
+    (Char.code (Bytes.get eb 0) = Protocol.Types.wire_kind_event);
+  (match Protocol.Types.wire_response_of_bytes eb with
+   | Some (Protocol.Types.Wire_event decoded) ->
+     check "event sequence" (decoded.sequence = 99L);
+     check "event request" (decoded.request_id = 123l);
+     check "event board count" (List.length decoded.boards = 2);
+     let first = List.hd decoded.boards in
+     check "event board x" (first.board_x = 500);
+     check "event board y" (first.board_y = 400);
+     check "event board revision" (first.revision = 8l);
+     check "event change count" (List.length first.changes = 2);
+     check "event change square" ((List.hd first.changes).square = 52);
+     check "event change piece" ((List.hd first.changes).piece = 0)
+   | _ -> failwith "event decoded incorrectly");
 
   (* Wire framing: every response is padded to 4096 bytes so Dream flushes. *)
   let wire_move =
