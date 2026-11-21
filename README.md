@@ -19,6 +19,13 @@ With the server running, the browser grid integration test can be run with:
 node test/client_snapshot_test.js
 ```
 
+The WebSocket teardown regression test (Linux) repeatedly kills a headless
+browser and verifies the server returns to idle:
+
+```bash
+node test/ws_teardown_test.js
+```
+
 It checks that the nine centre boards are visible, that dragging empty space
 pans by one board, that the client stays within a 25 × 25 cache window, that
 cross-board quiet moves work, that off-board and off-home captures are

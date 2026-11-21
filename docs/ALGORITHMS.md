@@ -670,7 +670,11 @@ boards, not a single board:
 - Requests: 9-byte snapshot, 14-byte move.
 - Responses: 4096-byte wire frames with a kind byte. The client dispatches on
   the kind and parses the first 26 or 73 bytes.
-- The WebSocket is closed on `beforeunload` so reloads shut down cleanly.
+- The route uses `Dream.websocket ~close:false` to avoid Dream
+  1.0.0~alpha8’s busy-looping close path on abrupt peer teardown. Sends have a
+  two-second timeout, the receive loop catches connection errors, and pending
+  worker work remains bounded by the queue.
+- The client still closes the WebSocket on `beforeunload`.
 - No reconnect or event replay is implemented.
 
 Client RTT metrics use `performance.now()` and a FIFO of send timestamps. With
@@ -799,6 +803,9 @@ It covers:
 - a browser grid integration test: nine visible boards, one-board pans, the
   25 x 25 cache bound, move persistence, a cross-board quiet rook move,
   blocked off-board and off-home captures, and a cache eviction/re-fetch;
+- a WebSocket teardown regression test that repeatedly SIGKILLs Chromium,
+  checks server CPU returns to idle, checks file descriptors do not grow, and
+  confirms a fresh snapshot request still works;
 - client rollback behaviour was also exercised manually in headless Chromium.
 
 What is tested is not the same as a formal proof. The strongest evidence today

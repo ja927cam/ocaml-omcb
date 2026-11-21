@@ -80,6 +80,7 @@ test/
   test_engine.ml
   test_worker.ml
   client_snapshot_test.js
+  ws_teardown_test.js
 
 bench/
   bench.ml
@@ -1022,7 +1023,9 @@ This enables a higher-resolution browser timer for RTT metrics.
 Worker errors become rejection codes 9–11 with the originating request ID.
 
 If sending fails because the client disconnected, the error is logged and the
-handler returns. A move that has already committed is never rolled back.
+handler returns. Sends are bounded by a two-second timeout so a vanished peer
+cannot leave the handler waiting forever. A move that has already committed is
+never rolled back.
 
 ### Dream buffering and close workarounds
 
@@ -1030,9 +1033,17 @@ handler returns. A move that has already committed is never rolled back.
   buffer flushes on each send.
 - The client sends snapshots strictly sequentially (one outstanding) to avoid
   a lost write-acknowledgement path in Dream’s stream pipe.
-- The client closes the WebSocket on `beforeunload`, so a reload sends a close
-  frame before the old page disappears. Dream’s default close handling is used;
-  `~close:false` is no longer needed.
+- The route uses `Dream.websocket ~close:false`. Dream 1.0.0~alpha8’s close
+  path can busy-loop when a peer disappears without a clean close handshake.
+  With `close:false`, the handler returns and Dream closes the underlying HTTP
+  connection without scheduling that close frame.
+- The receive loop is wrapped in `Lwt.catch`, so EOF/connection errors and
+  send timeouts end only that handler. Pending worker items are bounded by the
+  normal worker queue capacity.
+- The client still closes the WebSocket on `beforeunload`; the server simply
+  does not send a WebSocket close frame in response.
+- `test/ws_teardown_test.js` kills Chromium repeatedly and checks idle CPU,
+  stable file descriptors and a working snapshot request afterwards.
 
 ---
 
@@ -1302,6 +1313,13 @@ These are deliberate and are not conventional chess:
   rejected, sequence advances once.
 - Queue-full rejection with capacity one.
 - Shutdown processes an already accepted pending request.
+
+### `ws_teardown_test.js` (Linux)
+
+- Repeatedly launches Chromium, loads the client, and SIGKILLs it without a
+  close handshake.
+- Asserts server CPU returns to idle, file descriptors do not grow, and a
+  fresh WebSocket snapshot request still gets a valid response.
 
 ---
 
