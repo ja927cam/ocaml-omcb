@@ -6,299 +6,613 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #111317;
-      --panel: #181b21;
-      --panel-2: #20242c;
-      --text: #e8eaf0;
-      --muted: #8b93a3;
+      --bg: #0f1115;
+      --panel: #171a20;
+      --panel-2: #1e222a;
+      --text: #e9ecf2;
+      --muted: #8d95a5;
       --accent: #7ee2b8;
       --accent-2: #6aa9ff;
-      --line: #2c313b;
+      --accent-3: #ffcc66;
+      --danger: #ff8a8a;
+      --purple: #c99cff;
+      --line: #2b303a;
+      --line-soft: #232832;
     }
     * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
     body {
       margin: 0;
       background: var(--bg);
       color: var(--text);
-      font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
+    a { color: var(--accent-2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { color: var(--text); background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
     header {
-      padding: 32px clamp(20px, 5vw, 64px) 20px;
+      padding: 34px clamp(18px, 4vw, 56px) 18px;
       border-bottom: 1px solid var(--line);
-      background: linear-gradient(180deg, #161a20, #111317);
+      background: linear-gradient(180deg, #151920, #0f1115);
     }
-    h1 { margin: 0 0 6px; font-size: clamp(22px, 4vw, 34px); letter-spacing: -0.02em; }
-    h2 { margin: 34px 0 10px; font-size: 16px; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; }
+    h1 { margin: 0 0 6px; font-size: clamp(22px, 3.4vw, 34px); letter-spacing: -0.02em; }
+    h2 { margin: 0 0 6px; font-size: 17px; color: var(--accent); text-transform: uppercase; letter-spacing: .09em; }
     h3 { margin: 0 0 4px; font-size: 15px; }
-    .meta { color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px 22px; }
+    h4 { margin: 18px 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+    p { margin: 8px 0; }
+    .meta { color: var(--muted); display: flex; flex-wrap: wrap; gap: 7px 22px; font-size: 12px; }
     .meta b { color: var(--text); font-weight: 600; }
-    main { padding: 10px clamp(20px, 5vw, 64px) 60px; max-width: 1500px; margin: 0 auto; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 14px; }
+    .nav { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 18px; }
+    .nav a {
+      color: var(--muted);
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 5px 10px;
+      border-radius: 99px;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .nav a:hover { color: var(--text); border-color: var(--accent-2); text-decoration: none; }
+    main { padding: 12px clamp(18px, 4vw, 56px) 64px; max-width: 1500px; margin: 0 auto; }
+    section { margin-top: 36px; scroll-margin-top: 18px; }
+    .section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
+    .section-head .sub { color: var(--muted); font-size: 12px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+    .grid.tight { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
     .card {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 14px 16px 16px;
+      border-radius: 10px;
+      padding: 15px 16px 16px;
     }
-    .card .sub { color: var(--muted); font-size: 12px; margin-bottom: 10px; min-height: 1.4em; }
-    .row { display: grid; grid-template-columns: 1fr 120px 90px 92px; gap: 8px; align-items: center; margin: 7px 0; }
-    .name { color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
-    .bar-wrap { height: 9px; background: #252a33; border-radius: 99px; overflow: hidden; }
-    .bar { height: 100%; background: var(--accent); min-width: 2px; border-radius: 99px; }
-    .bar.slow { background: var(--accent-2); }
-    .value { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; font-size: 12px; }
-    .ops { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
-    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 20px 0 0; }
-    .stat { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
-    .stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
-    .stat .v { font-size: 19px; margin-top: 4px; }
+    .card .sub { color: var(--muted); font-size: 12px; margin: 4px 0 10px; min-height: 1.3em; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+    .stat { background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px; padding: 11px 13px; }
+    .stat .k { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+    .stat .v { font-size: 20px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+    .stat .note { color: var(--muted); font-size: 10px; margin-top: 2px; }
+    .pill { display: inline-block; padding: 2px 7px; border-radius: 99px; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; border: 1px solid var(--line); color: var(--muted); }
+    .pill.ok { color: var(--accent); border-color: #2f5d4c; background: #10231d; }
+    .pill.bad { color: var(--danger); border-color: #5e3030; background: #241414; }
+    .metric-grid { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; margin-top: 10px; }
+    .metric-grid .k { color: var(--muted); font-size: 12px; }
+    .metric-grid .v { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; }
+    .chart { width: 100%; height: auto; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; color: var(--muted); font-size: 11px; margin: 10px 2px 0; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
+    .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); text-align: right; white-space: nowrap; }
+    th:first-child, td:first-child { text-align: left; }
+    th { color: var(--muted); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+    tbody tr:last-child td { border-bottom: none; }
+    .waterfall { margin: 12px 0 4px; }
+    .waterfall .bar { display: flex; width: 100%; height: 24px; border-radius: 6px; overflow: hidden; background: var(--panel-2); }
+    .waterfall .seg { height: 100%; min-width: 1px; }
+    .waterfall .labels { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--muted); font-size: 10px; margin-top: 7px; }
+    .waterfall .labels i { font-style: normal; }
+    .stage-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin-top: 12px; }
+    .stage { background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px; }
+    .stage .k { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+    .stage .v { font-size: 15px; font-variant-numeric: tabular-nums; }
+    .stage .p { color: var(--muted); font-size: 10px; }
+    .bars { margin-top: 10px; }
+    .barrow { display: grid; grid-template-columns: 110px 1fr 74px; gap: 8px; align-items: center; margin: 7px 0; font-size: 11px; }
+    .barrow .track { height: 10px; background: var(--panel-2); border-radius: 99px; overflow: hidden; }
+    .barrow .fill { height: 100%; background: var(--accent-2); border-radius: 99px; min-width: 2px; }
+    .barrow .val { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .barrow .name { color: var(--text); overflow-wrap: anywhere; }
+    .split { display: grid; grid-template-columns: 1.15fr .85fr; gap: 14px; }
+    .checklist { display: grid; gap: 7px; margin-top: 10px; }
+    .check { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+    .check .k { color: var(--muted); }
     .note { color: var(--muted); font-size: 11px; margin-top: 10px; }
     .empty { color: var(--muted); }
-    .load-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 14px; margin-top: 10px; }
-    .load-card h3 { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-    .load-card .badge { font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
-    .load-card .badge.ok { color: var(--accent); }
-    .load-card .badge.bad { color: #ff8a8a; }
-    .metrics { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; margin-top: 12px; }
-    .metrics .k { color: var(--muted); font-size: 12px; }
-    .metrics .v { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; font-size: 12px; }
-    .load-note { color: var(--muted); font-size: 11px; margin-top: 10px; }
-    footer { color: var(--muted); border-top: 1px solid var(--line); padding: 18px clamp(20px, 5vw, 64px); font-size: 12px; }
-    code { color: var(--text); }
-    a { color: var(--accent-2); }
+    .micro .row { display: grid; grid-template-columns: 1fr 120px 90px 92px; gap: 8px; align-items: center; margin: 7px 0; }
+    .micro .name { color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
+    .micro .bar-wrap { height: 9px; background: #252a33; border-radius: 99px; overflow: hidden; }
+    .micro .bar { height: 100%; background: var(--accent); min-width: 2px; border-radius: 99px; }
+    .micro .bar.slow { background: var(--accent-2); }
+    .micro .value { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; font-size: 12px; }
+    .micro .ops { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+    footer { color: var(--muted); border-top: 1px solid var(--line); padding: 18px clamp(18px, 4vw, 56px); font-size: 12px; }
+    @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
 <header>
-  <h1>One Million Chessboards — benchmark dashboard</h1>
+  <h1>One Million Chessboards — engineering dashboard</h1>
   <div class="meta">
     <span>generated <b id="generated">—</b></span>
     <span>commit <b id="commit">—</b></span>
     <span>OCaml <b id="ocaml">—</b></span>
     <span>CPU <b id="cpu">—</b></span>
-    <span>RSS <b id="rss">—</b></span>
+    <span>micro RSS <b id="rss">—</b></span>
   </div>
-  <div class="summary">
-    <div class="stat"><div class="k">measurements</div><div class="v" id="count">—</div></div>
-    <div class="stat"><div class="k">groups</div><div class="v" id="groups">—</div></div>
-    <div class="stat"><div class="k">fastest loop</div><div class="v" id="fastest">—</div></div>
-    <div class="stat"><div class="k">slowest loop</div><div class="v" id="slowest">—</div></div>
-  </div>
+  <nav class="nav">
+    <a href="#overview">Overview</a>
+    <a href="#profiles">Live profiles</a>
+    <a href="#pipeline">Pipeline</a>
+    <a href="#scaling">Scaling</a>
+    <a href="#subscriptions">Subscriptions</a>
+    <a href="#slow">Slow clients</a>
+    <a href="#micro">Microbenchmarks</a>
+  </nav>
 </header>
+
 <main>
-  <div id="load"></div>
-  <div id="app"></div>
+  <section id="overview">
+    <div class="section-head">
+      <div><h2>Overview</h2><div class="sub">End-to-end work from the load harnesses, not just isolated code paths.</div></div>
+      <span id="overview-status" class="pill">—</span>
+    </div>
+    <div id="overview-stats" class="stats"></div>
+  </section>
+
+  <section id="profiles">
+    <div class="section-head">
+      <div><h2>Live load profiles</h2><div class="sub">44 and 84 concurrent clients, 25 × 25 subscriptions, snapshots and broadcast moves.</div></div>
+    </div>
+    <div id="profiles-grid" class="grid"></div>
+  </section>
+
+  <section id="pipeline">
+    <div class="section-head">
+      <div><h2>Move pipeline</h2><div class="sub">Server-side stages measured per move; per-recipient WebSocket write measured separately.</div></div>
+    </div>
+    <p class="section-head sub" style="display:block;margin:0 0 12px">
+      The waterfall is a typical move: request received → submitted → worker queue → engine → commit → broadcaster → recipient lookup → encode → outbox. The largest term is usually <b>broadcast wait</b>, the gap between the worker committing and the move handler reaching <code>flush_through</code>. That gap is the cost of batching and response-path scheduling, not recipient lookup.
+    </p>
+    <div id="pipeline-grid" class="grid"></div>
+  </section>
+
+  <section id="scaling">
+    <div class="section-head">
+      <div><h2>Client-count scaling</h2><div class="sub">Progressive matrix; every level used a fresh server and 100 moves.</div></div>
+      <div class="sub" id="scaling-config">—</div>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>Latency vs clients</h3><div class="sub">p50 unless dashed; lower is better.</div><div id="scaling-latency"></div></div>
+      <div class="card"><h3>CPU vs clients</h3><div class="sub">Server process average over the run.</div><div id="scaling-cpu"></div></div>
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div class="card"><h3>RSS vs clients</h3><div class="sub">Peak resident memory.</div><div id="scaling-rss"></div></div>
+      <div class="card"><h3>File descriptors vs clients</h3><div class="sub">Peak open fds; returns to 6 after clients exit.</div><div id="scaling-fds"></div></div>
+    </div>
+    <div class="split" style="margin-top:14px">
+      <div class="card"><h3>Level table</h3><div id="scaling-table"></div></div>
+      <div class="card"><h3>Queue and failure checks</h3><div class="sub">Outbox capacity during the scale matrix.</div><div id="scaling-queue"></div></div>
+    </div>
+  </section>
+
+  <section id="subscriptions">
+    <div class="section-head">
+      <div><h2>Subscription distributions</h2><div class="sub">Same number of 25 × 25 windows; different overlap.</div></div>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>Recipients per move</h3><div class="sub">High overlap maximises fan-out; low overlap isolates lookup.</div><div id="dist-recipients"></div></div>
+      <div class="card"><h3>Move latency by distribution</h3><div class="sub">p50 and p95.</div><div id="dist-latency"></div></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>Distribution table</h3><div id="dist-table"></div></div>
+  </section>
+
+  <section id="slow">
+    <div class="section-head">
+      <div><h2>Slow and non-reading clients</h2><div class="sub">20 normal clients plus one deliberately broken client, with an 8-frame outbox.</div></div>
+      <span id="slow-status" class="pill">—</span>
+    </div>
+    <p class="section-head sub" style="display:block;margin:0 0 12px">
+      Every scenario must leave the 20 normal clients unaffected, keep the slow outbox at or below capacity, and recover the affected client with a fresh snapshot. <b>paused-long</b> waits past the 2 s send timeout and is expected to be disconnected; recovery is then via a new connection.
+    </p>
+    <div id="slow-grid" class="grid"></div>
+    <div class="card" style="margin-top:14px"><h3>Dropped events and recovery</h3><div id="slow-bars"></div></div>
+  </section>
+
+  <section id="micro" class="micro">
+    <div class="section-head">
+      <div><h2>Microbenchmarks</h2><div class="sub">Isolated code paths from <code>dune exec bench/bench.exe</code>.</div></div>
+    </div>
+    <div class="stats" id="micro-stats"></div>
+    <div id="app"></div>
+  </section>
 </main>
+
 <footer>
-  Run <code>dune exec bench/bench.exe</code> from the repository root, then open
-  <code>bench/dashboard.html</code>. Bars are scaled so the fastest variant in
-  each benchmark is full width; lower ns/op is better. Startup and worker
-  single-shot results show milliseconds as well. Live load cards come from
-  <code>load_default_results.js</code> and <code>load_stress_results.js</code>.
+  Generated from <code>bench/load_*_results.js</code>, <code>bench/scale_results.js</code>,
+  <code>bench/dist_results.js</code>, <code>bench/slow_results.js</code> and
+  <code>bench/results.js</code>. Load numbers are loopback on one machine.
 </footer>
+
 <script src="results.js"></script>
-<script>
-(() => {
-  const data = window.BENCH_RESULTS;
-  const app = document.getElementById("app");
-  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[c]));
-  const fmtInt = (n) => Number(n).toLocaleString("en-GB");
-  const fmtNs = (n) => {
-    n = Number(n);
-    if (n >= 1e6) return (n / 1e6).toFixed(2) + " ms";
-    if (n >= 1e3) return (n / 1e3).toFixed(2) + " µs";
-    return n.toFixed(1) + " ns";
-  };
-  const fmtOps = (n) => {
-    n = Number(n);
-    if (n >= 1e9) return (n / 1e9).toFixed(2) + " G/s";
-    if (n >= 1e6) return (n / 1e6).toFixed(2) + " M/s";
-    if (n >= 1e3) return (n / 1e3).toFixed(1) + " k/s";
-    return n.toFixed(0) + "/s";
-  };
-
-  if (!data || !data.results) {
-    app.innerHTML = '<p class="empty">No results.js found. Run <code>dune exec bench/bench.exe</code>.</p>';
-    return;
-  }
-
-  document.getElementById("generated").textContent = data.generated || "—";
-  document.getElementById("commit").textContent = data.commit || "—";
-  document.getElementById("ocaml").textContent = data.ocaml || "—";
-  document.getElementById("cpu").textContent = data.cpu || "—";
-  document.getElementById("rss").textContent = data.rss_kb
-    ? (Number(data.rss_kb) / 1024).toFixed(1) + " MiB"
-    : "—";
-
-  const results = data.results.slice();
-  const groups = new Map();
-  for (const r of results) {
-    if (!groups.has(r.group)) groups.set(r.group, new Map());
-    const names = groups.get(r.group);
-    if (!names.has(r.name)) names.set(r.name, []);
-    names.get(r.name).push(r);
-  }
-
-  document.getElementById("count").textContent = fmtInt(results.length);
-  document.getElementById("groups").textContent = fmtInt(groups.size);
-
-  const loops = results.filter((r) => !r.single && r.ns_per_op > 0);
-  if (loops.length) {
-    const byNs = loops.slice().sort((a, b) => a.ns_per_op - b.ns_per_op);
-    const fast = byNs[0], slow = byNs[byNs.length - 1];
-    document.getElementById("fastest").textContent =
-      fast.name + " · " + fmtNs(fast.ns_per_op);
-    document.getElementById("slowest").textContent =
-      slow.name + " · " + fmtNs(slow.ns_per_op);
-  }
-
-  const frag = document.createDocumentFragment();
-  for (const [group, names] of groups) {
-    const h2 = document.createElement("h2");
-    h2.textContent = group;
-    frag.appendChild(h2);
-    const grid = document.createElement("div");
-    grid.className = "grid";
-
-    for (const [name, variants] of names) {
-      const card = document.createElement("section");
-      card.className = "card";
-      const h3 = document.createElement("h3");
-      h3.textContent = name;
-      card.appendChild(h3);
-
-      const note = variants.find((r) => r.note)?.note || "";
-      if (note) {
-        const sub = document.createElement("div");
-        sub.className = "sub";
-        sub.textContent = note;
-        card.appendChild(sub);
-      }
-
-      const best = variants
-        .filter((r) => r.ns_per_op > 0)
-        .reduce((m, r) => Math.min(m, r.ns_per_op), Infinity);
-
-      for (const r of variants) {
-        const row = document.createElement("div");
-        row.className = "row";
-
-        const nameEl = document.createElement("div");
-        nameEl.className = "name";
-        nameEl.textContent = r.variant;
-        row.appendChild(nameEl);
-
-        const barWrap = document.createElement("div");
-        barWrap.className = "bar-wrap";
-        const bar = document.createElement("div");
-        bar.className = "bar" + (r.ns_per_op > best ? " slow" : "");
-        const width = r.ns_per_op > 0 && Number.isFinite(best)
-          ? Math.max(1, Math.min(100, best / r.ns_per_op * 100))
-          : 0;
-        bar.style.width = width + "%";
-        barWrap.appendChild(bar);
-        row.appendChild(barWrap);
-
-        const value = document.createElement("div");
-        value.className = "value";
-        const ops = document.createElement("div");
-        ops.className = "ops";
-
-        if (r.single) {
-          const ms = Number(r.total_ns) / 1e6;
-          value.textContent = ms.toFixed(2) + " ms";
-          ops.textContent = r.iterations > 1
-            ? fmtOps(r.ops_per_sec) + " · " + fmtInt(r.iterations)
-            : "single shot";
-        } else {
-          value.textContent = fmtNs(r.ns_per_op);
-          ops.textContent = fmtOps(r.ops_per_sec);
-        }
-        row.appendChild(value);
-        row.appendChild(ops);
-        card.appendChild(row);
-      }
-      grid.appendChild(card);
-    }
-    frag.appendChild(grid);
-  }
-  app.appendChild(frag);
-})();
-</script>
 <script src="load_default_results.js"></script>
 <script src="load_stress_results.js"></script>
+<script src="scale_results.js"></script>
+<script src="dist_results.js"></script>
+<script src="slow_results.js"></script>
 <script>
 (() => {
-  const root = document.getElementById("load");
-  if (!root) return;
-  const data = window.LOAD_RESULTS;
-  const runs = data ? Object.values(data) : [];
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[c]));
   const num = (n, d = 1) => (n === null || n === undefined ? "—" : Number(n).toFixed(d));
   const int = (n) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("en-GB"));
-  const ms = (n) => (n === null || n === undefined ? "—" : num(n) + " ms");
+  const ms = (n) => (n === null || n === undefined ? "—" : num(n, n < 10 ? 2 : 1) + " ms");
+  const pct = (n) => (n === null || n === undefined ? "—" : num(n, 1) + "%");
+  const byLabel = (label) => (window.LOAD_RESULTS || {})[label] || null;
+  const profiles = Object.values(window.LOAD_RESULTS || {}).filter(Boolean);
+  const scale = window.SCALE_RESULTS || null;
+  const dist = window.DIST_RESULTS || null;
+  const slow = window.SLOW_RESULTS || null;
 
-  if (!runs.length) {
-    root.innerHTML = '<h2>Live load test</h2><p class="empty">No load results. Run <code>node bench/load_test.js</code> with a fresh server.</p>';
-    return;
-  }
+  const stageOrder = [
+    ["receive_to_submit", "receive → submit", "#7ee2b8"],
+    ["worker_queue_wait", "worker queue", "#6aa9ff"],
+    ["move_processing", "engine", "#ffcc66"],
+    ["commit_to_broadcast", "commit → broadcaster", "#c99cff"],
+    ["broadcast_wait", "broadcast wait", "#ff8a8a"],
+    ["broadcast_dispatch", "recipient lookup", "#58c4dd"],
+    ["encoding", "encode", "#b8e986"],
+    ["outbox_enqueue", "outbox enqueue", "#f7a072"]
+  ];
 
-  const load_card = (run) => {
-    const p = run.profile || {};
-    const t = run.totals || {};
-    const a = run.accuracy || {};
+  const clean_profile = (r) => {
+    const a = r.accuracy || {};
     const e = a.events || {};
-    const r = run.resources || {};
-    const clean =
-      a.snapshot_errors === 0 &&
-      a.silent_snapshot_errors === 0 &&
-      a.moves_rejected === 0 &&
-      a.move_request_id_mismatches === 0 &&
-      a.duplicate_move_sequences === 0 &&
-      e.missing_clients === 0 &&
-      e.duplicate_clients === 0 &&
-      e.extra_clients === 0 &&
-      e.silent_events === 0 &&
-      e.unexpected_closes === 0 &&
-      e.wrong_board_events === 0 &&
-      e.wrong_revision_events === 0 &&
-      e.wrong_change_events === 0 &&
-      e.wrong_request_id_events === 0 &&
-      e.wrong_board_count_events === 0;
-    const rows = [
-      ["Clients", `${int(p.clients)} active + ${int(p.silent_clients)} silent`],
-      ["Requests", `${int(t.requests)} (${int(t.snapshots)} snapshots, ${int(t.moves)} moves)`],
-      ["Duration", `${num(run.duration_ms, 0)} ms`],
-      ["Throughput", `${num(run.throughput_requests_per_second, 0)} req/s`],
-      ["Snapshot RTT", `p50 ${ms(run.snapshot_rtt?.p50_ms)} · p95 ${ms(run.snapshot_rtt?.p95_ms)} · p99 ${ms(run.snapshot_rtt?.p99_ms)}`],
-      ["Move RTT", `p50 ${ms(run.move_rtt?.p50_ms)} · p95 ${ms(run.move_rtt?.p95_ms)} · p99 ${ms(run.move_rtt?.p99_ms)}`],
-      ["Event lag", `p50 ${ms(run.event_delivery_lag?.p50_ms)} · p95 ${ms(run.event_delivery_lag?.p95_ms)} · p99 ${ms(run.event_delivery_lag?.p99_ms)}`],
-      ["Moves", `${int(a.moves_accepted)}/${int(t.moves)} accepted, ${int(a.moves_rejected)} rejected`],
-      ["Snapshots", `${int(a.snapshots_ok)} active + ${int(a.silent_snapshots_ok)} silent valid`],
-      ["Events per client", `${int(e.min_events)}–${int(e.max_events)}`],
-      ["Event errors", `${int((e.missing_clients || 0) + (e.duplicate_clients || 0) + (e.extra_clients || 0))} clients, ${int((e.wrong_board_events || 0) + (e.wrong_revision_events || 0) + (e.wrong_change_events || 0) + (e.wrong_request_id_events || 0) + (e.wrong_board_count_events || 0))} frames`],
-      ["Isolation", `${int(e.silent_events)} leaks, ${int(e.unexpected_closes)} unexpected closes`],
-      ["Server RSS", `${num((r.rss_baseline_kb || 0) / 1024, 0)} → ${num((r.rss_peak_kb || 0) / 1024, 0)} MiB`],
-      ["Server fds", `${int(r.fds_baseline)} → ${int(r.fds_peak)} peak → ${int(r.fds_after_exit ?? r.fds_after_close_requests)} after exit`],
-      ["Server CPU", `${num(r.cpu_average_percent)}% avg · ${num(r.cpu_peak_percent)}% peak`],
-    ];
-    return `<section class="card load-card">
-      <h3><span>${esc(run.label || "run")}</span><span class="badge ${clean ? "ok" : "bad"}">${clean ? "all checks passed" : "checks failed"}</span></h3>
-      <div class="sub">${int(p.drivers)} drivers · ${int(p.block)}×${int(p.block)} fresh block · ${int(p.window_radius) * 2 + 1}×${int(p.window_radius) * 2 + 1} window · ${esc(run.generated || "")}</div>
-      <div class="metrics">${rows.map(([k, v]) =>
-        `<div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>`).join("")}</div>
-      <div class="load-note">Post-exit fds measured after the load process exited. ${r.cpu_idle_after_exit_ticks_per_second === undefined
-        ? ""
-        : `Idle ${int(r.cpu_idle_after_exit_ticks_per_second)} ticks/s.`}</div>
-    </section>`;
+    return (
+      (a.snapshot_errors || 0) === 0 &&
+      (a.silent_snapshot_errors || 0) === 0 &&
+      (a.moves_rejected || 0) === 0 &&
+      (a.move_request_id_mismatches || 0) === 0 &&
+      (a.duplicate_move_sequences || 0) === 0 &&
+      (e.missing_events || 0) === 0 &&
+      (e.duplicate_events || 0) === 0 &&
+      (e.extra_events || 0) === 0 &&
+      (e.silent_events || 0) === 0 &&
+      (e.unexpected_closes || 0) === 0 &&
+      (e.wrong_board_events || 0) === 0 &&
+      (e.wrong_revision_events || 0) === 0 &&
+      (e.wrong_change_events || 0) === 0 &&
+      (e.wrong_request_id_events || 0) === 0 &&
+      (e.wrong_board_count_events || 0) === 0
+    );
   };
 
-  root.innerHTML = '<h2>Live load test</h2><div class="load-grid">' +
-    runs.map(load_card).join("") + '</div>';
+  // ---------------------------------------------------------------- overview
+  const overview = document.getElementById("overview-stats");
+  const maxScale = scale ? scale.runs.filter((r) => r.result && !r.result.baseline).sort((a, b) => b.clients - a.clients)[0] : null;
+  const maxProfile = profiles.slice().sort((a, b) => b.totals.requests - a.totals.requests)[0];
+  const allClean = profiles.every(clean_profile) && (!scale || scale.runs.every((r) => r.ok)) && (!slow || slow.runs.every((r) => r.ok));
+  document.getElementById("overview-status").textContent = allClean ? "all checks passed" : "some checks failed";
+  document.getElementById("overview-status").className = "pill " + (allClean ? "ok" : "bad");
+  const overviewCards = [
+    ["max clients tested", maxScale ? int(maxScale.clients) : "—", maxScale ? `${maxScale.result.totals.requests} requests` : "no scale data"],
+    ["best throughput", maxProfile ? int(Math.round(maxProfile.throughput_requests_per_second)) + "/s" : "—", maxProfile ? maxProfile.label : "no load data"],
+    ["max recipients", maxProfile && maxProfile.server_metrics ? int(maxProfile.server_metrics.counters.max_recipients) : "—", "per broadcast"],
+    ["batch compression", maxProfile && maxProfile.server_metrics?.stages?.websocket_write?.n
+      ? `${(Number(maxProfile.server_metrics.counters.recipients) / Number(maxProfile.server_metrics.stages.websocket_write.n)).toFixed(1)}×`
+      : "—", "recipient events per write"],
+    ["slow-client drops", slow ? int(slow.runs.reduce((n, r) => n + (r.server_metrics?.counters?.outbox_dropped || 0), 0)) : "—", "bounded by outbox capacity"],
+  ];
+  overview.innerHTML = overviewCards.map(([k, v, note]) =>
+    `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="note">${esc(note)}</div></div>`
+  ).join("");
+
+  // --------------------------------------------------------------- profiles
+  const profileCard = (r) => {
+    const p = r.profile, t = r.totals, a = r.accuracy, e = a.events, res = r.resources;
+    const sm = r.server_metrics;
+    const clean = clean_profile(r);
+    const rows = [
+      ["Clients", `${int(p.clients)} + ${int(p.silent_clients)} silent`],
+      ["Requests", `${int(t.requests)}`],
+      ["Duration", `${num(r.duration_ms, 0)} ms`],
+      ["Throughput", `${int(Math.round(r.throughput_requests_per_second))}/s`],
+      ["Snapshot p50", ms(r.snapshot_rtt?.p50_ms)],
+      ["Move p50 / p95", `${ms(r.move_rtt?.p50_ms)} / ${ms(r.move_rtt?.p95_ms)}`],
+      ["Client event lag p50 / p95", `${ms(r.event_delivery_lag?.p50_ms)} / ${ms(r.event_delivery_lag?.p95_ms)}`],
+      ["Server end-to-end p50", ms(sm?.stages?.end_to_end_broadcast?.p50_ms)],
+      ["Transport", sm?.connections?.event_batching === false ? "one event/frame" : sm ? "batched event frames" : "—"],
+      ["Recipients / broadcast", sm ? num(Number(sm.counters.recipients) / Number(sm.counters.events_broadcast), 1) : "—"],
+      ["Accuracy", `${e.missing_events} missing, ${e.duplicate_events} duplicate, ${e.extra_events} extra`],
+      ["Outbox max / drops", sm ? `${int(sm.counters.max_outbox_depth)} / ${int(sm.counters.outbox_dropped)}` : "—"],
+      ["RSS peak", `${num((res.rss_peak_kb || 0) / 1024, 0)} MiB`],
+      ["fds peak → after exit", `${int(res.fds_peak)} → ${int(res.fds_after_exit)}`],
+      ["CPU avg / peak", `${pct(res.cpu_average_percent)} / ${pct(res.cpu_peak_percent)}`],
+    ];
+    return `<section class="card">
+      <h3><span>${esc(r.label)}</span> <span class="pill ${clean ? "ok" : "bad"}">${clean ? "checks passed" : "checks failed"}</span></h3>
+      <div class="sub">${int(p.drivers)} drivers · ${int(p.block)}×${int(p.block)} fresh block · ${esc(p.distribution || "high")} overlap</div>
+      <div class="metric-grid">${rows.map(([k, v]) => `<div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>`).join("")}</div>
+    </section>`;
+  };
+  document.getElementById("profiles-grid").innerHTML = profiles.length
+    ? profiles.map(profileCard).join("")
+    : '<div class="empty">No load results. Run <code>LOAD_PROFILE=default node bench/load_test.js</code>.</div>';
+
+  // --------------------------------------------------------------- pipeline
+  const waterfall = (r) => {
+    const sm = r.server_metrics;
+    if (!sm || !sm.stages) return '<div class="empty">No server pipeline metrics.</div>';
+    const stages = stageOrder.map(([key, label, color]) => ({
+      key, label, color, value: sm.stages[key]?.p50_ms || 0, p95: sm.stages[key]?.p95_ms || 0, p99: sm.stages[key]?.p99_ms || 0,
+      n: sm.stages[key]?.n || 0,
+    }));
+    const total = stages.reduce((sum, s) => sum + s.value, 0) || 1;
+    const bar = stages.map((s) => `<div class="seg" title="${esc(s.label)}: ${ms(s.value)}" style="width:${Math.max(0.8, s.value / total * 100)}%;background:${s.color}"></div>`).join("");
+    const labels = stages.map((s) => `<i><span style="color:${s.color}">■</span> ${esc(s.label)} ${ms(s.value)}</i>`).join("");
+    const cards = stages.map((s) => `<div class="stage"><div class="k">${esc(s.label)}</div><div class="v">${ms(s.value)}</div><div class="p">p95 ${ms(s.p95)} · p99 ${ms(s.p99)} · n=${int(s.n)}</div></div>`).join("");
+    return `<div class="waterfall"><div class="bar">${bar}</div><div class="labels">${labels}</div></div><div class="stage-list">${cards}</div>
+      <div class="note">Server end-to-end p50 <b>${ms(sm.stages.end_to_end_broadcast?.p50_ms)}</b>; client event lag p50 <b>${ms(r.event_delivery_lag?.p50_ms)}</b>; per-recipient write p50 <b>${ms(sm.stages.websocket_write?.p50_ms)}</b>.</div>`;
+  };
+  document.getElementById("pipeline-grid").innerHTML = profiles.length
+    ? profiles.map((r) => `<section class="card"><h3>${esc(r.label)}</h3><div class="sub">${int(r.server_metrics?.counters?.events_broadcast || 0)} broadcasts, ${int(r.server_metrics?.counters?.recipients || 0)} recipient sends</div>${waterfall(r)}</section>`).join("")
+    : '<div class="empty">No pipeline data.</div>';
+
+  // ----------------------------------------------------------------- charts
+  const niceMax = (value) => {
+    if (!(value > 0)) return 1;
+    const exp = Math.floor(Math.log10(value));
+    const base = Math.pow(10, exp);
+    const scaled = value / base;
+    const step = scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10;
+    return step * base;
+  };
+
+  const lineChart = (levels, series, { height = 230, yLabel = "" } = {}) => {
+    const width = 760, m = { l: 54, r: 16, t: 16, b: 36 }, w = width - m.l - m.r, h = height - m.t - m.b;
+    const values = series.flatMap((s) => s.values.filter((v) => v !== null && v !== undefined));
+    const max = niceMax(Math.max(1, ...values));
+    const x = (i) => m.l + (levels.length <= 1 ? w / 2 : (i / (levels.length - 1)) * w);
+    const y = (v) => m.t + (1 - v / max) * h;
+    let grid = "";
+    for (let i = 0; i <= 4; i++) {
+      const value = (max / 4) * i;
+      const yy = y(value);
+      grid += `<line x1="${m.l}" y1="${yy}" x2="${width - m.r}" y2="${yy}" stroke="#2b303a" stroke-width="1"/>`;
+      grid += `<text x="${m.l - 8}" y="${yy + 4}" fill="#8d95a5" font-size="10" text-anchor="end">${num(value, value < 10 ? 1 : 0)}</text>`;
+    }
+    let paths = "";
+    for (const s of series) {
+      const points = s.values.map((v, i) => (v === null || v === undefined ? null : `${x(i)},${y(v)}`)).filter(Boolean);
+      if (points.length > 1) {
+        paths += `<polyline points="${points.join(" ")}" fill="none" stroke="${s.color}" stroke-width="2"${s.dashed ? ' stroke-dasharray="5 4"' : ""}/>`;
+      }
+      s.values.forEach((v, i) => {
+        if (v !== null && v !== undefined) paths += `<circle cx="${x(i)}" cy="${y(v)}" r="2.6" fill="${s.color}"/>`;
+      });
+    }
+    const every = Math.max(1, Math.ceil(levels.length / 9));
+    const xlabels = levels.map((level, i) => (i % every === 0 || i === levels.length - 1
+      ? `<text x="${x(i)}" y="${height - 12}" fill="#8d95a5" font-size="10" text-anchor="middle">${esc(level)}</text>` : "")).join("");
+    const legend = series.map((s) => `<span><i class="swatch" style="background:${s.color}"></i>${esc(s.label)}</span>`).join("");
+    return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(yLabel)}">
+      ${grid}${paths}${xlabels}
+      <text x="${width / 2}" y="${height - 1}" fill="#8d95a5" font-size="10" text-anchor="middle">active clients</text>
+    </svg><div class="legend">${legend}</div>`;
+  };
+
+  const barRows = (rows, { max = null, suffix = "" } = {}) => {
+    const top = max || Math.max(1, ...rows.map((r) => r.value || 0));
+    return `<div class="bars">${rows.map((r) => `<div class="barrow"><div class="name">${esc(r.name)}</div><div class="track"><div class="fill" style="width:${Math.max(1, (r.value || 0) / top * 100)}%;background:${r.color || "var(--accent-2)"}"></div></div><div class="val">${num(r.value, r.digits ?? 1)}${suffix}</div></div>`).join("")}</div>`;
+  };
+
+  // ---------------------------------------------------------------- scaling
+  const runs = scale ? scale.runs.filter((r) => r.result).slice().sort((a, b) => a.clients - b.clients) : [];
+  const nonBase = runs.filter((r) => !r.result.baseline);
+  const levels = runs.map((r) => r.clients);
+  const val = (key) => runs.map((r) => (r.result.baseline ? null : r.result[key] ?? null));
+  if (scale) {
+    document.getElementById("scaling-config").textContent =
+      `${runs.length} levels · ${scale.config.moves} moves · ${scale.config.snapshots_per_client} snapshots/client · ${scale.config.distribution} overlap`;
+    document.getElementById("scaling-latency").innerHTML = lineChart(levels, [
+      { label: "snapshot p50", color: "#6aa9ff", values: val("snapshot_rtt").map((v) => v?.p50_ms ?? null) },
+      { label: "move p50", color: "#7ee2b8", values: val("move_rtt").map((v) => v?.p50_ms ?? null) },
+      { label: "event lag p50", color: "#ffcc66", values: val("event_delivery_lag").map((v) => v?.p50_ms ?? null) },
+      { label: "move p95", color: "#ff8a8a", values: val("move_rtt").map((v) => v?.p95_ms ?? null), dashed: true },
+    ], { yLabel: "milliseconds" });
+    document.getElementById("scaling-cpu").innerHTML = lineChart(levels, [
+      { label: "CPU average", color: "#c99cff", values: runs.map((r) => r.result.baseline ? null : r.result.resources.cpu_average_percent) },
+      { label: "CPU peak", color: "#6aa9ff", values: runs.map((r) => r.result.baseline ? null : r.result.resources.cpu_peak_percent), dashed: true },
+    ], { yLabel: "percent" });
+    document.getElementById("scaling-rss").innerHTML = lineChart(levels, [
+      { label: "RSS peak (MiB)", color: "#7ee2b8", values: runs.map((r) => r.result.baseline ? null : r.result.resources.rss_peak_kb / 1024) },
+    ], { yLabel: "MiB" });
+    document.getElementById("scaling-fds").innerHTML = lineChart(levels, [
+      { label: "fds peak", color: "#ffcc66", values: runs.map((r) => r.result.baseline ? null : r.result.resources.fds_peak) },
+      { label: "fds after exit", color: "#6aa9ff", values: runs.map((r) => r.result.resources.fds_after_exit ?? null), dashed: true },
+    ], { yLabel: "file descriptors" });
+
+    const tableRows = nonBase.map((r) => {
+      const x = r.result, c = x.server_metrics?.counters, e = x.accuracy?.events;
+      return `<tr><td>${int(r.clients)}</td><td>${int(x.totals.requests)}</td><td>${int(Math.round(x.throughput_requests_per_second))}</td><td>${ms(x.snapshot_rtt.p50_ms)}</td><td>${ms(x.move_rtt.p50_ms)}</td><td>${ms(x.event_delivery_lag.p50_ms)}</td><td>${pct(x.resources.cpu_average_percent)}</td><td>${num(x.resources.rss_peak_kb / 1024, 0)}</td><td>${int(x.resources.fds_peak)}</td><td>${int(x.server_metrics?.stages?.websocket_write?.n ?? 0)}</td><td>${e ? e.missing_events + e.extra_events + e.duplicate_events : "—"}</td></tr>`;
+    }).join("");
+    document.getElementById("scaling-table").innerHTML = `<div class="tablewrap"><table><thead><tr><th>clients</th><th>requests</th><th>req/s</th><th>snap p50</th><th>move p50</th><th>lag p50</th><th>CPU</th><th>RSS</th><th>fds</th><th>writes</th><th>errs</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
+    const queueRows = nonBase.map((r) => {
+      const x = r.result, c = x.server_metrics?.counters, cm = x.server_metrics?.connections;
+      return `<tr><td>${int(r.clients)}</td><td>${int(cm?.max_outbox_depth ?? 0)} / ${int(cm?.outbox_capacity ?? 0)}</td><td>${int(c?.outbox_dropped ?? 0)}</td><td>${int(c?.send_failures ?? 0)}</td><td>${int(c?.outbox_full_unregisters ?? 0)}</td><td>${int(c?.events_without_recipients ?? 0)}</td></tr>`;
+    }).join("");
+    document.getElementById("scaling-queue").innerHTML = `<div class="tablewrap"><table><thead><tr><th>clients</th><th>max outbox</th><th>dropped</th><th>send failures</th><th>full unregisters</th><th>no-recipient events</th></tr></thead><tbody>${queueRows}</tbody></table></div><div class="note">Every scale level delivered all events with zero drops. The queue only fills when a client stops reading; see the slow-client section.</div>`;
+  } else {
+    document.getElementById("scaling-latency").innerHTML = '<div class="empty">No scale results.</div>';
+  }
+
+  // ------------------------------------------------------------ distributions
+  const distRuns = dist ? dist.runs.filter((r) => r.result).slice() : [];
+  if (distRuns.length) {
+    const rows = distRuns.map((r) => {
+      const x = r.result, c = x.server_metrics?.counters, e = x.accuracy?.events;
+      return {
+        name: r.distribution,
+        recipients: c ? Number(c.recipients) / Number(c.events_broadcast) : 0,
+        move: x.move_rtt.p50_ms,
+        lag: x.event_delivery_lag.p50_ms,
+        missing: e?.missing_events || 0,
+        extra: e?.extra_events || 0,
+      };
+    });
+    document.getElementById("dist-recipients").innerHTML = barRows(
+      rows.map((r) => ({ name: r.name, value: r.recipients, color: r.name === "high" ? "#ff8a8a" : r.name === "partial" ? "#ffcc66" : "#7ee2b8", digits: 1 })),
+      { suffix: " / move" }
+    ) + '<div class="note">High overlap broadcasts to every active client; low overlap only to the one window containing the move block.</div>';
+    document.getElementById("dist-latency").innerHTML = barRows([
+      ...rows.map((r) => ({ name: `${r.name} p50`, value: r.move, color: "#6aa9ff" })),
+      ...rows.map((r) => ({ name: `${r.name} p95`, value: distRuns.find((x) => x.distribution === r.name).result.move_rtt.p95_ms, color: "#c99cff" })),
+    ], { suffix: " ms" });
+    const tableRows = rows.map((r) => {
+      const run = distRuns.find((x) => x.distribution === r.name);
+      const x = run.result, e = x.accuracy?.events;
+      return `<tr><td>${esc(r.name)}</td><td>${int(x.totals.requests)}</td><td>${num(r.recipients, 1)}</td><td>${ms(r.move)}</td><td>${ms(x.move_rtt.p95_ms)}</td><td>${ms(r.lag)}</td><td>${int(e?.missing_events || 0)}</td><td>${int(e?.extra_events || 0)}</td><td>${int(e?.silent_events || 0)}</td><td>${int(x.server_metrics?.stages?.websocket_write?.n || 0)}</td><td>${pct(x.resources.cpu_average_percent)}</td></tr>`;
+    }).join("");
+    document.getElementById("dist-table").innerHTML = `<div class="tablewrap"><table><thead><tr><th>overlap</th><th>requests</th><th>recipients/move</th><th>move p50</th><th>move p95</th><th>lag p50</th><th>missing</th><th>extra</th><th>leaks</th><th>writes</th><th>CPU</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
+  } else {
+    document.getElementById("dist-recipients").innerHTML = '<div class="empty">No distribution results.</div>';
+  }
+
+  // ------------------------------------------------------------------- slow
+  const slowRuns = slow ? slow.runs.slice() : [];
+  document.getElementById("slow-status").textContent = slowRuns.length && slowRuns.every((r) => r.ok) ? "all checks passed" : "checks failed";
+  document.getElementById("slow-status").className = "pill " + (slowRuns.length && slowRuns.every((r) => r.ok) ? "ok" : "bad");
+  const slowCard = (r) => {
+    const c = r.server_metrics.counters;
+    const lag = r.accuracy.event_lag;
+    const expectedSlow = r.total_moves;
+    const checks = [
+      ["normal clients delivered", `${r.accuracy.normal_missing === 0 && r.accuracy.normal_duplicate === 0 && r.accuracy.normal_wrong === 0 ? "yes" : "no"}`],
+      ["outbox bounded", `${c.max_outbox_depth} ≤ ${r.outbox_capacity}`],
+      ["other clients unaffected", `${r.accuracy.normal_clients_with_events}/${r.normal_clients}`],
+      ["drops", int(c.outbox_dropped)],
+      ["send failures", int(c.send_failures)],
+      ["slow received", r.slow ? `${int(r.slow.events)} / ${int(expectedSlow)}` : "n/a"],
+      ["revision gaps", r.slow ? int(r.slow.revision_gaps) : "n/a"],
+      ["recovery", r.recovery ? `${r.recovery.status === 1 ? "snapshot ok" : "failed"}${r.recovery.reconnected ? " (reconnect)" : ""}, rev ${r.recovery.revision}` : "n/a"],
+      ["server RSS / fds", r.resources ? `${num(r.resources.rss_end_kb / 1024, 0)} MiB / ${int(r.resources.fds_end)}` : "n/a"],
+      ["server CPU", r.resources ? pct(r.resources.cpu_average_percent) : "n/a"],
+    ];
+    return `<section class="card"><h3><span>${esc(r.scenario)}</span> <span class="pill ${r.ok ? "ok" : "bad"}">${r.ok ? "passed" : "failed"}</span></h3>
+      <div class="sub">${int(r.total_moves)} moves · ${int(r.normal_clients)} normal clients · ${ms(lag?.p50_ms)} normal lag p50</div>
+      <div class="checklist">${checks.map(([k, v]) => `<div class="check"><span class="k">${esc(k)}</span><span>${esc(v)}</span></div>`).join("")}</div>
+    </section>`;
+  };
+  document.getElementById("slow-grid").innerHTML = slowRuns.length
+    ? slowRuns.map(slowCard).join("")
+    : '<div class="empty">No slow-client results.</div>';
+  if (slowRuns.length) {
+    document.getElementById("slow-bars").innerHTML = barRows(
+      slowRuns.map((r) => ({
+        name: r.scenario,
+        value: r.server_metrics.counters.outbox_dropped,
+        color: r.scenario === "baseline" ? "#7ee2b8" : "#ff8a8a",
+        digits: 0,
+      })),
+      { suffix: " dropped" }
+    ) + '<div class="note">Normal-client event lag stays around 0.8 ms in every scenario: the slow client only stalls its own sender fiber.</div>';
+  }
+
+  // -------------------------------------------------------- microbenchmarks
+  const data = window.BENCH_RESULTS;
+  const meta = document.getElementById("micro-stats");
+  const app = document.getElementById("app");
+  if (data && data.results) {
+    document.getElementById("generated").textContent = data.generated || "—";
+    document.getElementById("commit").textContent = data.commit || "—";
+    document.getElementById("ocaml").textContent = data.ocaml || "—";
+    document.getElementById("cpu").textContent = data.cpu || "—";
+    document.getElementById("rss").textContent = data.rss_kb ? (Number(data.rss_kb) / 1024).toFixed(1) + " MiB" : "—";
+    const results = data.results.slice();
+    const groups = new Map();
+    for (const r of results) {
+      if (!groups.has(r.group)) groups.set(r.group, new Map());
+      const names = groups.get(r.group);
+      if (!names.has(r.name)) names.set(r.name, []);
+      names.get(r.name).push(r);
+    }
+    const loops = results.filter((r) => !r.single && r.ns_per_op > 0);
+    const fast = loops.slice().sort((a, b) => a.ns_per_op - b.ns_per_op)[0];
+    const slowest = loops.slice().sort((a, b) => b.ns_per_op - a.ns_per_op)[0];
+    meta.innerHTML = [
+      ["measurements", int(results.length)],
+      ["groups", int(groups.size)],
+      ["fastest loop", fast ? `${fast.name} · ${fmtNs(fast.ns_per_op)}` : "—"],
+      ["slowest loop", slowest ? `${slowest.name} · ${fmtNs(slowest.ns_per_op)}` : "—"],
+    ].map(([k, v]) => `<div class="stat"><div class="k">${esc(k)}</div><div class="v" style="font-size:15px">${esc(v)}</div></div>`).join("");
+
+    const frag = document.createDocumentFragment();
+    for (const [group, names] of groups) {
+      const h2 = document.createElement("h2");
+      h2.textContent = group;
+      h2.style.marginTop = "26px";
+      frag.appendChild(h2);
+      const grid = document.createElement("div");
+      grid.className = "grid";
+      for (const [name, variants] of names) {
+        const card = document.createElement("section");
+        card.className = "card";
+        const h3 = document.createElement("h3");
+        h3.textContent = name;
+        card.appendChild(h3);
+        const note = variants.find((r) => r.note)?.note || "";
+        if (note) {
+          const sub = document.createElement("div");
+          sub.className = "sub";
+          sub.textContent = note;
+          card.appendChild(sub);
+        }
+        const best = variants.filter((r) => r.ns_per_op > 0).reduce((m, r) => Math.min(m, r.ns_per_op), Infinity);
+        for (const r of variants) {
+          const row = document.createElement("div");
+          row.className = "row";
+          const nameEl = document.createElement("div");
+          nameEl.className = "name";
+          nameEl.textContent = r.variant;
+          row.appendChild(nameEl);
+          const barWrap = document.createElement("div");
+          barWrap.className = "bar-wrap";
+          const bar = document.createElement("div");
+          bar.className = "bar" + (r.ns_per_op > best ? " slow" : "");
+          bar.style.width = r.ns_per_op > 0 && Number.isFinite(best) ? Math.max(1, Math.min(100, best / r.ns_per_op * 100)) + "%" : "0";
+          barWrap.appendChild(bar);
+          row.appendChild(barWrap);
+          const value = document.createElement("div");
+          value.className = "value";
+          const ops = document.createElement("div");
+          ops.className = "ops";
+          if (r.single) {
+            value.textContent = (Number(r.total_ns) / 1e6).toFixed(2) + " ms";
+            ops.textContent = r.iterations > 1 ? fmtOps(r.ops_per_sec) + " · " + int(r.iterations) : "single shot";
+          } else {
+            value.textContent = fmtNs(r.ns_per_op);
+            ops.textContent = fmtOps(r.ops_per_sec);
+          }
+          row.appendChild(value);
+          row.appendChild(ops);
+          card.appendChild(row);
+        }
+        grid.appendChild(card);
+      }
+      frag.appendChild(grid);
+    }
+    app.appendChild(frag);
+  } else {
+    meta.innerHTML = "";
+    app.innerHTML = '<p class="empty">No results.js. Run <code>dune exec bench/bench.exe</code>.</p>';
+  }
+
+  function fmtNs(n) {
+    n = Number(n);
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + " ms";
+    if (n >= 1e3) return (n / 1e3).toFixed(2) + " µs";
+    return n.toFixed(1) + " ns";
+  }
+
+  function fmtOps(n) {
+    n = Number(n);
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + " G/s";
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + " M/s";
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + " k/s";
+    return n.toFixed(0) + "/s";
+  }
 })();
 </script>
 </body>

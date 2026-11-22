@@ -1,6 +1,6 @@
 (executable
  (name server)
- (libraries dream protocol sim_map_lib)
+ (libraries dream protocol sim_map_lib yojson)
  (preprocess (pps lwt_ppx)))
 
 (alias

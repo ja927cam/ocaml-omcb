@@ -9,8 +9,8 @@ let settle () =
 let event_board ~x ~y ~revision changes =
   State_worker.{ board_x = x; board_y = y; revision; changes }
 
-let committed ?(sequence = 1L) ?(request_id = 7l) boards =
-  State_worker.{ sequence; request_id; boards }
+let committed ?(sequence = 1L) ?(request_id = 7l) ?timing boards =
+  State_worker.{ sequence; request_id; boards; timing }
 
 let changed_piece () =
   Piece.create ~id:1l ~piece_type:Piece.Pawn ~is_white:true
@@ -140,5 +140,68 @@ let () =
   Connection_manager.enqueue_move manager (committed [ outside ]);
   settle ();
   check "window outside" (sent_events sent = []);
+
+  (* Outbox overflow drops oldest events and keeps other clients healthy. *)
+  let manager = Connection_manager.create ~max_outbox:2 () in
+  let release, release_u = Lwt.wait () in
+  let slow =
+    Connection_manager.register manager ~send_raw:(fun _ -> release)
+  in
+  let sent_fast = ref [] in
+  let fast =
+    Connection_manager.register manager ~send_raw:(fun bytes ->
+        sent_fast := bytes :: !sent_fast;
+        Lwt.return_unit)
+  in
+  Connection_manager.subscribe slow 800 800;
+  Connection_manager.subscribe fast 800 800;
+  for i = 1 to 5 do
+    let board =
+      event_board ~x:800 ~y:800 ~revision:(Int32.of_int i)
+        [ (52, changed_piece ()) ]
+    in
+    Connection_manager.enqueue_move manager
+      (committed ~sequence:(Int64.of_int i) [ board ])
+  done;
+  settle ();
+  check "overflow: fast client gets all events"
+    (List.length (sent_events sent_fast) = 5);
+  let metrics = Connection_manager.metrics manager in
+  check "overflow: outbox stays bounded"
+    (metrics.max_outbox_depth <= metrics.outbox_capacity);
+  check "overflow: fast client still registered"
+    (Connection_manager.client_count manager = 2);
+  Lwt.wakeup_later release_u ();
+  settle ();
+  Connection_manager.unregister manager slow;
+  check "overflow: unregister cleanup"
+    (Connection_manager.client_count manager = 1);
+
+  (* Batched event frames carry multiple compact event records. *)
+  let manager = Connection_manager.create ~event_batching:true () in
+  let sent = ref [] in
+  let a =
+    Connection_manager.register manager ~send_raw:(fun bytes ->
+        sent := bytes :: !sent;
+        Lwt.return_unit)
+  in
+  Connection_manager.subscribe a 900 900;
+  for i = 1 to 3 do
+    let board =
+      event_board ~x:900 ~y:900 ~revision:(Int32.of_int i)
+        [ (52, changed_piece ()) ]
+    in
+    Connection_manager.enqueue_move manager
+      (committed ~sequence:(Int64.of_int i) [ board ])
+  done;
+  settle ();
+  Connection_manager.flush_all_event_buffers manager;
+  settle ();
+  check "batch: one frame" (List.length !sent = 1);
+  (match !sent with
+   | [ frame ] ->
+     check "batch: kind" (Char.code (Bytes.get frame 0) = 4);
+     check "batch: count" (Char.code (Bytes.get frame 1) = 3)
+   | _ -> failwith "expected one batch frame");
 
   Printf.printf "All connection manager tests passed.\n"

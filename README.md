@@ -95,6 +95,35 @@ moves, and checks every event frame. Results are written to
 shows both profiles. See `bench/README.md` for the methodology and recorded
 numbers.
 
+The server exposes aggregate pipeline metrics while it runs:
+
+```bash
+curl -s http://localhost:8080/metrics
+```
+
+Live events are batched into kind-4 4 KiB frames by default, with the origin
+connection flushed before its response and other clients batched on a 1 ms
+window. Set `EVENT_BATCHING=0` to compare against one-event frames. The
+instrumentation records receive→submit, worker queue, engine, commit→broadcaster,
+broadcast wait, recipient lookup, encoding, outbox enqueue, WebSocket write and
+end-to-end broadcast separately.
+
+Progressive scaling and subscription-distribution matrices are self-contained
+(they start and stop their own server child processes):
+
+```bash
+SCALE_CLIENTS=0,20,40,80,160,200,320,400,600,640,800,1020 \
+  node bench/run_scaling.js
+SCALE_CLIENTS=80 SCALE_DISTRIBUTIONS=high,low,partial \
+  node bench/run_scaling.js
+node bench/slow_client_test.js
+```
+
+`scale_results.js`, `dist_results.js` and `slow_results.js` drive the dashboard
+sections for client-count scaling, overlapping subscriptions and slow/non-reading
+clients. The slow test uses a deliberately small `CONNECTION_OUTBOX_CAPACITY`
+and verifies that one bad client cannot block the broadcaster.
+
 ## Repository map
 
 | Path | Contents |

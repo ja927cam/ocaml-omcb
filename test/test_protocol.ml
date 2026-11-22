@@ -291,6 +291,38 @@ let () =
      check "event change piece" ((List.hd first.changes).piece = 0)
    | _ -> failwith "event decoded incorrectly");
 
+  (* Batched event framing. *)
+  let second_event =
+    Protocol.Types.
+      {
+        sequence = 100L;
+        request_id = 124l;
+        boards =
+          [
+            {
+              board_x = 501;
+              board_y = 400;
+              revision = 4l;
+              changes = [ change 0 0; change 7 25 ];
+            };
+          ];
+      }
+  in
+  let payload1 = Protocol.Types.move_event_payload_to_bytes event in
+  let payload2 = Protocol.Types.move_event_payload_to_bytes second_event in
+  let batch = Bytes.make Protocol.Types.wire_response_bytes '\000' in
+  Bytes.set batch 0 (Char.chr Protocol.Types.wire_kind_event_batch);
+  Bytes.set batch 1 (Char.chr 2);
+  Bytes.blit payload1 0 batch 2 (Bytes.length payload1);
+  Bytes.blit payload2 0 batch (2 + Bytes.length payload1) (Bytes.length payload2);
+  (match Protocol.Types.move_events_of_bytes batch with
+   | Some [ first; second ] ->
+     check "batch first sequence" (first.sequence = 99L);
+     check "batch second sequence" (second.sequence = 100L);
+     check "batch second request" (second.request_id = 124l);
+     check "batch second board" ((List.hd second.boards).board_x = 501)
+   | _ -> failwith "batch decoded incorrectly");
+
   (* Wire framing: every response is padded to 4096 bytes so Dream flushes. *)
   let wire_move =
     Protocol.Types.wire_response_to_bytes

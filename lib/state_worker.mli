@@ -29,6 +29,7 @@ type committed = {
   sequence : int64;
   request_id : int32;
   boards : event_board list;
+  timing : Metrics.move_timing option;
 }
 
 type metrics = {
@@ -56,10 +57,16 @@ val start :
     squares. @raise Invalid_argument if [queue_capacity] is not positive. *)
 
 val submit :
-  t -> Move_request.t -> (Move_engine.result, submit_error) result Lwt.t
-(** Resolves after the move has been processed, not merely queued. *)
+  ?timing:Metrics.move_timing ->
+  t ->
+  Move_request.t ->
+  (Move_engine.result, submit_error) result Lwt.t
+(** Resolves after the move has been processed, not merely queued. [timing]
+    is the optional per-move pipeline context; when supplied, the worker
+    records queue-wait and processing stages into {!Metrics}. *)
 
 val submit_snapshot :
+  ?timing:Metrics.move_timing ->
   t ->
   board_x:int ->
   board_y:int ->

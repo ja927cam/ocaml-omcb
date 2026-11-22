@@ -55,6 +55,7 @@ lib/
   game_state.ml / game_state.mli
   move_request.ml / move_request.mli
   move_engine.ml / move_engine.mli
+  metrics.ml
   state_worker.ml / state_worker.mli
   connection_manager.ml
 
@@ -986,6 +987,26 @@ A normal move carries two changes (source cleared, destination written).
 Castling carries four, en passant three, and promotion two. A cross-board move
 carries two board records. The frame is zero-padded to 4096 bytes.
 
+### 13.6.4 Batched live events — kind 4, 4096-byte wire frame
+
+Batching is the default transport for live events. The frame contains a count
+and one or more compact event records:
+
+| Bytes | Field |
+|---|---|
+| 0 | Wire kind `4` |
+| 1 | Event count, 1–255 |
+| 2+ | Event payloads |
+
+Each event payload is the kind-3 payload without the kind byte: sequence int64,
+request ID int32, board count, board records. The rest of the frame is
+zero-padded to 4096 bytes. The server appends event payloads to a per-client
+buffer and flushes a batch when it approaches 4 KiB, after a 1 ms timer, or
+before a response to that client. The originating client's buffer is flushed
+before its move acknowledgement, preserving the client's event-before-response
+ordering. `EVENT_BATCHING=0` disables batching; `EVENT_BATCH_WINDOW_MS` sets the
+non-origin batch window (default 1 ms).
+
 ### 13.7 Wire response framing — 4096 bytes
 
 Dream 1.0.0~alpha8 buffers WebSocket writes until 4096 bytes have accumulated.
@@ -995,8 +1016,8 @@ in a fixed 4096-byte binary frame:
 
 | Bytes | Field |
 |---|---|
-| 0 | Kind: `1` move response, `2` snapshot response, `3` live move event |
-| 1..26, 1..77, or 1.. | The encoded response/event |
+| 0 | Kind: `1` move response, `2` snapshot response, `3` live event, `4` event batch |
+| 1..26, 1..77, or 1.. | The encoded response/event/batch |
 | Rest | Zero padding |
 
 `wire_response_to_bytes` and `wire_response_of_bytes` in `Protocol.Types` build
@@ -1053,6 +1074,7 @@ This enables a higher-resolution browser timer for RTT metrics.
 | Route | Handler |
 |---|---|
 | `/` | `server/static/index.html` |
+| `/metrics` | Aggregate pipeline, worker, connection and outbox metrics as JSON |
 | `/static/**` | Static files from `_build/default/client` (prefix stripped by `Dream.scope`) |
 | `/ws` | Binary WebSocket move endpoint |
 
@@ -1072,7 +1094,8 @@ This enables a higher-resolution browser timer for RTT metrics.
 5. For a snapshot: decode, call `State_worker.submit_snapshot`, await the
    64-piece board and revision, encode a snapshot response.
 6. Wrap the response in the fixed 4096-byte wire frame (kind + payload) and
-   enqueue it on the connection's ordered send queue.
+   enqueue it on the connection's ordered send queue; flush any buffered event
+   batch for that connection first.
 7. Snapshot decode failures produce a status-0, revision-0 snapshot response.
 8. Worker errors produce the corresponding move rejection or snapshot failure.
 9. Continue reading on the same connection after the send completes.
@@ -1092,8 +1115,15 @@ This enables a higher-resolution browser timer for RTT metrics.
   outbox, preserving order per client.
 - A per-client sender fiber drains the outbox. A failed send unregisters only
   that connection; other clients are unaffected.
-- The outbox is capped. A permanently slow client is disconnected rather than
-  growing memory without bound.
+- The outbox is capped. At capacity, the manager drops the oldest event frames
+  while preserving response frames and their promises, so a slow client cannot
+  grow memory without bound and cannot block the broadcaster. A client that
+  resumes sees a revision gap and repairs it with a snapshot; a client blocked
+  past the two-second send timeout is unregistered.
+- `CONNECTION_OUTBOX_CAPACITY` sets the per-client capacity (default 256). The
+  slow-client test uses 8 to force the overflow path.
+- Aggregate counters for enqueues, drops, send failures, full-outbox
+  unregisters and maximum depth are exposed through `/metrics`.
 - `State_worker.on_commit` runs after the commit but only appends the event to
   a pending queue. No encoding, fan-out or network I/O happens on the worker.
 - The move handler calls `flush_through sequence` before enqueueing its own
@@ -1111,10 +1141,16 @@ This enables a higher-resolution browser timer for RTT metrics.
    enqueueing the response. A scheduled background flush handles cases where a
    handler disappears.
 5. Flushing collects subscribers to any affected board, deduplicating connection
-   IDs, and encodes one kind-3 event frame.
-6. The frame is enqueued to each subscriber's ordered outbox.
-7. Each client's sender fiber writes it independently. Slow or failed clients
-   do not delay others.
+   IDs, and encodes one compact event payload.
+6. The payload is appended to each subscriber's batch buffer; the origin
+   connection is flushed before its response, and other clients flush on a
+   1 ms timer or a 4 KiB threshold.
+7. Each client's sender fiber writes its batch independently. Slow or failed
+   clients do not delay others.
+8. The pipeline records aggregate timings for request receive → submit, worker
+   queue wait, engine processing, commit → broadcaster, broadcast wait,
+   recipient lookup, encoding, outbox enqueue, per-recipient write and
+   end-to-end broadcast. It does not log individual events.
 
 Worker errors become rejection codes 9–11 with the originating request ID.
 
@@ -1126,7 +1162,8 @@ never rolled back.
 ### Dream buffering and close workarounds
 
 - Every response is a 4096-byte wire frame so Dream’s 4096-byte WebSocket
-  buffer flushes on each send.
+  buffer flushes on each send. Live events are batched into kind-4 frames, so
+  one 4 KiB frame can carry many compact event records.
 - The client sends snapshots strictly sequentially (one outstanding) to avoid
   a lost write-acknowledgement path in Dream’s stream pipe.
 - The route uses `Dream.websocket ~close:false`. Dream 1.0.0~alpha8’s close
@@ -1254,7 +1291,7 @@ never rolled back.
 - Snapshot requests are 9 bytes; move requests are 14 bytes; cache window
   updates are 6 bytes.
 - Server messages are fixed 4096-byte wire frames with a kind byte (`1` move,
-  `2` snapshot, `3` live event).
+  `2` snapshot, `3` live event, `4` event batch).
 - Movement/rollback dispatch reads the status byte: 1 accepted, 0 rejected.
 - Calls `Metrics.received` for every move response.
 - Closes the WebSocket on `beforeunload` so page reloads shut down cleanly.
@@ -1381,8 +1418,8 @@ These are deliberate and are not conventional chess:
 - Snapshot request/response round trips, all 64 one-byte pieces, empty
   squares, 77-byte length, board revision and maximum coordinates.
 - Board subscribe/unsubscribe and cache-window codecs.
-- Live event framing: kind 3, global sequence, request ID, two boards,
-  revisions and changed squares.
+- Live event framing: kind 3, kind-4 batches, global sequence, request ID,
+  two boards, revisions and changed squares.
 - Invalid snapshot coordinates and frame lengths.
 - Source+delta move round trips.
 - ±128 wire boundary and rejection of 129.
@@ -1481,6 +1518,28 @@ These are deliberate and are not conventional chess:
 - Writes `bench/load_default_results.*` and `bench/load_stress_results.*`;
   `bench/load_after.js` appends the after-exit measurements.
 
+### `run_scaling.js` (Linux, owns its server children)
+
+- Runs the progressive matrix `0,20,40,80,160,200,320,400,600,640,800,1020`
+  by default, with a fresh server per level.
+- Each level records snapshot/move/event-lag percentiles, CPU, RSS, fds,
+  outbox depth, drops, failures and full event accuracy.
+- Stops at the first failed level unless `SCALE_STOP_ON_FAIL=0`.
+- `SCALE_DISTRIBUTIONS=high,low,partial` runs the subscription-distribution
+  matrix at the configured client count and writes `dist_results.*`.
+- Writes `scale_results.*` and `dist_results.*`; the dashboard loads both.
+
+### `slow_client_test.js` (Linux, owns its server child)
+
+- Starts a server with `CONNECTION_OUTBOX_CAPACITY=8`.
+- Runs 20 normal clients and 37,500 moves against a baseline and three slow
+  raw-WebSocket clients: paused-short, paused-long and slow-read.
+- Verifies normal clients receive every event, normal lag matches the baseline,
+  the slow outbox never exceeds capacity, events are dropped rather than
+  growing unbounded, a client past the send timeout is unregistered, and the
+  affected client recovers by snapshot (same connection or reconnect).
+- Writes `slow_results.*`; the dashboard loads it.
+
 ---
 
 ## 19. Known limitations / explicitly out of scope
@@ -1500,7 +1559,8 @@ These are deliberate and are not conventional chess:
   same type and status on the same square is indistinguishable to the client.
 - Server responses are padded to 4096 bytes to work around Dream 1.0.0~alpha8
   WebSocket buffering, so small acknowledgements use more bandwidth than their
-  logical 26-byte payload.
+  logical 26-byte payload. Live events are batched into kind-4 frames, which
+  amortises the padding over many events; `EVENT_BATCHING=0` disables it.
 - A clean WebSocket close does not receive a server close frame (see the
   `close:false` workaround), so the server releases the connection when the
   client’s TCP stack closes it. Abrupt teardown is still cleaned up and leaves
@@ -1522,8 +1582,13 @@ These are deliberate and are not conventional chess:
 - `bench/bench.ml` runs the speed suite; `dune exec bench/bench.exe`.
 - `bench/load_test.js` runs the end-to-end live load test against a running
   server; see `bench/README.md`.
+- `bench/run_scaling.js` owns fresh server children for the client-count and
+  subscription-distribution matrices.
+- `bench/slow_client_test.js` owns a server with a small outbox and tests
+  non-reading, delayed and low-throughput clients, including recovery.
 - `bench/dashboard.html` is a dependency-free static dashboard reading
-  `bench/results.js` and the load result `.js` files.
+  `bench/results.js`, the load result `.js` files, `scale_results.js`,
+  `dist_results.js` and `slow_results.js`.
 - The suite covers board indexing/reads, packed pieces, protocol codecs,
   validation path variants, processing prepare/apply, ledger operations,
   snapshots, the full engine, the worker and startup phases.
@@ -1538,13 +1603,32 @@ checked indexing ~6.1 ns; checked board read ~14.1 ns vs direct world read
 current run.
 
 End-to-end load on the same machine: the `default` profile sends 596 requests
-from 44 concurrent clients and completes in ~374 ms (~1,592 requests/s) with
-move RTT p50 12.4 ms and event lag p50 12.1 ms; the `stress` profile sends
-1,176 requests from 84 clients in ~569 ms (~2,068 requests/s) with move RTT p50
-51.2 ms and event lag p50 50.4 ms. Both runs accepted every move, delivered
-every event exactly once, leaked no events to unrelated windows, and returned
-to 6 fds and idle CPU after the client process exited. See
-`bench/load_default_results.json` and `bench/load_stress_results.json`.
+from 44 concurrent clients and completes in ~318 ms (~1,873 requests/s) with
+move RTT p50 2.3 ms and client event lag p50 3.4 ms; the `stress` profile sends
+1,176 requests from 84 clients in ~369 ms (~3,186 requests/s) with move RTT p50
+7.3 ms and event lag p50 7.5 ms. Both runs accepted every move, delivered every
+event exactly once, leaked no events to unrelated windows, and returned to 6
+fds and idle CPU after the client process exited.
+
+The scaling matrix reached 1,020 clients and 6,236 requests in ~869 ms
+(~7,180 requests/s), with 102,000 event deliveries, zero drops/failures and
+662 MiB peak RSS / 1,032 peak fds. Batching reduced the 1,020-client move p50
+from 809 ms to 63 ms and WebSocket writes from 102,000 to 3,157. Above roughly
+400 clients the single Node load process is also a bottleneck; server CPU
+remained below 62%.
+
+Distribution at 80 clients: high overlap 80 recipients/move and 5.1 ms move
+p50; low overlap 1 recipient and 1.9 ms; partial overlap 20 recipients and
+3.3 ms. All three had zero missing/extra events.
+
+Slow-client test with an 8-frame outbox and 37,500 moves: normal-client lag
+remained 0.78–0.80 ms p50 (baseline 0.79 ms) while the slow client dropped
+8,807–9,135 events, never exceeded an outbox depth of 8, and recovered with a
+snapshot at revision 1,500. The paused-long case was unregistered after the
+send timeout and recovered via a new connection. See
+`bench/load_default_results.json`, `bench/load_stress_results.json`,
+`bench/scale_results.json`, `bench/dist_results.json` and
+`bench/slow_results.json`.
 
 ---
 
@@ -1561,9 +1645,15 @@ _build/default/server/server.exe
 
 # Development watcher
 dune exec --watch server/server.exe
+
+# Optional tuning
+EVENT_BATCHING=0 _build/default/server/server.exe        # one event per frame
+EVENT_BATCH_WINDOW_MS=2 _build/default/server/server.exe # wider batch window
+CONNECTION_OUTBOX_CAPACITY=8 _build/default/server/server.exe
 ```
 
-The server listens on `http://localhost:8080`.
+The server listens on `http://localhost:8080`; `GET /metrics` returns the
+aggregate pipeline and outbox snapshot.
 
 ---
 

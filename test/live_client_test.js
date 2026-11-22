@@ -155,17 +155,21 @@ async function main() {
 
     const hook = `(() => {
       window.__eventFrames = [];
+      window.__eventCount = 0;
       window.__snapshotRequestCount = 0;
       const add = WebSocket.prototype.addEventListener;
       WebSocket.prototype.addEventListener = function (type, listener, options) {
         if (type !== 'message') return add.call(this, type, listener, options);
         const wrapped = (event) => {
           try {
-            if (event.data instanceof ArrayBuffer && event.data.byteLength === 4096 &&
-                new Uint8Array(event.data)[0] === 3) {
-              window.__eventFrames.push({
-                data: event.data.slice(0), listener, target: this,
-              });
+            if (event.data instanceof ArrayBuffer && event.data.byteLength === 4096) {
+              const bytes = new Uint8Array(event.data);
+              if (bytes[0] === 3 || bytes[0] === 4) {
+                window.__eventFrames.push({
+                  data: event.data.slice(0), listener, target: this,
+                });
+                window.__eventCount += bytes[0] === 4 ? bytes[1] : 1;
+              }
             }
           } catch (_) {}
           return listener.call(this, event);
@@ -192,7 +196,8 @@ async function main() {
         const f = window.__eventFrames[index];
         if (!f) return false;
         const copy = new Uint8Array(f.data.slice(0));
-        new DataView(copy.buffer).setInt32(18, revision, true);
+        const revisionOffset = copy[0] === 4 ? 19 : 18;
+        new DataView(copy.buffer).setInt32(revisionOffset, revision, true);
         const ev = new MessageEvent('message', { data: copy.buffer });
         f.listener.call(f.target, ev);
         return true;
@@ -225,7 +230,7 @@ async function main() {
 
     await waitFor(async () => (await piecePixels(board.x, board.y, 4, 6)) > 20,
       "browser did not load the initial board");
-    const beforeEvents = await evaluate("window.__eventFrames.length");
+    const beforeEvents = await evaluate("window.__eventCount");
 
     await remote.moveTo(board.x, board.y, 4, 6, board.x, board.y, 4, 4);
     await waitFor(async () => (await piecePixels(board.x, board.y, 4, 4)) > 20,
@@ -233,7 +238,7 @@ async function main() {
     await remote.moveTo(board.x, board.y, 4, 4, board.x, board.y, 4, 3);
     await waitFor(async () => (await piecePixels(board.x, board.y, 4, 3)) > 20,
       "browser did not apply second remote move");
-    await waitFor(async () => (await evaluate("window.__eventFrames.length")) >= beforeEvents + 2,
+    await waitFor(async () => (await evaluate("window.__eventCount")) >= beforeEvents + 2,
       "browser did not receive both live events");
 
     // Replaying the first event must be ignored by revision.

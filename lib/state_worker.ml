@@ -39,6 +39,7 @@ type committed = {
   sequence : int64;
   request_id : int32;
   boards : event_board list;
+  timing : Metrics.move_timing option;
 }
 
 type response =
@@ -49,6 +50,7 @@ type item = {
   request : request;
   promise : (response, submit_error) result Lwt.u;
   enqueued_ns : int64;
+  timing : Metrics.move_timing option;
 }
 
 type t = {
@@ -107,7 +109,7 @@ let update_metrics t ~started_ns ~finished_ns item =
 
 let batch_size = 64
 
-let committed_of_accepted t (accepted : Move_engine.accepted) =
+let committed_of_accepted t (accepted : Move_engine.accepted) timing =
   let groups : (int, int * int * (int * Piece.t) list ref) Hashtbl.t =
     Hashtbl.create 2
   in
@@ -135,18 +137,29 @@ let committed_of_accepted t (accepted : Move_engine.accepted) =
         :: acc)
       groups []
   in
-  { sequence = accepted.sequence; request_id = accepted.request_id; boards }
+  {
+    sequence = accepted.sequence;
+    request_id = accepted.request_id;
+    boards;
+    timing;
+  }
 
 let process_one t item =
   let started_ns = now_ns () in
+  (match item.timing with
+   | Some timing -> Metrics.mark_worker_start timing started_ns
+   | None -> ());
   match item.request with
   | Move request ->
     let result = Move_engine.process t.state request in
     let finished_ns = now_ns () in
+    (match item.timing with
+     | Some timing -> Metrics.mark_committed timing finished_ns
+     | None -> ());
     update_metrics t ~started_ns ~finished_ns item;
     (match result with
      | Move_engine.Accepted accepted ->
-       (try t.on_commit (committed_of_accepted t accepted) with
+       (try t.on_commit (committed_of_accepted t accepted item.timing) with
         | exn ->
           Printf.eprintf "state worker on_commit failed: %s\n%!"
             (Printexc.to_string exn))
@@ -226,7 +239,7 @@ let schedule_notification t =
         Lwt.return_unit)
   end
 
-let enqueue t request =
+let enqueue t ?timing request =
   if t.failed then Lwt.return (Error Worker_failed)
   else if not t.accepting then Lwt.return (Error Worker_stopped)
   else if t.depth >= t.settings.queue_capacity then
@@ -234,22 +247,25 @@ let enqueue t request =
   else begin
     let promise, resolver = Lwt.wait () in
     Queue.add
-      { request; promise = resolver; enqueued_ns = now_ns () }
+      { request; promise = resolver; enqueued_ns = now_ns (); timing }
       t.queue;
     t.depth <- t.depth + 1;
+    (match timing with
+     | Some timing -> Metrics.mark_submitted timing
+     | None -> ());
     schedule_notification t;
     promise
   end
 
-let submit t request =
+let submit ?timing t request =
   Lwt.map
     (function
       | Ok (Move_result result) -> Ok result
       | Ok (Snapshot_result _) -> assert false
       | Error error -> Error error)
-    (enqueue t (Move request))
+    (enqueue t ?timing (Move request))
 
-let submit_snapshot t ~board_x ~board_y =
+let submit_snapshot ?timing t ~board_x ~board_y =
   if
     board_x < 0 || board_x >= 1000 || board_y < 0 || board_y >= 1000
   then Lwt.return (Error Invalid_request)
@@ -259,7 +275,7 @@ let submit_snapshot t ~board_x ~board_y =
         | Ok (Snapshot_result snapshot) -> Ok snapshot
         | Ok (Move_result _) -> assert false
         | Error error -> Error error)
-      (enqueue t (Snapshot { board_x; board_y }))
+      (enqueue t ?timing (Snapshot { board_x; board_y }))
 
 let stop t =
   if t.accepting then begin

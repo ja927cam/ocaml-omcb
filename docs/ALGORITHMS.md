@@ -726,8 +726,10 @@ boards, not a single board:
 ### Networking
 
 - Requests: 9-byte snapshot, 14-byte move, 6-byte subscription window.
-- Messages: 4096-byte wire frames with a kind byte. The client dispatches on
-  the kind and parses move responses, snapshots or live events.
+- Messages: 4096-byte wire frames with a kind byte. Kind 3 is a single move
+  event; kind 4 is a batch of 1–255 compact event records. The client
+  dispatches on the kind and parses move responses, snapshots, single events or
+  batches.
 - The route uses `Dream.websocket ~close:false` to avoid Dream
   1.0.0~alpha8’s busy-looping close path on abrupt peer teardown. The close
   path serialises a four-byte close frame into the WebSocket writer. If the
@@ -740,6 +742,15 @@ boards, not a single board:
   harness confirms happens when the client process exits.
 - Sends have a two-second timeout, the receive loop catches connection errors,
   and pending worker work remains bounded by the queue.
+- Each connection has a FIFO outbox and its own sender fiber. If the outbox
+  reaches capacity, the oldest event frames are dropped while response frames
+  and their promises are preserved. The queue is therefore bounded, the
+  broadcaster never waits for a slow client, and the affected client can
+  recover from a revision gap with a fresh snapshot. A client that stays
+  blocked past the send timeout is unregistered.
+- `/metrics` exposes aggregate pipeline stage samples, worker queue state,
+  recipient counts, outbox depth, dropped events and send failures. It does
+  not log individual events.
 - The client still closes the WebSocket on `beforeunload`.
 - Live events are not replayed; a missed revision gap is repaired by a
   snapshot. No reconnect/resume is implemented.
@@ -850,21 +861,158 @@ Recorded on the benchmark machine (loopback, one server process):
 
 | Profile | Clients | Requests | Throughput | Snapshot p50 | Move p50 | Event lag p50 | CPU avg/peak | RSS |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `default` | 40 + 4 | 596 | ~1,592/s | 1.9 ms | 12.4 ms | 12.1 ms | 21.4% / 69.3% | 511 → 524 MiB |
-| `stress` | 80 + 4 | 1,176 | ~2,068/s | 3.2 ms | 51.2 ms | 50.4 ms | 45.7% / 89.1% | 511 → 536 MiB |
+| `default` | 40 + 4 | 596 | ~1,873/s | 1.7 ms | 2.3 ms | 3.4 ms | 12.6% / 38.9% | 514 → 523 MiB |
+| `stress` | 80 + 4 | 1,176 | ~3,186/s | 2.8 ms | 7.3 ms | 7.5 ms | 21.7% / 77.1% | 514 → 534 MiB |
 
 Both runs had 100% move acceptance, 100% valid snapshots, no missing,
 duplicate or extra events, no cross-window leakage and no unexpected closes.
 Server fds peaked at 7 + one per connection (51 and 91) and returned to 6 after
 the load process exited.
 
-The stress run shows the expected queuing cost of fan-out: at 80 subscribers,
-each move is encoded once and queued to 80 per-client outboxes, so move RTT p50
-rises from about 12 ms to about 51 ms even though CPU remains below 90% of one
-core. The limit is the serialised per-connection send path and the event burst,
-not move processing itself.
+### Pipeline breakdown
 
-See `bench/README.md` for the exact commands and the generated result files.
+`lib/metrics.ml` records ten aggregate stages per move and per-recipient write:
+
+1. `receive_to_submit` — request bytes received → queued for the worker.
+2. `worker_queue_wait` — queued → worker starts processing.
+3. `move_processing` — actual `Move_engine.process`.
+4. `commit_to_broadcast` — commit → `on_commit` hands the event to the manager.
+5. `broadcast_wait` — handed over → `flush_through` actually starts. This is
+   scheduler/batching wait, not lookup.
+6. `broadcast_dispatch` — recipient set lookup.
+7. `encoding` — event serialisation.
+8. `outbox_enqueue` — appending to every recipient outbox.
+9. `websocket_write` — per-recipient send completion.
+10. `end_to_end_broadcast` — request received → last recipient write.
+
+Each stage keeps a fixed ring buffer (no per-event logging) plus count, total,
+min and max. `/metrics` materialises percentiles on demand. The default run:
+
+| Stage | p50 | p95 |
+|---|---:|---:|
+| receive → submit | 0.0002 ms | 0.0006 ms |
+| worker queue wait | 0.020 ms | 0.11 ms |
+| move processing | 0.0004 ms | 0.0018 ms |
+| commit → broadcaster | 0.0003 ms | 0.0007 ms |
+| broadcast wait | 0.069 ms | 0.45 ms |
+| recipient lookup | 0.003 ms | 0.005 ms |
+| encoding | 0.0003 ms | 0.0007 ms |
+| outbox enqueue | 0.002 ms | 0.005 ms |
+| WebSocket write | 0.010 ms | 0.021 ms |
+| end-to-end broadcast | 2.14 ms | 3.17 ms |
+
+Recipient lookup and encoding are negligible. Batching changed the shape of
+the pipeline: `broadcast_wait` fell from ~4.3 ms to ~0.07 ms and outbox enqueue
+from ~0.45 ms to ~0.002 ms. The remaining end-to-end time is mostly the 1 ms
+batch window plus the final recipient write. The server end-to-end figure
+(2.1 ms) is lower than client event lag (3.4 ms) because the latter includes
+network delivery and client scheduling.
+
+### Scaling
+
+`bench/run_scaling.js` starts a fresh server per level and records the full
+matrix. Selected results:
+
+| Clients | Requests | Req/s | Snapshot p50 | Move p50 | Event lag p50 | CPU | RSS | fds |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 20 | 236 | 786 | 1.5 ms | 2.7 ms | 2.7 ms | 6.7% | 520 MiB | 32 |
+| 80 | 596 | 1,787 | 4.8 ms | 6.3 ms | 7.8 ms | 15.0% | 527 MiB | 92 |
+| 160 | 1,076 | 2,924 | 9.5 ms | 12.0 ms | 14.4 ms | 21.7% | 540 MiB | 172 |
+| 320 | 2,036 | 4,403 | 18.5 ms | 16.9 ms | 26.6 ms | 36.8% | 563 MiB | 332 |
+| 640 | 3,956 | 5,669 | 33.8 ms | 33.7 ms | 54.4 ms | 53.0% | 619 MiB | 652 |
+| 1,020 | 6,236 | 7,180 | 57.2 ms | 63.2 ms | 80.6 ms | 61.0% | 662 MiB | 1,032 |
+
+Every level delivered every event exactly once with zero drops or failures.
+Outbox depth stayed at 1 because the clients read continuously. Above roughly
+400 clients the single Node load process is also a bottleneck: it parses and
+applies up to 102,000 events. Server CPU stays below 62%, so the top-end RTT is
+not pure server saturation. Batching keeps the server stage costs low: at
+1,020 clients, recipient lookup p50 is ~0.13 ms and outbox enqueue p50 is
+~0.11 ms; the end-to-end time is dominated by the batch window and client
+processing.
+
+### Subscription distributions
+
+At 80 clients and the same 625 subscriptions per client:
+
+| Overlap | Recipients/move | Move p50 | Move p95 | Event lag p50 | Missing | Extra |
+|---|---:|---:|---:|---:|---:|---:|
+| High | 80.0 | 5.1 ms | 17.0 ms | 8.4 ms | 0 | 0 |
+| Low | 1.0 | 1.9 ms | 2.9 ms | 2.7 ms | 0 | 0 |
+| Partial | 20.0 | 3.3 ms | 4.1 ms | 3.2 ms | 0 | 0 |
+
+Low overlap keeps the same total subscription work but only one client's
+window contains the move block; unrelated clients are not involved. Partial
+overlap is the representative middle.
+
+### Slow and non-reading clients
+
+`bench/slow_client_test.js` runs 20 normal clients, 37,500 moves, and one raw
+slow client with an 8-frame outbox:
+
+| Scenario | Normal lag p50/p95 | Max outbox | Drops | Send failures | Recovery |
+|---|---:|---:|---:|---:|---|
+| baseline | 0.79 / 2.10 ms | 1 / 8 | 0 | 0 | n/a |
+| paused-short | 0.78 / 1.98 ms | 8 / 8 | 9,135 | 0 | same connection, rev 1500 |
+| paused-long | 0.80 / 2.03 ms | 8 / 8 | 9,125 | 31 | reconnected, rev 1500 |
+| slow-read | 0.80 / 2.08 ms | 8 / 8 | 8,807 | 0 | same connection, rev 1500 |
+
+A slow client cannot block the broadcaster: the normal-client lag is
+statistically identical to the baseline. At capacity, the server drops the
+oldest queued event frames while keeping response promises intact, so the
+outbox is bounded. A client that resumes sees a revision gap and repairs it
+with a fresh snapshot. A client blocked past the two-second send timeout is
+unregistered; a new connection recovers with a snapshot.
+
+### Transport and allocation review
+
+The largest transport inefficiency was the **4,096-byte wire frame**. Dream
+1.0.0~alpha8 buffers WebSocket writes until 4 KiB, so a one-event frame is
+mostly padding. Event batching is now the default: a kind-4 frame carries up to
+~150 compact event records. A client receiving 100 events in a burst gets one
+or a few frames instead of 100.
+
+The ordering constraint is the mover's response: the client applies its own
+event before the move acknowledgement, so the origin connection's buffer is
+flushed before its response. Other clients batch until a 1 ms timer or the
+4 KiB threshold. `EVENT_BATCHING=0` restores one-event-per-frame behaviour for
+comparison; `EVENT_BATCH_WINDOW_MS` tunes the timer.
+
+Measured effect:
+
+| Profile | Recipient events | WebSocket writes before | WebSocket writes batched |
+|---|---:|---:|---:|
+| default | 4,000 | 4,000 | 295 |
+| stress | 16,000 | 16,000 | 1,306 |
+| 1,020 clients | 102,000 | 102,000 | 3,157 |
+
+The batched default run moved p50 from 11.2 ms to 2.3 ms, client event lag
+from 11.1 ms to 3.4 ms, CPU from 19.1% to 12.6%, and throughput from ~1,622/s
+to ~1,873/s. At 1,020 clients, move p50 fell from 809 ms to 63 ms and CPU from
+74% to 61%.
+
+A smaller, already-applied win is `Bytes.unsafe_to_string` in `send_bytes`:
+frames are immutable after encoding, so the server avoids a 4 KiB copy per
+recipient. The event bytes were already shared between recipients; the copy
+was pure overhead.
+
+Other observations:
+
+- `broadcast_event` builds a recipient `Hashtbl` per event. At high overlap
+  this is small compared with enqueue/write cost, but a reusable bitset or
+  array indexed by connection ID would remove an allocation.
+- `set_window` inserts 625 subscriptions per client one at a time. At 1,020
+  clients that is 637,500 hash operations during setup; a per-client bitset or
+  a bulk window table would reduce setup cost.
+- Recipient lookup is already cheap (single-digit to sub-millisecond at 1,020
+  clients), so further work should target the 1 ms batch window, the
+  response-path flush, and per-client client-side processing rather than the
+  lookup itself.
+- The worker's batch size of 64 is a latency/throughput trade-off. A smaller
+  batch may reduce `broadcast_wait` for interactive moves; a larger batch may
+  improve flood throughput. This is a good future A/B benchmark.
+
+See `bench/README.md` for exact commands and the generated result files.
 
 ### Extending the suite
 

@@ -6,6 +6,59 @@ let cross_origin_isolation inner request =
 
 let now_ns () = Int64.of_float (Unix.gettimeofday () *. 1_000_000_000.)
 
+let int_env name default =
+  match Sys.getenv_opt name with
+  | None -> default
+  | Some value -> (try int_of_string value with _ -> default)
+
+let float_env name default =
+  match Sys.getenv_opt name with
+  | None -> default
+  | Some value -> (try float_of_string value with _ -> default)
+
+let ms_of_ns value = Int64.to_float value /. 1_000_000.
+
+let worker_metrics_json (m : State_worker.metrics) =
+  let processed = m.requests_processed in
+  let avg total =
+    if Int64.equal processed 0L then 0.
+    else Int64.to_float total /. Int64.to_float processed
+  in
+  `Assoc
+    [
+      ("queue_depth", `Int m.queue_depth);
+      ("queue_capacity", `Int m.queue_capacity);
+      ("requests_processed", `Intlit (Int64.to_string m.requests_processed));
+      ("requests_rejected", `Intlit (Int64.to_string m.requests_rejected));
+      ("avg_queue_wait_ms", `Float (ms_of_ns (Int64.of_float (avg m.total_queue_wait_ns))));
+      ("max_queue_wait_ms", `Float (ms_of_ns m.max_queue_wait_ns));
+      ( "avg_processing_ms",
+        `Float (ms_of_ns (Int64.of_float (avg m.total_processing_time_ns))) );
+      ("max_processing_ms", `Float (ms_of_ns m.max_processing_time_ns));
+    ]
+
+let connection_metrics_json (m : Connection_manager.metrics) =
+  `Assoc
+    [
+      ("clients", `Int m.client_count);
+      ("subscriptions", `Int m.subscription_count);
+      ("max_outbox_depth", `Int m.max_outbox_depth);
+      ("outbox_capacity", `Int m.outbox_capacity);
+      ("event_batching", `Bool m.event_batching);
+    ]
+
+let metrics_body manager worker =
+  let worker_metrics = State_worker.metrics worker in
+  let connection_metrics = Connection_manager.metrics manager in
+  Yojson.Safe.to_string
+    (Metrics.json
+       ~extra:
+         [
+           ("worker", worker_metrics_json worker_metrics);
+           ("connections", connection_metrics_json connection_metrics);
+         ]
+       ())
+
 let log_phase name started =
   let elapsed = Int64.sub (now_ns ()) started in
   Printf.printf "%s: %Ld ns (%.3f s)\n%!" name elapsed
@@ -87,8 +140,10 @@ let response_of_result request_id
 let send_bytes socket bytes =
   (* A peer can disappear in the middle of a write. Do not let the handler wait
      forever on a promise that will never resolve. *)
+  (* Frames are immutable after they are encoded, so avoid a 4 KiB copy per
+     recipient with [Bytes.unsafe_to_string]. *)
   Lwt_unix.with_timeout 2.0 (fun () ->
-      Dream.send ~text_or_binary:`Binary socket (Bytes.to_string bytes))
+      Dream.send ~text_or_binary:`Binary socket (Bytes.unsafe_to_string bytes))
 
 let snapshot_failure ?(request_id = 0l) ?(board_x = 0) ?(board_y = 0) () =
   Protocol.Types.
@@ -151,6 +206,7 @@ let handle_socket manager worker socket =
            | None -> ());
           Lwt.return_none
         | 14 ->
+          let received_ns = Metrics.now () in
           (match Protocol.Types.move_request_of_bytes bytes with
            | None ->
              Lwt.return_some
@@ -164,6 +220,9 @@ let handle_socket manager worker socket =
                      (rejected_response ~request_id:wire.request_id
                         Protocol.Types.rejection_invalid_request))
               | request ->
+                let timing =
+                  Metrics.start_move ~origin_conn_id:conn.id received_ns
+                in
                 Lwt.map
                   (fun result ->
                     (match result with
@@ -181,7 +240,7 @@ let handle_socket manager worker socket =
                         (`Move
                            (response_of_result request.request_id
                               (Error error))))
-                  (State_worker.submit worker request)))
+                  (State_worker.submit ~timing worker request)))
         | 9 ->
           (match Protocol.Types.snapshot_request_of_bytes bytes with
            | None -> Lwt.return_some (`Snapshot (snapshot_failure ()))
@@ -213,6 +272,7 @@ let handle_socket manager worker socket =
            | `Snapshot response -> Protocol.Types.Wire_snapshot response
          in
          let bytes = Protocol.Types.wire_response_to_bytes wire_response in
+         Connection_manager.flush_conn_events conn;
          let%lwt () = Connection_manager.send conn bytes in
          loop ())
   in
@@ -240,7 +300,15 @@ let () =
     failwith "initial world does not contain 32,000,000 pieces";
   log_phase "initialisation verification" verify_started;
   let worker_started = now_ns () in
-  let manager = Connection_manager.create () in
+  let outbox_capacity = max 1 (int_env "CONNECTION_OUTBOX_CAPACITY" 256) in
+  let event_batching = int_env "EVENT_BATCHING" 1 <> 0 in
+  let batch_window_s =
+    max 0.0001 (float_env "EVENT_BATCH_WINDOW_MS" 1.0 /. 1000.)
+  in
+  let manager =
+    Connection_manager.create ~max_outbox:outbox_capacity ~event_batching
+      ~batch_window_s ()
+  in
   let worker =
     State_worker.start
       ~on_commit:(Connection_manager.enqueue_move manager)
@@ -255,6 +323,10 @@ let () =
   @@ Dream.router [
        Dream.get "/" (fun req ->
           Dream.from_filesystem "server/static" "index.html" req);
+       Dream.get "/metrics" (fun _req ->
+         Dream.respond
+           ~headers:[ ("Content-Type", "application/json") ]
+           (metrics_body manager worker));
        Dream.scope "/static" [] [
          Dream.get "/**" (Dream.static "_build/default/client");
        ];

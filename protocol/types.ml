@@ -252,6 +252,7 @@ let wire_response_bytes = 4096
 let wire_kind_move = 1
 let wire_kind_snapshot = 2
 let wire_kind_event = 3
+let wire_kind_event_batch = 4
 
 let rejection_none = 0
 let rejection_stale_piece = 1
@@ -440,27 +441,34 @@ let wrap_wire kind payload =
   Bytes.blit payload 0 bytes 1 (Bytes.length payload);
   bytes
 
-let move_event_to_bytes (event : move_event) =
+let move_event_payload_to_bytes (event : move_event) =
   let board_count = List.length event.boards in
   if board_count > 255 then
-    invalid_arg "Protocol.Types.move_event_to_bytes: too many boards";
-  let bytes = Bytes.make wire_response_bytes '\000' in
-  Bytes.set bytes 0 (Char.chr wire_kind_event);
-  set_i64_le bytes 1 event.sequence;
-  set_i32_le bytes 9 event.request_id;
-  Bytes.set bytes 13 (Char.chr board_count);
-  let offset = ref 14 in
+    invalid_arg "Protocol.Types.move_event_payload_to_bytes: too many boards";
+  let payload_size =
+    8 + 4 + 1
+    + List.fold_left
+        (fun total (board : event_board) ->
+          total + 9 + (List.length board.changes * 2))
+        0 event.boards
+  in
+  if payload_size > wire_response_bytes then
+    invalid_arg "Protocol.Types.move_event_payload_to_bytes: event too large";
+  let bytes = Bytes.create payload_size in
+  set_i64_le bytes 0 event.sequence;
+  set_i32_le bytes 8 event.request_id;
+  Bytes.set bytes 12 (Char.chr board_count);
+  let offset = ref 13 in
   List.iter
     (fun (board : event_board) ->
       if not (valid_board_coord board.board_x && valid_board_coord board.board_y)
       then
         invalid_arg
-          "Protocol.Types.move_event_to_bytes: board coordinates out of range";
+          "Protocol.Types.move_event_payload_to_bytes: board coordinates out of range";
       let change_count = List.length board.changes in
       if change_count > 255 then
-        invalid_arg "Protocol.Types.move_event_to_bytes: too many changes";
-      if !offset + 9 + (change_count * 2) > wire_response_bytes then
-        invalid_arg "Protocol.Types.move_event_to_bytes: event does not fit";
+        invalid_arg
+          "Protocol.Types.move_event_payload_to_bytes: too many changes";
       set_u16_le bytes !offset board.board_x;
       set_u16_le bytes (!offset + 2) board.board_y;
       set_i32_le bytes (!offset + 4) board.revision;
@@ -470,15 +478,22 @@ let move_event_to_bytes (event : move_event) =
         (fun (change : event_change) ->
           if change.square < 0 || change.square >= 64 then
             invalid_arg
-              "Protocol.Types.move_event_to_bytes: square out of range";
+              "Protocol.Types.move_event_payload_to_bytes: square out of range";
           if change.piece < 0 || change.piece > 255 then
             invalid_arg
-              "Protocol.Types.move_event_to_bytes: piece byte out of range";
+              "Protocol.Types.move_event_payload_to_bytes: piece byte out of range";
           Bytes.set bytes !offset (Char.chr change.square);
           Bytes.set bytes (!offset + 1) (Char.chr change.piece);
           offset := !offset + 2)
         board.changes)
     event.boards;
+  bytes
+
+let move_event_to_bytes (event : move_event) =
+  let payload = move_event_payload_to_bytes event in
+  let bytes = Bytes.make wire_response_bytes '\000' in
+  Bytes.set bytes 0 (Char.chr wire_kind_event);
+  Bytes.blit payload 0 bytes 1 (Bytes.length payload);
   bytes
 
 let move_event_of_bytes bytes =
@@ -526,6 +541,72 @@ let move_event_of_bytes bytes =
             request_id = get_i32_le bytes 9;
             boards = List.rev !boards;
           }
+
+let move_event_payload_of_bytes bytes offset =
+  let length = Bytes.length bytes in
+  if offset < 0 || offset + 13 > length then None
+  else
+    let board_count = Char.code (Bytes.get bytes (offset + 12)) in
+    if board_count = 0 || board_count > 2 then None
+    else
+      let cursor = ref (offset + 13) in
+      let boards = ref [] in
+      let ok = ref true in
+      for _ = 1 to board_count do
+        if !cursor + 9 > length then ok := false
+        else begin
+          let board_x = get_u16_le bytes !cursor in
+          let board_y = get_u16_le bytes (!cursor + 2) in
+          let revision = get_i32_le bytes (!cursor + 4) in
+          let change_count = Char.code (Bytes.get bytes (!cursor + 8)) in
+          cursor := !cursor + 9;
+          if
+            (not (valid_board_coord board_x && valid_board_coord board_y))
+            || !cursor + (change_count * 2) > length
+          then ok := false
+          else begin
+            let changes = ref [] in
+            for _ = 1 to change_count do
+              let square = Char.code (Bytes.get bytes !cursor) in
+              let piece = Char.code (Bytes.get bytes (!cursor + 1)) in
+              if square >= 64 || piece > 255 then ok := false;
+              changes := { square; piece } :: !changes;
+              cursor := !cursor + 2
+            done;
+            boards :=
+              { board_x; board_y; revision; changes = List.rev !changes }
+              :: !boards
+          end
+        end
+      done;
+      if not !ok then None
+      else
+        Some
+          ( {
+              sequence = get_i64_le bytes offset;
+              request_id = get_i32_le bytes (offset + 8);
+              boards = List.rev !boards;
+            },
+            !cursor )
+
+let move_events_of_bytes bytes =
+  if Bytes.length bytes <> wire_response_bytes then None
+  else if Char.code (Bytes.get bytes 0) <> wire_kind_event_batch then None
+  else
+    let count = Char.code (Bytes.get bytes 1) in
+    let offset = ref 2 in
+    let events = ref [] in
+    let ok = ref true in
+    for _ = 1 to count do
+      if not !ok then ()
+      else
+        match move_event_payload_of_bytes bytes !offset with
+        | None -> ok := false
+        | Some (event, next) ->
+          events := event :: !events;
+          offset := next
+    done;
+    if not !ok then None else Some (List.rev !events)
 
 let wire_response_to_bytes response =
   match response with

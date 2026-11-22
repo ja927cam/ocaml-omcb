@@ -69,12 +69,15 @@ const MOVES = number_env("LOAD_MOVES", PRESET.moves ?? 100);
 const DRIVERS = number_env("LOAD_DRIVERS", PRESET.drivers ?? 20);
 const BLOCK = number_env("LOAD_BLOCK", PRESET.block ?? 10);
 const LABEL = process.env.LOAD_LABEL || PRESET.label || PROFILE_NAME;
+const DISTRIBUTION = (process.env.LOAD_DISTRIBUTION || "high").toLowerCase();
+const BASELINE = process.env.LOAD_BASELINE === "1";
 const OUTPUT = path.join(
   __dirname,
   `${process.env.LOAD_OUTPUT || PRESET.output || "load"}_results`
 );
 const WINDOW_RADIUS = 12;
 const WS_URL = "ws://localhost:8080/ws";
+const METRICS_URL = "http://localhost:8080/metrics";
 const WIRE_FRAME = 4096;
 const EVENT_KIND = 3;
 
@@ -105,185 +108,27 @@ function percentile(values, p) {
 
 function stats(values) {
   if (values.length === 0) return null;
-  const sum = values.reduce((a, b) => a + b, 0);
+  let sum = 0;
+  let max = -Infinity;
+  for (const value of values) {
+    sum += value;
+    if (value > max) max = value;
+  }
   return {
     n: values.length,
     mean_ms: sum / values.length,
     p50_ms: percentile(values, 50),
     p95_ms: percentile(values, 95),
     p99_ms: percentile(values, 99),
-    max_ms: Math.max(...values),
+    max_ms: max,
   };
 }
 
-function parse_event(bytes) {
-  const sequence = bytes.readBigInt64LE(1).toString();
-  const requestId = bytes.readInt32LE(9);
-  const boardCount = bytes[13];
-  let offset = 14;
-  const boards = [];
-  for (let i = 0; i < boardCount; i++) {
-    const board_x = bytes.readUInt16LE(offset);
-    const board_y = bytes.readUInt16LE(offset + 2);
-    const revision = bytes.readInt32LE(offset + 4);
-    const changeCount = bytes[offset + 8];
-    offset += 9;
-    const changes = [];
-    for (let j = 0; j < changeCount; j++) {
-      changes.push({ square: bytes[offset], piece: bytes[offset + 1] });
-      offset += 2;
-    }
-    boards.push({ board_x, board_y, revision, changes });
-  }
-  return { sequence, requestId, boards };
-}
+const { Client } = require("./ws_client");
 
-class Client {
-  constructor(index, kind) {
-    this.index = index;
-    this.kind = kind; // "active", "silent" or "probe"
-    this.ws = new WebSocket(WS_URL);
-    this.ws.binaryType = "arraybuffer";
-    this.pending = new Map();
-    this.nextId = 1 + ((index + 1) * 1_000_003) % 2_000_000_000;
-    this.events = [];
-    this.eventFirstAt = new Map();
-    this.eventCounts = new Map();
-    this.snapshotRtts = [];
-    this.moveRtts = [];
-    this.moveResults = [];
-    this.closed = false;
-    this.intentionalClose = false;
-  }
-
-  open() {
-    return new Promise((resolve, reject) => {
-      this.ws.onopen = resolve;
-      this.ws.onerror = () => reject(new Error(`client ${this.index} WebSocket error`));
-      this.ws.onclose = () => {
-        this.closed = true;
-        for (const { reject: rejectRequest, timer } of this.pending.values()) {
-          clearTimeout(timer);
-          rejectRequest(new Error(`client ${this.index} closed during a request`));
-        }
-        this.pending.clear();
-      };
-      this.ws.onmessage = (message) => {
-        const bytes = Buffer.from(message.data);
-        if (bytes.length !== WIRE_FRAME) return;
-        if (bytes[0] === EVENT_KIND) {
-          const event = parse_event(bytes);
-          const at = performance.now();
-          this.events.push(event);
-          if (!this.eventFirstAt.has(event.sequence)) {
-            this.eventFirstAt.set(event.sequence, at);
-          }
-          this.eventCounts.set(
-            event.sequence,
-            (this.eventCounts.get(event.sequence) || 0) + 1
-          );
-          return;
-        }
-        const id = bytes.readInt32LE(2);
-        const entry = this.pending.get(id);
-        if (!entry) return;
-        this.pending.delete(id);
-        clearTimeout(entry.timer);
-        entry.resolve(bytes);
-      };
-    });
-  }
-
-  request(bytes, id) {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`client ${this.index} request ${id} timed out`));
-      }, 15000);
-      this.pending.set(id, { resolve, reject, timer });
-      this.ws.send(bytes);
-    });
-  }
-
-  subscribe_window(cx, cy) {
-    const bytes = Buffer.alloc(6);
-    bytes[0] = 5;
-    bytes.writeUInt16LE(cx, 1);
-    bytes.writeUInt16LE(cy, 3);
-    bytes[5] = WINDOW_RADIUS;
-    this.ws.send(bytes);
-  }
-
-  async snapshot(x, y) {
-    const id = this.nextId++;
-    const bytes = Buffer.alloc(9);
-    bytes[0] = 2;
-    bytes.writeInt32LE(id, 1);
-    bytes.writeUInt16LE(x, 5);
-    bytes.writeUInt16LE(y, 7);
-    const start = performance.now();
-    const response = await this.request(bytes, id);
-    const rtt = performance.now() - start;
-    this.snapshotRtts.push(rtt);
-    return {
-      rtt,
-      request_id: response.readInt32LE(2),
-      status: response[1],
-      board_x: response.readUInt16LE(6),
-      board_y: response.readUInt16LE(8),
-      revision: response.readInt32LE(10),
-      board: response.subarray(14, 78),
-    };
-  }
-
-  async move_e2e4(boardX, boardY) {
-    const id = this.nextId++;
-    const bytes = Buffer.alloc(14);
-    const source =
-      (boardX & 0x3ff) |
-      ((boardY & 0x3ff) << 10) |
-      (4 << 20) |
-      (6 << 23);
-    const packed =
-      BigInt(source) |
-      (0n << 26n) |
-      ((-2n & 0x1ffn) << 35n);
-    bytes.writeBigUInt64LE(packed, 0);
-    // White pawn on e2, original board: type 1, white, on-original -> 19.
-    bytes.writeInt32LE((52 << 8) | 19, 6);
-    bytes.writeInt32LE(id, 10);
-    const start = performance.now();
-    const response = await this.request(bytes, id);
-    const rtt = performance.now() - start;
-    this.moveRtts.push(rtt);
-    const result = {
-      request_id: id,
-      board_x: boardX,
-      board_y: boardY,
-      rtt,
-      start,
-      accepted: response[1] === 1,
-      response_request_id: response.readInt32LE(2),
-      sequence: response.readBigInt64LE(6).toString(),
-      moved_piece: response.readBigInt64LE(14),
-      captured_piece_id: response.readInt32LE(22),
-      rejection: response[26],
-    };
-    this.moveResults.push(result);
-    return result;
-  }
-
-  close() {
-    this.intentionalClose = true;
-    if (!this.closed) {
-      try {
-        this.ws.close();
-      } catch (_) {}
-    }
-  }
-}
 
 function server_pid() {
+  if (process.env.LOAD_SERVER_PID) return Number(process.env.LOAD_SERVER_PID);
   try {
     return Number(execSync("pgrep -n -x server.exe", { encoding: "utf8" }).trim());
   } catch (_) {
@@ -346,24 +191,74 @@ function far_center(cx, cy) {
   };
 }
 
+function clamp(value, low, high) {
+  return Math.max(low, Math.min(high, value));
+}
+
+function distribution_centers(block, count, mode) {
+  if (count === 0) return [];
+  if (mode === "high") {
+    return Array.from({ length: count }, () => ({ cx: block.cx, cy: block.cy }));
+  }
+  if (mode === "low") {
+    const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+    const spacing = 26;
+    return Array.from({ length: count }, (_, index) => {
+      if (index === 0) return { cx: block.cx, cy: block.cy };
+      const x = clamp(12 + (index % cols) * spacing, 12, 987);
+      const y = clamp(12 + Math.floor(index / cols) * spacing, 12, 987);
+      return { cx: x, cy: y };
+    });
+  }
+  if (mode === "partial") {
+    const clusters = Math.max(2, Math.min(8, Math.round(Math.sqrt(count / 4))));
+    return Array.from({ length: count }, (_, index) => {
+      const cluster = index % clusters;
+      if (cluster === 0) return { cx: block.cx, cy: block.cy };
+      const angle = ((cluster - 1) / (clusters - 1)) * Math.PI * 2;
+      const radius = 60 + (cluster % 3) * 55;
+      return {
+        cx: clamp(block.cx + Math.round(Math.cos(angle) * radius), 12, 987),
+        cy: clamp(block.cy + Math.round(Math.sin(angle) * radius), 12, 987),
+      };
+    });
+  }
+  throw new Error(`LOAD_DISTRIBUTION must be high, low or partial, got ${mode}`);
+}
+
+function window_contains(center, board_x, board_y) {
+  return (
+    Math.abs(center.cx - board_x) <= WINDOW_RADIUS &&
+    Math.abs(center.cy - board_y) <= WINDOW_RADIUS
+  );
+}
+
+async function fetch_metrics() {
+  const response = await fetch(METRICS_URL);
+  if (!response.ok) {
+    throw new Error(`metrics request failed with ${response.status}`);
+  }
+  return response.json();
+}
+
 function validate_event(event, move, expected) {
   const result = {
-    wrong_board: 0,
-    wrong_revision: 0,
-    wrong_changes: 0,
-    wrong_request_id: 0,
-    wrong_board_count: 0,
+    wrong_board_events: 0,
+    wrong_revision_events: 0,
+    wrong_change_events: 0,
+    wrong_request_id_events: 0,
+    wrong_board_count_events: 0,
   };
   if (event.boards.length !== 1) {
-    result.wrong_board_count += 1;
+    result.wrong_board_count_events += 1;
     return result;
   }
   const board = event.boards[0];
   if (board.board_x !== move.board_x || board.board_y !== move.board_y) {
-    result.wrong_board += 1;
+    result.wrong_board_events += 1;
   }
-  if (board.revision !== expected.revision) result.wrong_revision += 1;
-  if (event.requestId !== move.request_id) result.wrong_request_id += 1;
+  if (board.revision !== expected.revision) result.wrong_revision_events += 1;
+  if (event.requestId !== move.request_id) result.wrong_request_id_events += 1;
   const source = board.changes.find((change) => change.square === 52);
   const destination = board.changes.find((change) => change.square === 36);
   if (
@@ -371,18 +266,23 @@ function validate_event(event, move, expected) {
     !source ||
     source.piece !== 0 ||
     !destination ||
-    destination.piece !== 19
+    destination.piece !== 51
   ) {
-    result.wrong_changes += 1;
+    result.wrong_change_events += 1;
   }
   return result;
 }
 
 function add_counts(target, source) {
-  for (const key of Object.keys(source)) target[key] += source[key];
+  for (const key of Object.keys(source)) {
+    target[key] = (target[key] || 0) + source[key];
+  }
 }
 
 async function main() {
+  if (!["high", "low", "partial"].includes(DISTRIBUTION)) {
+    throw new Error("LOAD_DISTRIBUTION must be high, low or partial");
+  }
   if (BLOCK < 1 || BLOCK > 25) throw new Error("LOAD_BLOCK must be between 1 and 25");
   if (MOVES > BLOCK * BLOCK) {
     throw new Error("LOAD_MOVES cannot exceed LOAD_BLOCK squared");
@@ -396,6 +296,97 @@ async function main() {
 
   const pid = server_pid();
   const clkTck = Number(execSync("getconf CLK_TCK", { encoding: "utf8" }).trim());
+
+  if (BASELINE) {
+    const rss = read_rss_kb(pid);
+    const fds = read_fds(pid);
+    const ticksStart = read_cpu_ticks(pid);
+    const started = performance.now();
+    await sleep(1200);
+    const durationMs = performance.now() - started;
+    const ticksEnd = read_cpu_ticks(pid);
+    let serverMetrics = null;
+    let metricsError = null;
+    try {
+      serverMetrics = await fetch_metrics();
+    } catch (error) {
+      metricsError = String(error.message || error);
+    }
+    const result = {
+      generated: new Date().toISOString(),
+      label: LABEL,
+      baseline: true,
+      profile: {
+        clients: CLIENTS,
+        silent_clients: SILENT_CLIENTS,
+        snapshots_per_client: SNAPSHOTS_PER_CLIENT,
+        moves: MOVES,
+        drivers: DRIVERS,
+        block: BLOCK,
+        window_radius: WINDOW_RADIUS,
+        distribution: DISTRIBUTION,
+      },
+      totals: { connections: 0, subscriptions: 0, snapshots: 0, moves: 0, requests: 0 },
+      duration_ms: durationMs,
+      throughput_requests_per_second: 0,
+      snapshot_rtt: null,
+      silent_snapshot_rtt: null,
+      move_rtt: null,
+      event_delivery_lag: null,
+      accuracy: {
+        snapshots_ok: 0,
+        snapshot_errors: 0,
+        silent_snapshots_ok: 0,
+        silent_snapshot_errors: 0,
+        moves_accepted: 0,
+        moves_rejected: 0,
+        move_request_id_mismatches: 0,
+        duplicate_move_sequences: 0,
+        events: {
+          expected_total: 0,
+          min_expected: 0,
+          max_expected: 0,
+          min_events: 0,
+          max_events: 0,
+          missing_clients: 0,
+          duplicate_clients: 0,
+          extra_clients: 0,
+          missing_events: 0,
+          extra_events: 0,
+          duplicate_events: 0,
+          wrong_board_events: 0,
+          wrong_revision_events: 0,
+          wrong_change_events: 0,
+          wrong_request_id_events: 0,
+          wrong_board_count_events: 0,
+          silent_events: 0,
+          unexpected_closes: 0,
+          clients_with_events: 0,
+        },
+      },
+      resources: {
+        rss_baseline_kb: rss,
+        rss_before_kb: rss,
+        rss_peak_kb: rss,
+        fds_baseline: fds,
+        fds_before: fds,
+        fds_peak: fds,
+        cpu_average_percent: ((ticksEnd - ticksStart) / clkTck) / (durationMs / 1000) * 100,
+        cpu_peak_percent: ((ticksEnd - ticksStart) / clkTck) / (durationMs / 1000) * 100,
+        cpu_peak_window_ms: Math.round(durationMs),
+        fds_after_close_requests: fds,
+        rss_after_close_requests_kb: rss,
+        cpu_idle_ticks_per_second: ticksEnd - ticksStart,
+        fds_after_exit: fds,
+      },
+      server_metrics: serverMetrics,
+      metrics_error: metricsError,
+    };
+    write_outputs(result);
+    console.log(render_markdown(result));
+    console.log(`Wrote ${OUTPUT}.json, ${OUTPUT}.md and ${OUTPUT}.js`);
+    process.exit(0);
+  }
 
   const probe = new Client(-1, "probe");
   await probe.open();
@@ -414,7 +405,11 @@ async function main() {
   await Promise.all(clients.map((client) => client.open()));
 
   const far = far_center(block.cx, block.cy);
-  for (const client of active) client.subscribe_window(block.cx, block.cy);
+  const activeCenters = distribution_centers(block, active.length, DISTRIBUTION);
+  active.forEach((client, index) => {
+    client.window_center = activeCenters[index];
+    client.subscribe_window(activeCenters[index].cx, activeCenters[index].cy);
+  });
   for (const client of silent) client.subscribe_window(far.cx, far.cy);
 
   const rssBefore = read_rss_kb(pid);
@@ -483,6 +478,7 @@ async function main() {
   // Assign one distinct fresh board per move. Drivers take boards from a shared
   // queue and send their moves sequentially, so moves are concurrent across
   // drivers but ordered per connection.
+  const moveBoards = block.boards.slice(0, MOVES);
   let nextBoard = 0;
   await Promise.all(
     Array.from({ length: DRIVERS }, async (_, driverIndex) => {
@@ -490,7 +486,7 @@ async function main() {
       for (;;) {
         const boardIndex = nextBoard++;
         if (boardIndex >= MOVES) return;
-        const board = block.boards[boardIndex];
+        const board = moveBoards[boardIndex];
         const result = await client.move_e2e4(board.x, board.y);
         if (result.response_request_id !== result.request_id) {
           result.request_id_mismatch = true;
@@ -508,12 +504,25 @@ async function main() {
     moveBySequence.set(move.sequence, move);
   }
 
-  // Wait for every active client to see every move, then give duplicates time
-  // to show up so the deduplication check is meaningful.
+  // A client only expects events for boards inside its own 25x25 window.
+  const expectedByClient = active.map((client) => {
+    const expected = new Set();
+    for (const move of moveResults) {
+      if (window_contains(client.window_center, move.board_x, move.board_y)) {
+        expected.add(move.sequence);
+      }
+    }
+    return expected;
+  });
+
+  // Wait for every active client to see every event it should see, then give
+  // duplicates time to show up so the deduplication check is meaningful.
   const deadline = Date.now() + 20000;
   while (
     Date.now() < deadline &&
-    active.some((client) => client.events.length < MOVES)
+    expectedByClient.some((expected, index) =>
+      [...expected].some((sequence) => !active[index].eventCounts.has(sequence))
+    )
   ) {
     await sleep(25);
   }
@@ -524,7 +533,15 @@ async function main() {
   const ticksEnd = read_cpu_ticks(pid);
   const durationMs = finished - started;
 
-  const expectedSequences = new Set(moveBySequence.keys());
+  let serverMetrics = null;
+  let metricsError = null;
+  try {
+    serverMetrics = await fetch_metrics();
+  } catch (error) {
+    metricsError = String(error.message || error);
+  }
+
+  const expectedCounts = expectedByClient.map((expected) => expected.size);
   const accuracy = {
     snapshots_ok: active.length * SNAPSHOTS_PER_CLIENT - snapshotErrors.length,
     snapshot_errors: snapshotErrors.length,
@@ -535,12 +552,18 @@ async function main() {
     move_request_id_mismatches: moveResults.filter((m) => m.request_id_mismatch).length,
     duplicate_move_sequences: moveResults.filter((m) => m.duplicate_sequence).length,
     events: {
-      expected_per_client: MOVES,
+      expected_total: expectedCounts.reduce((sum, count) => sum + count, 0),
+      min_expected: expectedCounts.length ? Math.min(...expectedCounts) : 0,
+      max_expected: expectedCounts.length ? Math.max(...expectedCounts) : 0,
       min_events: active.length ? Math.min(...active.map((c) => c.events.length)) : 0,
       max_events: active.length ? Math.max(...active.map((c) => c.events.length)) : 0,
+      clients_with_events: active.filter((c) => c.events.length > 0).length,
       missing_clients: 0,
       duplicate_clients: 0,
       extra_clients: 0,
+      missing_events: 0,
+      extra_events: 0,
+      duplicate_events: 0,
       wrong_board_events: 0,
       wrong_revision_events: 0,
       wrong_change_events: 0,
@@ -552,28 +575,39 @@ async function main() {
   };
 
   const eventLatencies = [];
-  for (const client of active) {
+  active.forEach((client, index) => {
+    const expected = expectedByClient[index];
     const seen = client.eventCounts;
-    if ([...expectedSequences].some((sequence) => !seen.has(sequence))) {
-      accuracy.events.missing_clients += 1;
+    let missing = 0;
+    let extra = 0;
+    let duplicates = 0;
+    for (const sequence of expected) {
+      if (!seen.has(sequence)) missing += 1;
     }
-    if ([...seen.keys()].some((sequence) => !expectedSequences.has(sequence))) {
-      accuracy.events.extra_clients += 1;
+    for (const [sequence, count] of seen) {
+      if (!expected.has(sequence)) extra += 1;
+      if (count > 1) duplicates += count - 1;
     }
-    if ([...seen.values()].some((count) => count > 1)) {
-      accuracy.events.duplicate_clients += 1;
-    }
+    if (missing > 0) accuracy.events.missing_clients += 1;
+    if (extra > 0) accuracy.events.extra_clients += 1;
+    if (duplicates > 0) accuracy.events.duplicate_clients += 1;
+    accuracy.events.missing_events += missing;
+    accuracy.events.extra_events += extra;
+    accuracy.events.duplicate_events += duplicates;
+
     for (const event of client.events) {
       const move = moveBySequence.get(event.sequence);
       if (move) {
         add_counts(accuracy.events, validate_event(event, move, { revision: 1 }));
-        const eventAt = client.eventFirstAt.get(event.sequence);
-        if (eventAt !== undefined) {
-          eventLatencies.push(eventAt - move.start);
+        if (expected.has(event.sequence)) {
+          const eventAt = client.eventFirstAt.get(event.sequence);
+          if (eventAt !== undefined) {
+            eventLatencies.push(eventAt - move.start);
+          }
         }
       }
     }
-  }
+  });
 
   const totalRequests =
     clients.length +
@@ -593,6 +627,7 @@ async function main() {
       drivers: DRIVERS,
       block: BLOCK,
       window_radius: WINDOW_RADIUS,
+      distribution: DISTRIBUTION,
     },
     totals: {
       connections: clients.length,
@@ -620,6 +655,8 @@ async function main() {
       cpu_peak_percent: peakCpu,
       cpu_peak_window_ms: 100,
     },
+    server_metrics: serverMetrics,
+    metrics_error: metricsError,
   };
 
   for (const client of clients) client.close();
@@ -641,6 +678,9 @@ async function main() {
     accuracy.events.missing_clients !== 0 ||
     accuracy.events.duplicate_clients !== 0 ||
     accuracy.events.extra_clients !== 0 ||
+    accuracy.events.missing_events !== 0 ||
+    accuracy.events.duplicate_events !== 0 ||
+    accuracy.events.extra_events !== 0 ||
     accuracy.events.silent_events !== 0 ||
     accuracy.events.unexpected_closes !== 0 ||
     accuracy.events.wrong_board_events !== 0 ||
@@ -666,9 +706,60 @@ async function main() {
 
 function render_markdown(result) {
   const p = result.profile;
+  const r = result.resources;
+  if (result.baseline) {
+    return [
+      "# Live load test results",
+      "",
+      `Profile: ${result.label}`,
+      "",
+      `Generated: ${result.generated}`,
+      "",
+      "## Idle baseline",
+      "",
+      `- ${p.clients} active clients, ${p.silent_clients} silent clients, no load`,
+      `- Duration: ${result.duration_ms.toFixed(0)} ms`,
+      `- RSS: ${(r.rss_baseline_kb / 1024).toFixed(0)} MiB`,
+      `- fds: ${r.fds_baseline}`,
+      `- CPU: ${r.cpu_average_percent.toFixed(1)}% average over the sample`,
+      result.server_metrics
+        ? `- Worker queue: ${result.server_metrics.worker.queue_depth}/${result.server_metrics.worker.queue_capacity}, connections ${result.server_metrics.connections.clients}`
+        : "",
+      "",
+    ].join("\n");
+  }
+
   const a = result.accuracy;
   const e = a.events;
-  const r = result.resources;
+  const sm = result.server_metrics;
+  const stage_labels = [
+    ["receive_to_submit", "receive → submit"],
+    ["worker_queue_wait", "worker queue wait"],
+    ["move_processing", "move processing"],
+    ["commit_to_broadcast", "commit → broadcaster"],
+    ["broadcast_wait", "broadcast wait"],
+    ["broadcast_dispatch", "recipient lookup"],
+    ["encoding", "event encoding"],
+    ["outbox_enqueue", "outbox enqueue"],
+    ["websocket_write", "WebSocket write"],
+    ["end_to_end_broadcast", "end-to-end broadcast"],
+  ];
+  const stage_lines =
+    sm && sm.stages
+      ? stage_labels.map(([key, label]) => {
+          const s = sm.stages[key];
+          if (!s || s.n === 0) return `- ${label}: no samples`;
+          return `- ${label}: p50 ${s.p50_ms.toFixed(3)} ms, p95 ${s.p95_ms.toFixed(3)} ms, p99 ${s.p99_ms.toFixed(3)} ms, max ${s.max_ms.toFixed(3)} ms (n=${s.n})`;
+        })
+      : ["- server metrics unavailable"];
+
+  const counters = sm && sm.counters;
+  const connections = sm && sm.connections;
+  const avg_recipients =
+    counters && Number(counters.events_broadcast) > 0
+      ? Number(counters.recipients) / Number(counters.events_broadcast)
+      : 0;
+
   return [
     "# Live load test results",
     "",
@@ -678,7 +769,7 @@ function render_markdown(result) {
     "",
     "## Load",
     "",
-    `- ${p.clients} active clients, ${p.silent_clients} silent clients`,
+    `- ${p.clients} active clients, ${p.silent_clients} silent clients, ${p.distribution} subscription distribution`,
     `- ${result.totals.requests} requests: ${result.totals.connections} connections, ${result.totals.subscriptions} subscriptions, ${result.totals.snapshots} snapshots, ${result.totals.moves} moves`,
     `- ${p.drivers} move drivers on a ${p.block} x ${p.block} fresh block, ${p.window_radius * 2 + 1} x ${p.window_radius * 2 + 1} subscriptions`,
     `- Duration: ${result.duration_ms.toFixed(0)} ms, throughput ${result.throughput_requests_per_second.toFixed(0)} requests/s`,
@@ -687,13 +778,22 @@ function render_markdown(result) {
     "",
     `- Snapshot RTT: p50 ${result.snapshot_rtt.p50_ms.toFixed(1)} ms, p95 ${result.snapshot_rtt.p95_ms.toFixed(1)} ms, p99 ${result.snapshot_rtt.p99_ms.toFixed(1)} ms, max ${result.snapshot_rtt.max_ms.toFixed(1)} ms`,
     `- Move RTT: p50 ${result.move_rtt.p50_ms.toFixed(1)} ms, p95 ${result.move_rtt.p95_ms.toFixed(1)} ms, p99 ${result.move_rtt.p99_ms.toFixed(1)} ms, max ${result.move_rtt.max_ms.toFixed(1)} ms`,
-    `- Event delivery lag: p50 ${result.event_delivery_lag.p50_ms.toFixed(1)} ms, p95 ${result.event_delivery_lag.p95_ms.toFixed(1)} ms, p99 ${result.event_delivery_lag.p99_ms.toFixed(1)} ms, max ${result.event_delivery_lag.max_ms.toFixed(1)} ms`,
+    `- Client event delivery lag: p50 ${result.event_delivery_lag.p50_ms.toFixed(1)} ms, p95 ${result.event_delivery_lag.p95_ms.toFixed(1)} ms, p99 ${result.event_delivery_lag.p99_ms.toFixed(1)} ms, max ${result.event_delivery_lag.max_ms.toFixed(1)} ms`,
+    "",
+    "## Server pipeline",
+    "",
+    ...stage_lines,
+    "",
+    `- Broadcasts: ${counters ? counters.events_broadcast : 0} events, ${avg_recipients.toFixed(1)} recipients/event average, ${counters ? counters.max_recipients : 0} max`,
+    `- Outbox: ${connections ? connections.max_outbox_depth : 0} max depth, ${connections ? connections.outbox_capacity : 0} capacity, ${counters ? counters.outbox_enqueues : 0} enqueues`,
+    `- Drops/failures: ${counters ? counters.outbox_dropped : 0} dropped events, ${counters ? counters.send_failures : 0} send failures, ${counters ? counters.outbox_full_unregisters : 0} full-outbox unregisters`,
     "",
     "## Accuracy",
     "",
     `- Moves: ${a.moves_accepted}/${result.totals.moves} accepted, ${a.moves_rejected} rejected, ${a.move_request_id_mismatches} request-ID mismatches, ${a.duplicate_move_sequences} duplicate sequences`,
     `- Snapshots: ${a.snapshots_ok}/${result.totals.snapshots - a.silent_snapshots_ok - a.silent_snapshot_errors} active valid, ${a.silent_snapshots_ok} silent valid, ${a.silent_snapshot_errors} silent failures`,
-    `- Events: ${e.min_events}-${e.max_events} per active client, ${e.missing_clients} missing, ${e.duplicate_clients} duplicate, ${e.extra_clients} extra`,
+    `- Events: ${e.missing_events} missing, ${e.duplicate_events} duplicate, ${e.extra_events} extra; ${e.clients_with_events}/${p.clients} clients received events`,
+    `- Expected/actual per client: ${e.min_expected}-${e.max_expected} expected, ${e.min_events}-${e.max_events} actual`,
     `- Event contents: ${e.wrong_board_events} wrong board, ${e.wrong_revision_events} wrong revision, ${e.wrong_change_events} wrong changes, ${e.wrong_request_id_events} wrong request ID, ${e.wrong_board_count_events} wrong board count`,
     `- Isolation: ${e.silent_events} events leaked to silent clients, ${e.unexpected_closes} unexpected closes`,
     "",

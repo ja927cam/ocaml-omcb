@@ -18,27 +18,30 @@ function fail(message) {
   throw new Error(message);
 }
 
-function parseEvent(bytes) {
-  const kind = bytes[0];
-  const sequence = bytes.readBigInt64LE(1);
-  const requestId = bytes.readInt32LE(9);
-  const boardCount = bytes[13];
-  let offset = 14;
+function parsePayload(bytes, offset) {
+  const sequence = bytes.readBigInt64LE(offset);
+  const requestId = bytes.readInt32LE(offset + 8);
+  const boardCount = bytes[offset + 12];
+  let cursor = offset + 13;
   const boards = [];
   for (let i = 0; i < boardCount; i++) {
-    const board_x = bytes.readUInt16LE(offset);
-    const board_y = bytes.readUInt16LE(offset + 2);
-    const revision = bytes.readInt32LE(offset + 4);
-    const changeCount = bytes[offset + 8];
-    offset += 9;
+    const board_x = bytes.readUInt16LE(cursor);
+    const board_y = bytes.readUInt16LE(cursor + 2);
+    const revision = bytes.readInt32LE(cursor + 4);
+    const changeCount = bytes[cursor + 8];
+    cursor += 9;
     const changes = [];
     for (let j = 0; j < changeCount; j++) {
-      changes.push({ square: bytes[offset], piece: bytes[offset + 1] });
-      offset += 2;
+      changes.push({ square: bytes[cursor], piece: bytes[cursor + 1] });
+      cursor += 2;
     }
     boards.push({ board_x, board_y, revision, changes });
   }
-  return { kind, sequence, requestId, boards };
+  return { event: { sequence, requestId, boards }, next: cursor };
+}
+
+function parseEvent(bytes) {
+  return parsePayload(bytes, 1).event;
 }
 
 class Client {
@@ -59,8 +62,7 @@ class Client {
       this.ws.onmessage = (message) => {
         const bytes = Buffer.from(message.data);
         if (bytes.length !== 4096) return;
-        if (bytes[0] === 3) {
-          const event = parseEvent(bytes);
+        const record = (event) => {
           this.events.push(event);
           this.eventWaiters = this.eventWaiters.filter((waiter) => {
             if (waiter.predicate(event)) {
@@ -69,6 +71,16 @@ class Client {
             }
             return true;
           });
+        };
+        if (bytes[0] === 3) {
+          record(parseEvent(bytes));
+        } else if (bytes[0] === 4) {
+          let offset = 2;
+          for (let i = 0; i < bytes[1]; i++) {
+            const parsed = parsePayload(bytes, offset);
+            record(parsed.event);
+            offset = parsed.next;
+          }
         } else {
           const id = bytes.readInt32LE(2);
           const key = `${bytes[0]}:${id}`;

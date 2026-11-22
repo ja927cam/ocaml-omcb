@@ -995,6 +995,14 @@ let main () =
            let length = Tarray.Buffer.byte_length data in
            if length = Protocol.Types.wire_response_bytes then begin
              let bytes = bytes_of_buffer data in
+             if
+               Char.code (Bytes.get bytes 0)
+               = Protocol.Types.wire_kind_event_batch
+             then
+               (match Protocol.Types.move_events_of_bytes bytes with
+                | None -> ()
+                | Some events -> List.iter apply_move_event events)
+             else
              match Protocol.Types.wire_response_of_bytes bytes with
              | None -> ()
              | Some (Protocol.Types.Wire_snapshot response) ->
