@@ -1023,8 +1023,8 @@ Measured effect:
 | stress | 16,000 | 16,000 | 1,306 |
 | 1,020 clients | 102,000 | 102,000 | 3,157 |
 
-The batched default run moved p50 from 11.2 ms to 2.3 ms, client event lag
-from 11.1 ms to 3.4 ms, CPU from 19.1% to 12.6%, and throughput from ~1,622/s
+The batched default run moved p50 from 11.2 ms to 1.8 ms, client event lag
+from 11.1 ms to 3.9 ms, CPU from 19.1% to 9.4%, and throughput from ~1,622/s
 to ~1,870/s. At 1,020 clients, move p50 fell from 809 ms to 62 ms and CPU from
 74% to 60%.
 
