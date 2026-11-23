@@ -138,12 +138,12 @@ let () =
       board_x = 999;
       board_y = 999;
       status = Protocol.Types.Snapshot_ok;
-      revision = 7l;
+      revision = 7L;
       board;
     }
   in
   let rb = Protocol.Types.snapshot_response_to_bytes snap_response in
-  check "snapshot response length" (Bytes.length rb = 77);
+  check "snapshot response length" (Bytes.length rb = 81);
   (match Protocol.Types.snapshot_response_of_bytes rb with
    | None -> failwith "snapshot response decoded to None"
    | Some r ->
@@ -152,7 +152,7 @@ let () =
      check "snapshot response id" (r.request_id = 92l);
      check "snapshot response x" (r.board_x = 999);
      check "snapshot response y" (r.board_y = 999);
-     check "snapshot response revision" (r.revision = 7l);
+     check "snapshot response revision" (r.revision = 7L);
      check "snapshot response board length" (Bytes.length r.board = 64);
      check "snapshot response empty square" (Bytes.get r.board 0 = '\000');
      check "snapshot response piece" (Bytes.get r.board 1 = Char.chr 2));
@@ -169,7 +169,7 @@ let () =
    | None -> failwith "failed snapshot decoded to None"
    | Some r ->
      check "failed snapshot status" (r.status = Protocol.Types.Snapshot_failed);
-     check "failed snapshot revision" (r.revision = 0l);
+     check "failed snapshot revision" (r.revision = 0L);
      check "failed snapshot board is zero"
        (Bytes.for_all (fun c -> c = '\000') r.board));
 
@@ -177,7 +177,7 @@ let () =
       Protocol.Types.snapshot_response_to_bytes
         { snap_response with board = Bytes.make 63 '\000' });
   check "snapshot response wrong length"
-    (Protocol.Types.snapshot_response_of_bytes (Bytes.create 76) = None);
+    (Protocol.Types.snapshot_response_of_bytes (Bytes.create 80) = None);
 
   (* Packed-to-client-byte projection used by move acknowledgements. *)
   let packed ?(white = false) ?(moves = 0) ?(double = false)
@@ -260,13 +260,13 @@ let () =
             {
               board_x = 500;
               board_y = 400;
-              revision = 8l;
+              revision = 8L;
               changes = [ change 52 0; change 36 51 ];
             };
             {
               board_x = 501;
               board_y = 400;
-              revision = 3l;
+              revision = 3L;
               changes = [ change 0 0; change 7 25 ];
             };
           ];
@@ -285,7 +285,7 @@ let () =
      let first = List.hd decoded.boards in
      check "event board x" (first.board_x = 500);
      check "event board y" (first.board_y = 400);
-     check "event board revision" (first.revision = 8l);
+     check "event board revision" (first.revision = 8L);
      check "event change count" (List.length first.changes = 2);
      check "event change square" ((List.hd first.changes).square = 52);
      check "event change piece" ((List.hd first.changes).piece = 0)
@@ -302,7 +302,7 @@ let () =
             {
               board_x = 501;
               board_y = 400;
-              revision = 4l;
+              revision = 4L;
               changes = [ change 0 0; change 7 25 ];
             };
           ];

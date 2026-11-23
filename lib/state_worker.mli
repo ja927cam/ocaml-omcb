@@ -15,13 +15,13 @@ type submit_error =
 
 type snapshot = {
   board : Piece.t array;
-  revision : int32;
+  revision : int64;
 }
 
 type event_board = {
   board_x : int;
   board_y : int;
-  revision : int32;
+  revision : int64;
   changes : (int * Piece.t) list;
 }
 

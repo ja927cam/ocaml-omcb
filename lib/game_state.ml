@@ -1,7 +1,7 @@
 type t = {
   board : Board.t;
   ledger : Ledger.t;
-  revisions : (int32, Bigarray.int32_elt, Bigarray.c_layout) Bigarray.Array1.t;
+  revisions : (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t;
   mutable sequence : int64;
   mutable initialised : bool;
 }
@@ -11,9 +11,9 @@ let board_count = 1_000_000
 
 let create () =
   let revisions =
-    Bigarray.Array1.create Bigarray.int32 Bigarray.c_layout board_count
+    Bigarray.Array1.create Bigarray.int64 Bigarray.c_layout board_count
   in
-  Bigarray.Array1.fill revisions 0l;
+  Bigarray.Array1.fill revisions 0L;
   {
     board = Board.create ();
     ledger = Ledger.create_ledger ~next_seq:1L ledger_capacity;
@@ -23,7 +23,7 @@ let create () =
   }
 
 let initialise t =
-  Bigarray.Array1.fill t.revisions 0l;
+  Bigarray.Array1.fill t.revisions 0L;
   let clear = t.initialised in
   for board_y = 0 to 999 do
     for board_x = 0 to 999 do
@@ -52,7 +52,7 @@ let bump_board_revision t ~board_x ~board_y =
   let i = board_index board_x board_y in
   let current = Bigarray.Array1.unsafe_get t.revisions i in
   let next =
-    if Int32.equal current Int32.max_int then current else Int32.succ current
+    if Int64.equal current Int64.max_int then current else Int64.succ current
   in
   Bigarray.Array1.unsafe_set t.revisions i next;
   next

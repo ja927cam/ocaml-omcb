@@ -138,6 +138,7 @@
     <a href="#scaling">Scaling</a>
     <a href="#subscriptions">Subscriptions</a>
     <a href="#slow">Slow clients</a>
+    <a href="#consistency">Consistency</a>
     <a href="#micro">Microbenchmarks</a>
   </nav>
 </header>
@@ -210,6 +211,47 @@
     <div class="card" style="margin-top:14px"><h3>Dropped events and recovery</h3><div id="slow-bars"></div></div>
   </section>
 
+  <section id="consistency">
+    <div class="section-head">
+      <div><h2>Snapshot consistency</h2><div class="sub">Registration and board capture are ordered; events wait for pending snapshots.</div></div>
+      <span id="consistency-status" class="pill">—</span>
+    </div>
+    <div class="split">
+      <div class="card">
+        <h3>Atomic handoff</h3>
+        <div class="waterfall">
+          <div class="bar">
+            <div class="seg" style="width:18%;background:#7ee2b8"></div>
+            <div class="seg" style="width:22%;background:#6aa9ff"></div>
+            <div class="seg" style="width:20%;background:#ffcc66"></div>
+            <div class="seg" style="width:20%;background:#c99cff"></div>
+            <div class="seg" style="width:20%;background:#ff8a8a"></div>
+          </div>
+          <div class="labels">
+            <i><span style="color:#7ee2b8">■</span> subscribe</i>
+            <i><span style="color:#6aa9ff">■</span> worker snapshot</i>
+            <i><span style="color:#ffcc66">■</span> filter buffer</i>
+            <i><span style="color:#c99cff">■</span> snapshot frame</i>
+            <i><span style="color:#ff8a8a">■</span> release newer events</i>
+          </div>
+        </div>
+        <div class="metric-grid">
+          <div class="k">Subscription</div><div class="v">registered before submit</div>
+          <div class="k">Snapshot capture</div><div class="v">state worker FIFO</div>
+          <div class="k">Revision</div><div class="v">int64 per board</div>
+          <div class="k">Events</div><div class="v">buffered per board, filtered by revision</div>
+          <div class="k">Cross-board move</div><div class="v">split pending board, deliver other</div>
+          <div class="k">Writes in worker</div><div class="v">none</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Race test</h3>
+        <div id="consistency-stats" class="stats"></div>
+        <div id="consistency-note" class="note"></div>
+      </div>
+    </div>
+  </section>
+
   <section id="micro" class="micro">
     <div class="section-head">
       <div><h2>Microbenchmarks</h2><div class="sub">Isolated code paths from <code>dune exec bench/bench.exe</code>.</div></div>
@@ -231,6 +273,7 @@
 <script src="scale_results.js"></script>
 <script src="dist_results.js"></script>
 <script src="slow_results.js"></script>
+<script src="consistency_results.js"></script>
 <script>
 (() => {
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({
@@ -508,6 +551,25 @@
       })),
       { suffix: " dropped" }
     ) + '<div class="note">Normal-client event lag stays around 0.8 ms in every scenario: the slow client only stalls its own sender fiber.</div>';
+  }
+
+  // ---------------------------------------------------------- consistency
+  const consistency = window.CONSISTENCY_RESULTS;
+  if (consistency) {
+    document.getElementById("consistency-status").textContent = consistency.passed ? "all checks passed" : "checks failed";
+    document.getElementById("consistency-status").className = "pill " + (consistency.passed ? "ok" : "bad");
+    document.getElementById("consistency-stats").innerHTML = [
+      ["snapshot/move races", int(consistency.races)],
+      ["buffered after snapshot", int(consistency.buffered_after_snapshot)],
+      ["snapshot contained move", int(consistency.snapshot_contains_move)],
+      ["concurrent snapshot clients", int(consistency.concurrent_clients)],
+    ].map(([k, v]) => `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
+    document.getElementById("consistency-note").textContent =
+      "Each race ends with the moved pawn present, whether the move landed before or after the snapshot. The deterministic connection-manager suite also covers move-before-snapshot, move-after-snapshot, multiple buffered moves, cross-board splitting and a superseded snapshot token.";
+  } else {
+    document.getElementById("consistency-status").textContent = "no race data";
+    document.getElementById("consistency-stats").innerHTML = "";
+    document.getElementById("consistency-note").textContent = "Run node test/snapshot_consistency_test.js with a server to populate this section.";
   }
 
   // -------------------------------------------------------- microbenchmarks

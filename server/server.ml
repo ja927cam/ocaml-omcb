@@ -152,7 +152,7 @@ let snapshot_failure ?(request_id = 0l) ?(board_x = 0) ?(board_y = 0) () =
       board_x;
       board_y;
       status = Snapshot_failed;
-      revision = 0l;
+      revision = 0L;
       board = Bytes.make 64 '\000';
     }
 
@@ -176,7 +176,7 @@ let snapshot_success (request : Protocol.Types.snapshot_request)
 
 type socket_response =
   [ `Move of Protocol.Types.response
-  | `Snapshot of Protocol.Types.snapshot_response ]
+  | `Snapshot of Protocol.Types.snapshot_response * Protocol.Types.move_event list ]
 
 let handle_socket manager worker socket =
   let conn =
@@ -243,19 +243,34 @@ let handle_socket manager worker socket =
                   (State_worker.submit ~timing worker request)))
         | 9 ->
           (match Protocol.Types.snapshot_request_of_bytes bytes with
-           | None -> Lwt.return_some (`Snapshot (snapshot_failure ()))
+           | None -> Lwt.return_some (`Snapshot (snapshot_failure (), []))
            | Some request ->
+             let token =
+               Connection_manager.begin_snapshot conn
+                 ~board_x:request.board_x ~board_y:request.board_y
+             in
              Lwt.map
                (fun result ->
                  match result with
-                 | Ok snapshot ->
-                   Some (`Snapshot (snapshot_success request snapshot))
+                 | Ok (snapshot : State_worker.snapshot) ->
+                   let released =
+                     match
+                       Connection_manager.complete_snapshot conn
+                         ~board_x:request.board_x ~board_y:request.board_y
+                         ~token ~revision:snapshot.revision
+                     with
+                     | Some events -> events
+                     | None -> []
+                   in
+                   Some (`Snapshot (snapshot_success request snapshot, released))
                  | Error _ ->
+                   Connection_manager.abort_snapshot conn
+                     ~board_x:request.board_x ~board_y:request.board_y token;
                    Some
                      (`Snapshot
-                        (snapshot_failure ~request_id:request.request_id
-                           ~board_x:request.board_x
-                           ~board_y:request.board_y ())))
+                        ( snapshot_failure ~request_id:request.request_id
+                            ~board_x:request.board_x ~board_y:request.board_y (),
+                          [] )))
                (State_worker.submit_snapshot worker
                   ~board_x:request.board_x ~board_y:request.board_y))
         | _ ->
@@ -266,14 +281,21 @@ let handle_socket manager worker socket =
       (match%lwt response_lwt with
        | None -> loop ()
        | Some response ->
+         let released =
+           match response with
+           | `Snapshot (_, released) -> released
+           | `Move _ -> []
+         in
          let wire_response =
            match response with
            | `Move response -> Protocol.Types.Wire_move response
-           | `Snapshot response -> Protocol.Types.Wire_snapshot response
+           | `Snapshot (response, _) -> Protocol.Types.Wire_snapshot response
          in
          let bytes = Protocol.Types.wire_response_to_bytes wire_response in
          Connection_manager.flush_conn_events conn;
-         let%lwt () = Connection_manager.send conn bytes in
+         let send = Connection_manager.send conn bytes in
+         Connection_manager.release_snapshot_events conn released;
+         let%lwt () = send in
          loop ())
   in
   Lwt.finalize

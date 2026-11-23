@@ -613,7 +613,7 @@ Append is single-writer and does not allocate.
 type t = {
   board : Board.t;
   ledger : Ledger.t;
-  revisions : int32 array; (* one per board, 4 MB *)
+  revisions : int64 array; (* one per board, 8 MB *)
   mutable sequence : int64;
   mutable initialised : bool;
 }
@@ -624,7 +624,7 @@ The representation is private in the `.mli`.
 - `create`:
   - allocates the board (512 MB, zero-filled);
   - allocates a 1,048,576-event ledger with next sequence 1;
-  - allocates one int32 revision per board (4 MB);
+  - allocates one int64 revision per board (8 MB);
   - sequence = 0.
 - `initialise`:
   - iterates all 1,000,000 board coordinates;
@@ -913,7 +913,7 @@ as bytes, never as JavaScript `Number`.
 The decoder requires exactly 9 bytes, message type `0x02`, and coordinates in
 `0..999`. Otherwise it returns `None`.
 
-### 13.6 Snapshot response — 77 bytes
+### 13.6 Snapshot response — 81 bytes
 
 | Bytes | Field | Encoding |
 |---|---|---|
@@ -921,8 +921,8 @@ The decoder requires exactly 9 bytes, message type `0x02`, and coordinates in
 | 1–4 | Request ID | int32 little-endian |
 | 5–6 | Board X | uint16 little-endian |
 | 7–8 | Board Y | uint16 little-endian |
-| 9–12 | Board revision | int32 little-endian |
-| 13–76 | Board contents | 64 one-byte client pieces, row-major |
+| 9–16 | Board revision | int64 little-endian |
+| 17–80 | Board contents | 64 one-byte client pieces, row-major |
 
 A failed response has status 0, revision 0 and zero-filled board contents.
 
@@ -979,9 +979,9 @@ Each board record is:
 |---|---|
 | 0–1 | Board X, uint16 |
 | 2–3 | Board Y, uint16 |
-| 4–7 | Board revision, int32 |
-| 8 | Change count |
-| 9+ | `(square uint8, piece byte uint8)` pairs |
+| 4–11 | Board revision, int64 |
+| 12 | Change count |
+| 13+ | `(square uint8, piece byte uint8)` pairs |
 
 A normal move carries two changes (source cleared, destination written).
 Castling carries four, en passant three, and promotion two. A cross-board move
@@ -1022,7 +1022,7 @@ in a fixed 4096-byte binary frame:
 
 `wire_response_to_bytes` and `wire_response_of_bytes` in `Protocol.Types` build
 and validate these frames. Each send crosses the 4096-byte threshold, so Dream
-flushes it immediately. The 77-byte snapshot payload and 26-byte move payload
+flushes it immediately. The 81-byte snapshot payload and 26-byte move payload
 remain unchanged for codec tests and benchmarks.
 
 The client keeps at most **one** snapshot request in flight. Dream's stream
@@ -1091,8 +1091,13 @@ This enables a higher-resolution browser timer for RTT metrics.
    - anything else → rejection / invalid request.
 4. For a move: decode, convert positions, create `Move_request`, submit to the
    worker, await the result, encode a move response.
-5. For a snapshot: decode, call `State_worker.submit_snapshot`, await the
-   64-piece board and revision, encode a snapshot response.
+5. For a snapshot: register the requested board subscription first, mark the
+   board as snapshot-pending for this connection, then call
+   `State_worker.submit_snapshot`, await the 64-piece board and revision.
+   Before the response is enqueued, atomically clear the pending marker and
+   collect buffered events with revisions greater than the snapshot revision;
+   enqueue the snapshot, then release those events in revision order. Buffered
+   events at or below the snapshot revision are discarded.
 6. Wrap the response in the fixed 4096-byte wire frame (kind + payload) and
    enqueue it on the connection's ordered send queue; flush any buffered event
    batch for that connection first.
@@ -1115,6 +1120,14 @@ This enables a higher-resolution browser timer for RTT metrics.
   outbox, preserving order per client.
 - A per-client sender fiber drains the outbox. A failed send unregisters only
   that connection; other clients are unaffected.
+- Snapshot registration and creation are ordered by registering the board
+  subscription before submitting the snapshot to the state worker. While a
+  board snapshot is pending, events for that board are buffered per connection
+  rather than enqueued. When the snapshot revision arrives, buffered events at
+  or below it are discarded and newer events are released in revision order
+  after the snapshot frame. A cross-board event with one pending board is split
+  into a single-board immediate part and a buffered part; the client tracks
+  revisions per board, so both boards advance correctly.
 - The outbox is capped. At capacity, the manager drops the oldest event frames
   while preserving response frames and their promises, so a slow client cannot
   grow memory without bound and cannot block the broadcaster. A client that
@@ -1141,7 +1154,11 @@ This enables a higher-resolution browser timer for RTT metrics.
    enqueueing the response. A scheduled background flush handles cases where a
    handler disappears.
 5. Flushing collects subscribers to any affected board, deduplicating connection
-   IDs, and encodes one compact event payload.
+   IDs, and encodes one compact event payload. If a recipient has a pending
+   snapshot for any affected board, that board's record is buffered for the
+   recipient; non-pending boards are delivered immediately. Buffered records
+   are filtered by snapshot revision and released in revision order after the
+   snapshot response.
 6. The payload is appended to each subscriber's batch buffer; the origin
    connection is flushed before its response, and other clients flush on a
    1 ms timer or a 4 KiB threshold.
@@ -1416,7 +1433,7 @@ These are deliberate and are not conventional chess:
 ### `test_protocol`
 
 - Snapshot request/response round trips, all 64 one-byte pieces, empty
-  squares, 77-byte length, board revision and maximum coordinates.
+  squares, 81-byte length, board revision and maximum coordinates.
 - Board subscribe/unsubscribe and cache-window codecs.
 - Live event framing: kind 3, kind-4 batches, global sequence, request ID,
   two boards, revisions and changed squares.
@@ -1468,6 +1485,12 @@ These are deliberate and are not conventional chess:
 - Unregister removes subscriptions.
 - Explicit unsubscribe and window replacement stop matching events.
 - Outbox/event parsing via the real wire codec.
+- Snapshot pending buffers drafted events until the snapshot revision is known;
+  represented events are discarded and newer events release in revision order.
+- A cross-board move with one pending board delivers the other immediately and
+  buffers the pending board.
+- A superseded snapshot token cannot release the newer snapshot buffer.
+- A full outbox drops event frames while retaining responses and bounding depth.
 
 ### `test_worker`
 
@@ -1495,8 +1518,24 @@ These are deliberate and are not conventional chess:
 
 - A browser watching a remote client applies live events to its cache.
 - A late duplicate event is ignored by revision.
-- An injected revision gap triggers a fresh snapshot and resynchronises the
-  board.
+- An older event is ignored without changing the board.
+- An injected revision gap marks the board stale, disables local moves and
+  triggers a fresh snapshot; the recovered board has the current revision and
+  position.
+- Per-board int64 revisions mean an unrelated board's move does not create a
+  false gap.
+
+### `snapshot_consistency_test.js` (Linux, server running)
+
+- Races a snapshot request from client A against a move from client B on the
+  same board, 20 times on fresh boards.
+- Accepts either a snapshot that contains the move, or a snapshot at revision 0
+  followed by a revision-1 event; applies frames in arrival order and requires
+  the moved pawn to be present.
+- Races five snapshot clients against one move on a fresh board and requires
+  every cached board to converge.
+- Complements `test_connection_manager`'s deterministic buffer/release and
+  superseded-token tests.
 
 ### `ws_teardown_test.js` (Linux)
 
@@ -1603,32 +1642,38 @@ checked indexing ~6.1 ns; checked board read ~14.1 ns vs direct world read
 current run.
 
 End-to-end load on the same machine: the `default` profile sends 596 requests
-from 44 concurrent clients and completes in ~318 ms (~1,873 requests/s) with
-move RTT p50 2.3 ms and client event lag p50 3.4 ms; the `stress` profile sends
-1,176 requests from 84 clients in ~369 ms (~3,186 requests/s) with move RTT p50
-7.3 ms and event lag p50 7.5 ms. Both runs accepted every move, delivered every
+from 44 concurrent clients and completes in ~319 ms (~1,870 requests/s) with
+move RTT p50 1.8 ms and client event lag p50 3.9 ms; the `stress` profile sends
+1,176 requests from 84 clients in ~354 ms (~3,318 requests/s) with move RTT p50
+7.8 ms and event lag p50 8.5 ms. Both runs accepted every move, delivered every
 event exactly once, leaked no events to unrelated windows, and returned to 6
 fds and idle CPU after the client process exited.
 
-The scaling matrix reached 1,020 clients and 6,236 requests in ~869 ms
-(~7,180 requests/s), with 102,000 event deliveries, zero drops/failures and
-662 MiB peak RSS / 1,032 peak fds. Batching reduced the 1,020-client move p50
-from 809 ms to 63 ms and WebSocket writes from 102,000 to 3,157. Above roughly
+The scaling matrix reached 1,020 clients and 6,236 requests in ~0.9 s
+(~6,976 requests/s), with 102,000 event deliveries, zero drops/failures and
+666 MiB peak RSS / 1,032 peak fds. Batching reduced the 1,020-client move p50
+from 809 ms to 62 ms and WebSocket writes from 102,000 to 3,157. Above roughly
 400 clients the single Node load process is also a bottleneck; server CPU
-remained below 62%.
+remained below 61%.
 
-Distribution at 80 clients: high overlap 80 recipients/move and 5.1 ms move
-p50; low overlap 1 recipient and 1.9 ms; partial overlap 20 recipients and
-3.3 ms. All three had zero missing/extra events.
+Distribution at 80 clients: high overlap 80 recipients/move and 7.6 ms move
+p50; low overlap 1 recipient and 1.6 ms; partial overlap 20 recipients and
+3.6 ms. All three had zero missing/extra events.
 
-Slow-client test with an 8-frame outbox and 37,500 moves: normal-client lag
-remained 0.78–0.80 ms p50 (baseline 0.79 ms) while the slow client dropped
-8,807–9,135 events, never exceeded an outbox depth of 8, and recovered with a
-snapshot at revision 1,500. The paused-long case was unregistered after the
-send timeout and recovered via a new connection. See
-`bench/load_default_results.json`, `bench/load_stress_results.json`,
-`bench/scale_results.json`, `bench/dist_results.json` and
-`bench/slow_results.json`.
+Snapshot consistency: snapshot requests register the board subscription before
+the worker captures the board; pending events are buffered per board, events
+represented by the snapshot are discarded, and newer events release in
+revision order after the snapshot. The consistency race test passed 20
+snapshot/move races (20 buffered-after-snapshot) and 25 concurrent snapshot
+clients. The connection-manager tests cover move-before-snapshot,
+move-after-snapshot, multiple buffered moves, cross-board splitting and
+superseded snapshot tokens. Slow-client test with an 8-frame outbox and 37,500
+moves kept normal-client lag at 0.79–0.81 ms p50 while dropping
+11,099–12,430 events per slow scenario, never exceeding outbox depth 8; the
+paused-long client was unregistered after the send timeout and recovered via a
+new connection. See `bench/load_default_results.json`,
+`bench/load_stress_results.json`, `bench/scale_results.json`,
+`bench/dist_results.json` and `bench/slow_results.json`.
 
 ---
 

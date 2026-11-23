@@ -16,8 +16,9 @@ type board_state = {
   bx : int;
   by : int;
   mutable pieces : Bytes.t; (* 64 one-byte client pieces *)
-  mutable revision : int32;
+  mutable revision : int64;
   mutable loaded : bool;
+  mutable stale : bool;
   mutable pending_request : int32 option;
 }
 
@@ -342,8 +343,9 @@ let main () =
           bx;
           by;
           pieces = empty_board ();
-          revision = 0l;
+          revision = 0L;
           loaded = false;
+          stale = false;
           pending_request = None;
         }
       in
@@ -620,9 +622,9 @@ let main () =
       (fun (board : Protocol.Types.event_board) ->
         let key = board_key board.board_x board.board_y in
         match Hashtbl.find_opt boards key with
-        | Some state when state.loaded ->
+        | Some state when state.loaded && not state.stale ->
           let revision = board.revision in
-          let cmp = Int32.compare revision state.revision in
+          let cmp = Int64.compare revision state.revision in
           if cmp <= 0 then begin
             (* Duplicate or older than the current cache. *)
             (match !pending with
@@ -630,7 +632,7 @@ let main () =
                p.event_applied <- true
              | _ -> ())
           end
-          else if Int32.equal revision (Int32.succ state.revision) then begin
+          else if Int64.equal revision (Int64.succ state.revision) then begin
             List.iter
               (fun (change : Protocol.Types.event_change) ->
                 if
@@ -650,6 +652,7 @@ let main () =
           else begin
             (* A revision was skipped: discard the cache and re-snapshot. *)
             state.loaded <- false;
+            state.stale <- true;
             forget_pending state;
             resync := true
           end
@@ -1014,17 +1017,22 @@ let main () =
                   state.pending_request <- None;
                   if response.status = Protocol.Types.Snapshot_ok then begin
                     if
-                      Int32.compare response.revision state.revision >= 0
+                      Int64.compare response.revision state.revision >= 0
                     then begin
                       state.pieces <- response.board;
                       state.revision <- response.revision;
-                      state.loaded <- true
+                      state.loaded <- true;
+                      state.stale <- false
                     end
                     else if not state.loaded then
                       (* A resync snapshot was superseded by an event. *)
                       ensure_window ()
                   end
-                  else state.loaded <- false;
+                  else begin
+                    state.loaded <- false;
+                    state.stale <- true;
+                    ensure_window ()
+                  end;
                   request_draw ()
                 | _ -> ());
                pump_snapshots ()

@@ -14,6 +14,12 @@ type outbox_item = {
   enqueued_ns : int64;
 }
 
+type buffered_event = {
+  sequence : int64;
+  request_id : int32;
+  board : Protocol.Types.event_board;
+}
+
 type conn = {
   id : int;
   manager : t;
@@ -22,6 +28,9 @@ type conn = {
   mutable event_buffer : Buffer.t;
   mutable event_callbacks : (write_result -> unit) list;
   mutable event_count : int;
+  snapshot_pending : (int, int) Hashtbl.t;
+  snapshot_buffers : (int, buffered_event list ref) Hashtbl.t;
+  mutable next_snapshot_token : int;
   subscriptions : (int, unit) Hashtbl.t;
   mutable closed : bool;
   mutable sending : bool;
@@ -112,7 +121,10 @@ let fail_event_buffer conn =
   List.iter (fun callback -> callback `Outbox_dropped) conn.event_callbacks;
   conn.event_callbacks <- [];
   Buffer.clear conn.event_buffer;
-  conn.event_count <- 0
+  conn.event_count <- 0;
+  Hashtbl.iter (fun _ buffer -> buffer := []) conn.snapshot_buffers;
+  Hashtbl.clear conn.snapshot_pending;
+  Hashtbl.clear conn.snapshot_buffers
 
 let unregister t conn =
   if not conn.closed then begin
@@ -309,6 +321,9 @@ let register t ~send_raw =
       event_buffer = Buffer.create 4096;
       event_callbacks = [];
       event_count = 0;
+      snapshot_pending = Hashtbl.create 8;
+      snapshot_buffers = Hashtbl.create 8;
+      next_snapshot_token = 0;
       subscriptions = Hashtbl.create 1024;
       closed = false;
       sending = false;
@@ -343,6 +358,85 @@ let set_window conn ~center_x ~center_y ~radius =
   end
 
 let client_count t = Hashtbl.length t.clients
+
+let begin_snapshot conn ~board_x ~board_y =
+  if conn.closed then 0
+  else begin
+    add_subscription conn board_x board_y;
+    let key = board_key board_x board_y in
+    let token = conn.next_snapshot_token + 1 in
+    conn.next_snapshot_token <- token;
+    Hashtbl.replace conn.snapshot_pending key token;
+    Hashtbl.replace conn.snapshot_buffers key (ref []);
+    token
+  end
+
+let abort_snapshot conn ~board_x ~board_y token =
+  let key = board_key board_x board_y in
+  match Hashtbl.find_opt conn.snapshot_pending key with
+  | Some current when current = token ->
+    Hashtbl.remove conn.snapshot_pending key;
+    Hashtbl.remove conn.snapshot_buffers key
+  | _ -> ()
+
+let complete_snapshot conn ~board_x ~board_y ~token ~revision =
+  let key = board_key board_x board_y in
+  match Hashtbl.find_opt conn.snapshot_pending key with
+  | Some current when current = token ->
+    Hashtbl.remove conn.snapshot_pending key;
+    let buffer =
+      match Hashtbl.find_opt conn.snapshot_buffers key with
+      | Some buffer ->
+        Hashtbl.remove conn.snapshot_buffers key;
+        !buffer
+      | None -> []
+    in
+    let kept =
+      List.filter
+        (fun (event : buffered_event) ->
+          Int64.compare event.board.revision revision > 0)
+        buffer
+    in
+    let kept =
+      List.sort
+        (fun (a : buffered_event) (b : buffered_event) ->
+          Int64.compare a.board.revision b.board.revision)
+        kept
+    in
+    Some
+      (List.map
+         (fun (event : buffered_event) ->
+           Protocol.Types.
+             {
+               sequence = event.sequence;
+               request_id = event.request_id;
+               boards = [ event.board ];
+             })
+         kept)
+  | _ -> None
+
+let release_snapshot_events conn events =
+  if conn.manager.event_batching then
+    List.iter
+      (fun (event : Protocol.Types.move_event) ->
+        append_event conn
+          (Protocol.Types.move_event_payload_to_bytes event)
+          (fun _ -> ()))
+      events
+  else
+    List.iter
+      (fun (event : Protocol.Types.move_event) ->
+        enqueue_event conn
+          (Protocol.Types.wire_response_to_bytes
+             (Protocol.Types.Wire_event event))
+          (fun _ -> ()))
+      events
+
+let buffer_snapshot_event conn event =
+  let key = board_key event.board.board_x event.board.board_y in
+  match Hashtbl.find_opt conn.snapshot_buffers key with
+  | Some buffer -> buffer := event :: !buffer
+  | None -> ()
 
 let metrics t =
   let subscription_count = ref 0 in
@@ -441,47 +535,81 @@ let broadcast_event t (event : State_worker.committed) =
         }
     in
     let delivery = { remaining = recipient_count; timing } in
-    if t.event_batching then begin
-      let payload = Protocol.Types.move_event_payload_to_bytes event in
-      (match timing with
-       | Some timing -> Metrics.mark_encoded timing
-       | None -> ());
-      Hashtbl.iter
-        (fun id () ->
-          match Hashtbl.find_opt t.clients id with
-          | Some conn ->
-            append_event conn payload (fun result -> note_delivery delivery result)
-          | None ->
-            note_delivery delivery `Outbox_dropped)
-        recipients;
-      (match timing with
-       | Some timing ->
-         Metrics.mark_enqueued timing;
-         if delivery.remaining = 0 then Metrics.mark_complete timing
-       | None -> ())
-    end
-    else begin
-      let bytes =
-        Protocol.Types.wire_response_to_bytes
-          (Protocol.Types.Wire_event event)
-      in
-      (match timing with
-       | Some timing -> Metrics.mark_encoded timing
-       | None -> ());
-      Hashtbl.iter
-        (fun id () ->
-          match Hashtbl.find_opt t.clients id with
-          | Some conn ->
-            enqueue_event conn bytes (note_delivery delivery)
-          | None ->
-            note_delivery delivery `Outbox_dropped)
-        recipients;
-      (match timing with
-       | Some timing ->
-         Metrics.mark_enqueued timing;
-         if delivery.remaining = 0 then Metrics.mark_complete timing
-       | None -> ())
-    end
+    let enqueue_protocol_event conn (event : Protocol.Types.move_event) =
+      if t.event_batching then
+        append_event conn
+          (Protocol.Types.move_event_payload_to_bytes event)
+          (fun _ -> ())
+      else
+        enqueue_event conn
+          (Protocol.Types.wire_response_to_bytes
+             (Protocol.Types.Wire_event event))
+          (fun _ -> ())
+    in
+    let all_event =
+      Protocol.Types.
+        { sequence = event.sequence; request_id = event.request_id; boards }
+    in
+    let all_payload =
+      if t.event_batching then
+        Some (Protocol.Types.move_event_payload_to_bytes all_event)
+      else None
+    in
+    let all_bytes =
+      match all_payload with
+      | Some _ -> None
+      | None ->
+        Some
+          (Protocol.Types.wire_response_to_bytes
+             (Protocol.Types.Wire_event all_event))
+    in
+    (match timing with
+     | Some timing -> Metrics.mark_encoded timing
+     | None -> ());
+    Hashtbl.iter
+      (fun id () ->
+        match Hashtbl.find_opt t.clients id with
+        | None -> note_delivery delivery `Outbox_dropped
+        | Some conn ->
+          if Hashtbl.length conn.snapshot_pending = 0 then begin
+            (match all_payload with
+             | Some payload ->
+               append_event conn payload
+                 (fun result -> note_delivery delivery result)
+             | None ->
+               (match all_bytes with
+                | Some bytes -> enqueue_event conn bytes (note_delivery delivery)
+                | None -> note_delivery delivery `Outbox_dropped))
+          end
+          else begin
+            let pending, immediate =
+              List.partition
+                (fun (board : Protocol.Types.event_board) ->
+                  Hashtbl.mem conn.snapshot_pending
+                    (board_key board.board_x board.board_y))
+                boards
+            in
+            if immediate <> [] then
+              enqueue_protocol_event conn
+                Protocol.Types.
+                  {
+                    sequence = event.sequence;
+                    request_id = event.request_id;
+                    boards = immediate;
+                  };
+            List.iter
+              (fun (board : Protocol.Types.event_board) ->
+                buffer_snapshot_event conn
+                  { sequence = event.sequence; request_id = event.request_id; board })
+              pending;
+            note_delivery delivery `Written
+          end)
+      recipients;
+    (match timing with
+     | Some timing ->
+       Metrics.mark_enqueued timing;
+       if delivery.remaining = 0 then Metrics.mark_complete timing
+     | None -> ())
   end
 
 let rec flush_pending t sequence =

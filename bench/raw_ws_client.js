@@ -176,9 +176,9 @@ class RawClient {
       for (let i = 0; i < board_count; i++) {
         const board_x = payload.readUInt16LE(cursor);
         const board_y = payload.readUInt16LE(cursor + 2);
-        const revision = payload.readInt32LE(cursor + 4);
-        const change_count = payload[cursor + 8];
-        cursor += 9 + change_count * 2;
+        const revision = Number(payload.readBigInt64LE(cursor + 4));
+        const change_count = payload[cursor + 12];
+        cursor += 13 + change_count * 2;
         const key = `${board_x},${board_y}`;
         const last = this.last_revision.get(key) || 0;
         if (revision !== last + 1) this.revision_gaps += 1;
@@ -195,9 +195,9 @@ class RawClient {
         for (let j = 0; j < board_count; j++) {
           const board_x = payload.readUInt16LE(board_cursor);
           const board_y = payload.readUInt16LE(board_cursor + 2);
-          const revision = payload.readInt32LE(board_cursor + 4);
-          const change_count = payload[board_cursor + 8];
-          board_cursor += 9 + change_count * 2;
+          const revision = Number(payload.readBigInt64LE(board_cursor + 4));
+          const change_count = payload[board_cursor + 12];
+          board_cursor += 13 + change_count * 2;
           const key = `${board_x},${board_y}`;
           const last = this.last_revision.get(key) || 0;
           if (revision !== last + 1) this.revision_gaps += 1;
@@ -215,8 +215,8 @@ class RawClient {
           status: payload[1],
           board_x: payload.readUInt16LE(6),
           board_y: payload.readUInt16LE(8),
-          revision: payload.readInt32LE(10),
-          board: payload.subarray(14, 78),
+          revision: Number(payload.readBigInt64LE(10)),
+          board: payload.subarray(18, 82),
         });
       }
     }

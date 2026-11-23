@@ -24,6 +24,7 @@ Live update tests:
 ```bash
 node test/live_update_test.js   # real two-client fan-out and subscriptions
 node test/live_client_test.js   # browser cache apply, duplicate and gap handling
+node test/snapshot_consistency_test.js  # snapshot/move race and concurrent clients
 ```
 
 The WebSocket teardown regression test (Linux) repeatedly kills a headless

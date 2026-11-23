@@ -16,9 +16,9 @@ function parse_event_payload(bytes, offset) {
   for (let i = 0; i < boardCount; i++) {
     const board_x = bytes.readUInt16LE(cursor);
     const board_y = bytes.readUInt16LE(cursor + 2);
-    const revision = bytes.readInt32LE(cursor + 4);
-    const changeCount = bytes[cursor + 8];
-    cursor += 9;
+    const revision = Number(bytes.readBigInt64LE(cursor + 4));
+    const changeCount = bytes[cursor + 12];
+    cursor += 13;
     const changes = [];
     for (let j = 0; j < changeCount; j++) {
       changes.push({ square: bytes[cursor], piece: bytes[cursor + 1] });
@@ -45,6 +45,7 @@ class Client {
     this.pending = new Map();
     this.nextId = 1 + ((index + 1) * 1_000_003) % 2_000_000_000;
     this.events = [];
+    this.message_log = [];
     this.eventFirstAt = new Map();
     this.eventCounts = new Map();
     this.snapshotRtts = [];
@@ -80,7 +81,9 @@ class Client {
           );
         };
         if (bytes[0] === EVENT_KIND) {
-          record(parse_event_payload(bytes, 1).event, performance.now());
+          const event = parse_event_payload(bytes, 1).event;
+          record(event, performance.now());
+          this.message_log.push({ type: "event", event, at: performance.now() });
           return;
         }
         if (bytes[0] === EVENT_BATCH_KIND) {
@@ -89,11 +92,22 @@ class Client {
           for (let i = 0; i < bytes[1]; i++) {
             const parsed = parse_event_payload(bytes, offset);
             record(parsed.event, at);
+            this.message_log.push({ type: "event", event: parsed.event, at });
             offset = parsed.next;
           }
           return;
         }
         const id = bytes.readInt32LE(2);
+        if (bytes[0] === 2) {
+          this.message_log.push({
+            type: "snapshot",
+            request_id: id,
+            revision: Number(bytes.readBigInt64LE(10)),
+            board_x: bytes.readUInt16LE(6),
+            board_y: bytes.readUInt16LE(8),
+            at: performance.now(),
+          });
+        }
         const entry = this.pending.get(id);
         if (!entry) return;
         this.pending.delete(id);
@@ -140,8 +154,8 @@ class Client {
       status: response[1],
       board_x: response.readUInt16LE(6),
       board_y: response.readUInt16LE(8),
-      revision: response.readInt32LE(10),
-      board: response.subarray(14, 78),
+      revision: Number(response.readBigInt64LE(10)),
+      board: response.subarray(18, 82),
     };
   }
 

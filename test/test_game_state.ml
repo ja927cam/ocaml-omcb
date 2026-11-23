@@ -133,17 +133,17 @@ let () =
 
   (* Per-board revisions. *)
   check "initial revision"
-    (Game_state.board_revision state ~board_x:0 ~board_y:0 = 0l);
+    (Game_state.board_revision state ~board_x:0 ~board_y:0 = 0L);
   check "first bump"
-    (Game_state.bump_board_revision state ~board_x:0 ~board_y:0 = 1l);
+    (Game_state.bump_board_revision state ~board_x:0 ~board_y:0 = 1L);
   check "second bump"
-    (Game_state.bump_board_revision state ~board_x:0 ~board_y:0 = 2l);
+    (Game_state.bump_board_revision state ~board_x:0 ~board_y:0 = 2L);
   let _, revision =
     Game_state.snapshot_board_with_revision state ~board_x:0 ~board_y:0
   in
-  check "snapshot revision" (revision = 2l);
+  check "snapshot revision" (revision = 2L);
   check "other board revision"
-    (Game_state.board_revision state ~board_x:1 ~board_y:0 = 0l);
+    (Game_state.board_revision state ~board_x:1 ~board_y:0 = 0L);
   (match Game_state.board_revision state ~board_x:1000 ~board_y:0 with
    | exception Invalid_argument _ -> ()
    | _ -> failwith "FAIL: invalid revision coordinates");

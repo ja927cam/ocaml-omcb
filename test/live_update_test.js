@@ -27,9 +27,9 @@ function parsePayload(bytes, offset) {
   for (let i = 0; i < boardCount; i++) {
     const board_x = bytes.readUInt16LE(cursor);
     const board_y = bytes.readUInt16LE(cursor + 2);
-    const revision = bytes.readInt32LE(cursor + 4);
-    const changeCount = bytes[cursor + 8];
-    cursor += 9;
+    const revision = Number(bytes.readBigInt64LE(cursor + 4));
+    const changeCount = bytes[cursor + 12];
+    cursor += 13;
     const changes = [];
     for (let j = 0; j < changeCount; j++) {
       changes.push({ square: bytes[cursor], piece: bytes[cursor + 1] });
@@ -128,8 +128,8 @@ class Client {
     bytes.writeUInt16LE(boardX, 5);
     bytes.writeUInt16LE(boardY, 7);
     return this.request(bytes, 2, id).then((data) => ({
-      revision: data.readInt32LE(10),
-      board: data.subarray(14, 78),
+      revision: Number(data.readBigInt64LE(10)),
+      board: data.subarray(18, 82),
     }));
   }
 

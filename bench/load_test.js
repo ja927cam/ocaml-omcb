@@ -447,8 +447,15 @@ async function main() {
   const snapshotReferences = new Map();
   await Promise.all(
     active.map(async (client, clientIndex) => {
+      const center = activeCenters[clientIndex];
       for (let i = 0; i < SNAPSHOTS_PER_CLIENT; i++) {
-        const board = block.boards[(clientIndex * 7 + i) % block.boards.length];
+        // Snapshot boards inside the client's own window. This matters for
+        // low-overlap profiles: a client must not accidentally subscribe to
+        // the move block just because the harness asked it for a snapshot.
+        const board = {
+          x: clamp(center.cx + ((i % 5) - 2), 0, 999),
+          y: clamp(center.cy + (Math.floor(i / 5) - 1), 0, 999),
+        };
         const snap = await client.snapshot(board.x, board.y);
         const key = `${board.x},${board.y}`;
         const reference = snapshotReferences.get(key);

@@ -20,11 +20,11 @@ val sequence : t -> int64
 val occupied_count : t -> int
 (** Number of occupied squares, for startup verification and tests. *)
 
-val board_revision : t -> board_x:int -> board_y:int -> int32
+val board_revision : t -> board_x:int -> board_y:int -> int64
 (** Monotonic per-board revision. It increases once for every committed move
     that touches the board. *)
 
-val bump_board_revision : t -> board_x:int -> board_y:int -> int32
+val bump_board_revision : t -> board_x:int -> board_y:int -> int64
 (** Increment and return the board revision. Only the state worker should call
     this after a committed move. *)
 
@@ -34,7 +34,7 @@ val snapshot_board : t -> board_x:int -> board_y:int -> Piece.t array
     @raise Invalid_argument if either coordinate is outside [0; 999]. *)
 
 val snapshot_board_with_revision :
-  t -> board_x:int -> board_y:int -> Piece.t array * int32
+  t -> board_x:int -> board_y:int -> Piece.t array * int64
 (** Snapshot plus the board revision at the same instant. *)
 
 val with_state :

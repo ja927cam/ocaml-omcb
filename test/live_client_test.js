@@ -64,7 +64,7 @@ class Remote {
     bytes.writeUInt16LE(x, 5);
     bytes.writeUInt16LE(y, 7);
     const response = await this.request(bytes, 2);
-    return { revision: response.readInt32LE(10), board: response.subarray(14, 78) };
+    return { revision: Number(response.readBigInt64LE(10)), board: response.subarray(18, 82) };
   }
   async moveTo(srcBX, srcBY, sx, sy, dstBX, dstBY, dx, dy) {
     const snap = await this.snapshot(srcBX, srcBY);

@@ -317,7 +317,7 @@ let bench_protocol () =
       {
         sequence = 99L;
         request_id = 123l;
-        boards = [ event_board 500 8l; event_board 501 3l ];
+        boards = [ event_board 500 8L; event_board 501 3L ];
       }
   in
   run_bench ~group:"Protocol" ~name:"move event encode"
@@ -347,13 +347,13 @@ let bench_protocol () =
       board_x = 0;
       board_y = 0;
       status = Protocol.Types.Snapshot_ok;
-      revision = 0l;
+      revision = 0L;
       board =
         Bytes.init 64 (fun i -> Char.chr (if i mod 9 = 0 then 0 else i + 1));
     }
   in
   run_bench ~group:"Protocol" ~name:"snapshot response encode"
-    ~variant:"77-byte payload" ~iterations:100_000 (fun n ->
+    ~variant:"81-byte payload" ~iterations:100_000 (fun n ->
       for _ = 1 to n do
         sink :=
           !sink
@@ -364,7 +364,7 @@ let bench_protocol () =
     Protocol.Types.snapshot_response_to_bytes snapshot_response
   in
   run_bench ~group:"Protocol" ~name:"snapshot response decode"
-    ~variant:"77-byte payload" ~iterations:100_000 (fun n ->
+    ~variant:"81-byte payload" ~iterations:100_000 (fun n ->
       for _ = 1 to n do
         match Protocol.Types.snapshot_response_of_bytes snapshot_bytes with
         | Some r -> sink := !sink + Char.code (Bytes.get r.board 1)

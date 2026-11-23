@@ -556,8 +556,8 @@ JavaScript `Number`.
 
 Snapshot messages are intentionally distinct. The request is 9 bytes: one
 message-type byte (0x02), request ID, board X and board Y as uint16. The
-response payload is 77 bytes: status, request ID, board coordinates, board
-revision, then 64 one-byte client pieces in row-major order. A failed snapshot
+response payload is 81 bytes: status, request ID, board coordinates, an
+int64 board revision, then 64 one-byte client pieces in row-major order. A failed snapshot
 has status 0, revision 0 and zero board contents. Requests dispatch by length
 (5 subscribe/unsubscribe, 6 cache window, 14 move, 9 snapshot). Every server
 message is carried in a fixed 4096-byte wire frame with a kind byte (`1` move,
@@ -579,7 +579,7 @@ it before sending more requests. The snapshot and move codecs live in
 | 5 | en passantable (pawn) or castling-eligible (king/rook) |
 | 6–7 | zero |
 
-Promoted pawns project as queens. The snapshot drops from 521 to 77 bytes and
+Promoted pawns project as queens. The snapshot drops from 521 to 81 bytes and
 the client cache from roughly 320 to 64 bytes per board. Bit 4 is the cached
 capturable bit; snapshots compute it from the board being sent
 (`client_byte_at`), so it remains correct even if a piece was placed manually.
@@ -596,7 +596,7 @@ original/en-passant/castling bits without another snapshot.
 
 - Predictable decoding: no varints, no length prefixes per field.
 - Easy to validate length before exposing anything to the state worker.
-- Compact payloads: 26-byte move responses and 77-byte snapshot payloads.
+- Compact payloads: 26-byte move responses and 81-byte snapshot payloads.
 - No JSON parsing or allocation on the server move path.
 - No dependence on JavaScript numeric precision for 64-bit values.
 - The fixed 4096-byte wire frame makes the pinned Dream version flush each
@@ -625,11 +625,39 @@ enqueueing the response; a paused background flush is the fallback.
 
 ### Board revisions
 
-Each board has a monotonic `int32` revision in `Game_state` (4 MB total). A
+Each board has a monotonic `int64` revision in `Game_state` (8 MB total). A
 board increments once per committed move touching it. Snapshots include the
 revision at copy time; events include the new revision. Clients use per-board
 revisions, not the global sequence, for gap detection because moves on other
 boards legitimately advance the global sequence.
+
+### Consistent snapshot handoff
+
+Snapshot loading and live moves overlap, so the handoff is explicit:
+
+1. On a snapshot request, the network handler registers the board subscription
+   **before** submitting the snapshot to the state worker.
+2. The connection records a snapshot token and starts buffering event records
+   for that board.
+3. The worker serialises the snapshot with moves and returns the copied board
+   plus its `int64` revision.
+4. Before the snapshot response is enqueued, the connection clears the pending
+   token and filters buffered records: revisions at or below the snapshot are
+   discarded; newer records are sorted and released after the snapshot frame.
+5. Events that arrive after the snapshot is enqueued use the normal path and
+   follow it in the outbox.
+
+The circular race is therefore broken by ordering on the worker plus a
+per-connection buffer. Registration before submission guarantees that a move
+committed after the snapshot is queued; if a move slipped in before the
+snapshot copy, the snapshot already contains it and the buffered event is
+discarded. The network write never happens inside the worker.
+
+A cross-board event with one pending board is split: the non-pending board's
+record is delivered immediately, the pending board's record is buffered and
+released after its snapshot. The client tracks revisions per board, so both
+boards advance correctly. A superseded snapshot token cannot release a newer
+buffer.
 
 ### Subscription and fan-out
 
@@ -638,24 +666,30 @@ boards legitimately advance the global sequence.
   subscribe/unsubscribe messages adjust one board.
 - A broadcast collects subscribers from up to two affected boards into a
   temporary set, so a client subscribed to both receives one event.
-- The event is encoded once per move; the same 4096-byte buffer is enqueued to
-  every subscriber.
+- The event is encoded once per move as a compact payload; each recipient
+  appends it to its batch buffer. A 4 KiB frame carries many events, and the
+  origin connection is flushed before its move response.
 
 ### Ordering and isolation
 
 Every connection has one FIFO outbox used by both responses and live events,
 drained by a per-client sender fiber. The worker enqueues the broadcast before
-it resolves the move promise, so the origin client sees the event before the
-response; the event marks its pending move as already applied, preventing a
-second castling/en-passant/promotion update. A failed send or full outbox
-unregisters only that client; other outboxes continue.
+it resolves the move promise; batching flushes the origin connection before the
+response, so the origin client normally sees the event before the response.
+The event marks its pending move as already applied, preventing a second
+castling/en-passant/promotion update. If the origin board itself has a pending
+snapshot, its event is buffered until the snapshot and the response may arrive
+first; the client's optimistic move and revision check still converge to the
+snapshot state. A failed send or full outbox unregisters only that client;
+other outboxes continue.
 
 ### Event wire format
 
 Kind `3`, global sequence, request ID, board count (1–2), then per board:
-coordinates, revision, change count, and `(square, piece byte)` pairs. Normal
-moves have 2 changes, en passant 3, castling 4, promotion 2. Cross-board moves
-carry two board records.
+coordinates, `int64` revision, change count, and `(square, piece byte)` pairs.
+Normal moves have 2 changes, en passant 3, castling 4, promotion 2. Cross-board
+moves carry two board records. Kind `4` batches multiple compact event payloads
+in one 4 KiB frame.
 
 ---
 
@@ -694,14 +728,17 @@ boards, not a single board:
   write-acknowledgement path in Dream's stream pipe when many responses are
   queued. A 25-board window is still cheap over loopback.
 - Responses are matched by request ID and board key; stale or evicted
-  responses are ignored. A failed snapshot leaves the board unloaded and does
-  not install an empty board.
+  responses are ignored. A failed snapshot leaves the board unloaded, marks it
+  stale and retries. The response carries the `int64` revision at copy time.
 - The client sends one subscription-window message whenever its rounded cache
   centre changes. The server window is exactly the retained 25 x 25 set.
-- Live events update changed squares and the board revision. A duplicate or
-  older revision is ignored; a revision gap invalidates that board and queues a
-  fresh snapshot. The event matching a pending move sets an `event_applied`
-  flag, so the move response does not repeat castling/en-passant/promotion.
+- The client tracks an `int64` revision per cached board. An event at the next
+  revision applies; an equal or older revision is ignored as duplicate/stale;
+  a skipped revision marks the board stale and unavailable for local moves, and
+  queues a fresh snapshot. The server has already buffered events for a pending
+  snapshot, so events newer than the snapshot arrive after it in revision
+  order. The event matching a pending move sets an `event_applied` flag, so the
+  move response does not repeat castling/en-passant/promotion.
 - Each loaded board stores 64 one-byte pieces plus a small record, so a full
   625-board cache is roughly 50 KiB. Decoding a byte to a glyph at draw time is
   a handful of bit operations.
@@ -829,7 +866,7 @@ Startup single-shot on the same run:
 
 The wire-response encode figure includes allocating and zero-filling the
 4,096-byte frame that forces Dream to flush each WebSocket response. That is
-transport overhead, not part of the 26-byte move or 77-byte snapshot codecs.
+transport overhead, not part of the 26-byte move or 81-byte snapshot codecs.
 
 The path and read comparisons demonstrate why the `get_world` fast path was
 introduced: it removes per-square record allocation and repeated position
@@ -861,8 +898,8 @@ Recorded on the benchmark machine (loopback, one server process):
 
 | Profile | Clients | Requests | Throughput | Snapshot p50 | Move p50 | Event lag p50 | CPU avg/peak | RSS |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `default` | 40 + 4 | 596 | ~1,873/s | 1.7 ms | 2.3 ms | 3.4 ms | 12.6% / 38.9% | 514 → 523 MiB |
-| `stress` | 80 + 4 | 1,176 | ~3,186/s | 2.8 ms | 7.3 ms | 7.5 ms | 21.7% / 77.1% | 514 → 534 MiB |
+| `default` | 40 + 4 | 596 | ~1,870/s | 1.6 ms | 1.8 ms | 3.9 ms | 9.4% / 19.5% | 526 MiB peak |
+| `stress` | 80 + 4 | 1,176 | ~3,318/s | 3.5 ms | 7.8 ms | 8.5 ms | 22.6% / 69.1% | 538 MiB peak |
 
 Both runs had 100% move acceptance, 100% valid snapshots, no missing,
 duplicate or extra events, no cross-window leakage and no unexpected closes.
@@ -891,15 +928,15 @@ min and max. `/metrics` materialises percentiles on demand. The default run:
 | Stage | p50 | p95 |
 |---|---:|---:|
 | receive → submit | 0.0002 ms | 0.0006 ms |
-| worker queue wait | 0.020 ms | 0.11 ms |
-| move processing | 0.0004 ms | 0.0018 ms |
+| worker queue wait | 0.019 ms | 0.12 ms |
+| move processing | 0.0006 ms | 0.002 ms |
 | commit → broadcaster | 0.0003 ms | 0.0007 ms |
 | broadcast wait | 0.069 ms | 0.45 ms |
 | recipient lookup | 0.003 ms | 0.005 ms |
 | encoding | 0.0003 ms | 0.0007 ms |
 | outbox enqueue | 0.002 ms | 0.005 ms |
 | WebSocket write | 0.010 ms | 0.021 ms |
-| end-to-end broadcast | 2.14 ms | 3.17 ms |
+| end-to-end broadcast | 1.98 ms | 3.2 ms |
 
 Recipient lookup and encoding are negligible. Batching changed the shape of
 the pipeline: `broadcast_wait` fell from ~4.3 ms to ~0.07 ms and outbox enqueue
@@ -915,12 +952,12 @@ matrix. Selected results:
 
 | Clients | Requests | Req/s | Snapshot p50 | Move p50 | Event lag p50 | CPU | RSS | fds |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20 | 236 | 786 | 1.5 ms | 2.7 ms | 2.7 ms | 6.7% | 520 MiB | 32 |
-| 80 | 596 | 1,787 | 4.8 ms | 6.3 ms | 7.8 ms | 15.0% | 527 MiB | 92 |
-| 160 | 1,076 | 2,924 | 9.5 ms | 12.0 ms | 14.4 ms | 21.7% | 540 MiB | 172 |
-| 320 | 2,036 | 4,403 | 18.5 ms | 16.9 ms | 26.6 ms | 36.8% | 563 MiB | 332 |
-| 640 | 3,956 | 5,669 | 33.8 ms | 33.7 ms | 54.4 ms | 53.0% | 619 MiB | 652 |
-| 1,020 | 6,236 | 7,180 | 57.2 ms | 63.2 ms | 80.6 ms | 61.0% | 662 MiB | 1,032 |
+| 20 | 236 | 791 | 1.6 ms | 3.1 ms | 2.6 ms | 6.7% | 522 MiB | 32 |
+| 80 | 596 | 1,777 | 4.3 ms | 10.1 ms | 9.1 ms | 11.9% | 531 MiB | 92 |
+| 160 | 1,076 | 2,859 | 8.5 ms | 10.7 ms | 16.3 ms | 18.6% | 542 MiB | 172 |
+| 320 | 2,036 | 4,224 | 20.1 ms | 25.2 ms | 29.3 ms | 37.3% | 568 MiB | 332 |
+| 640 | 3,956 | 5,629 | 34.3 ms | 28.8 ms | 55.1 ms | 52.6% | 620 MiB | 652 |
+| 1,020 | 6,236 | 6,976 | 55.4 ms | 62.2 ms | 85.5 ms | 60.4% | 666 MiB | 1,032 |
 
 Every level delivered every event exactly once with zero drops or failures.
 Outbox depth stayed at 1 because the clients read continuously. Above roughly
@@ -937,9 +974,9 @@ At 80 clients and the same 625 subscriptions per client:
 
 | Overlap | Recipients/move | Move p50 | Move p95 | Event lag p50 | Missing | Extra |
 |---|---:|---:|---:|---:|---:|---:|
-| High | 80.0 | 5.1 ms | 17.0 ms | 8.4 ms | 0 | 0 |
-| Low | 1.0 | 1.9 ms | 2.9 ms | 2.7 ms | 0 | 0 |
-| Partial | 20.0 | 3.3 ms | 4.1 ms | 3.2 ms | 0 | 0 |
+| High | 80.0 | 7.6 ms | 17.4 ms | 9.0 ms | 0 | 0 |
+| Low | 1.0 | 1.6 ms | 2.7 ms | 1.8 ms | 0 | 0 |
+| Partial | 20.0 | 3.6 ms | 7.4 ms | 3.4 ms | 0 | 0 |
 
 Low overlap keeps the same total subscription work but only one client's
 window contains the move block; unrelated clients are not involved. Partial
@@ -952,10 +989,10 @@ slow client with an 8-frame outbox:
 
 | Scenario | Normal lag p50/p95 | Max outbox | Drops | Send failures | Recovery |
 |---|---:|---:|---:|---:|---|
-| baseline | 0.79 / 2.10 ms | 1 / 8 | 0 | 0 | n/a |
-| paused-short | 0.78 / 1.98 ms | 8 / 8 | 9,135 | 0 | same connection, rev 1500 |
-| paused-long | 0.80 / 2.03 ms | 8 / 8 | 9,125 | 31 | reconnected, rev 1500 |
-| slow-read | 0.80 / 2.08 ms | 8 / 8 | 8,807 | 0 | same connection, rev 1500 |
+| baseline | 0.81 / 2.18 ms | 1 / 8 | 0 | 0 | n/a |
+| paused-short | 0.79 / 2.05 ms | 8 / 8 | 11,746 | 0 | same connection, rev 1500 |
+| paused-long | 0.79 / 2.05 ms | 8 / 8 | 11,099 | 27 | reconnected, rev 1500 |
+| slow-read | 0.79 / 2.08 ms | 8 / 8 | 12,430 | 0 | same connection, rev 1500 |
 
 A slow client cannot block the broadcaster: the normal-client lag is
 statistically identical to the baseline. At capacity, the server drops the
@@ -988,8 +1025,8 @@ Measured effect:
 
 The batched default run moved p50 from 11.2 ms to 2.3 ms, client event lag
 from 11.1 ms to 3.4 ms, CPU from 19.1% to 12.6%, and throughput from ~1,622/s
-to ~1,873/s. At 1,020 clients, move p50 fell from 809 ms to 63 ms and CPU from
-74% to 61%.
+to ~1,870/s. At 1,020 clients, move p50 fell from 809 ms to 62 ms and CPU from
+74% to 60%.
 
 A smaller, already-applied win is `Bytes.unsafe_to_string` in `send_bytes`:
 frames are immutable after encoding, so the server avoids a 4 KiB copy per
@@ -1054,7 +1091,7 @@ It covers:
 - protocol round trips and invalid lengths/IDs/deltas;
 - worker FIFO, same-piece races, queue-full and shutdown with pending work;
 - snapshots before/after moves, queue capacity and shutdown;
-- snapshot protocol round trips, 64 one-byte pieces, empty squares, 77-byte
+- snapshot protocol round trips, 64 one-byte pieces, empty squares, 81-byte
   length, board revision and invalid coordinates;
 - subscription, cache-window and live-event codecs;
 - client piece-byte colour/type/original/castle/en-passant encoding and the
@@ -1069,6 +1106,10 @@ It covers:
   disconnects;
 - a browser live-client test for applying events, ignoring late duplicates,
   and resynchronising after an injected revision gap;
+- connection-manager tests for snapshot-pending event buffering, revision
+  filtering, ordered release, cross-board splitting and superseded tokens;
+- a raw-client snapshot/move race test with 20 races and 25 concurrent
+  snapshot clients;
 - a WebSocket teardown regression test that repeatedly SIGKILLs Chromium,
   checks server CPU returns to idle, checks file descriptors do not grow, and
   confirms a fresh snapshot request still works;

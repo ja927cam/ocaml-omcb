@@ -226,7 +226,7 @@ let () =
   in
   let e0 = event_for 0 0 in
   let b0 = board_of e0 0 0 in
-  check "normal revision" (b0.revision = 1l);
+  check "normal revision" (b0.revision = 1L);
   check "normal source" (change b0 52 = Some Piece.empty);
   check "normal destination" (change b0 36 <> Some Piece.empty);
 

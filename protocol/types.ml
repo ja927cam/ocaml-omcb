@@ -300,7 +300,7 @@ let response_of_bytes b =
 
 let snapshot_message_type = 0x02
 let snapshot_request_bytes = 9
-let snapshot_response_bytes = 9 + 4 + 64
+let snapshot_response_bytes = 1 + 4 + 2 + 2 + 8 + 64
 
 let get_u16_le b off =
   Char.code (Bytes.get b off) lor (Char.code (Bytes.get b (off + 1)) lsl 8)
@@ -326,7 +326,7 @@ type snapshot_response = {
   board_x : int;
   board_y : int;
   status : snapshot_status;
-  revision : int32; (* monotonic per-board revision *)
+  revision : int64; (* monotonic per-board revision *)
   board : Bytes.t; (* 64 one-byte client pieces, row-major *)
 }
 
@@ -376,8 +376,8 @@ let snapshot_response_to_bytes (response : snapshot_response) =
   set_i32_le b 1 response.request_id;
   set_u16_le b 5 response.board_x;
   set_u16_le b 7 response.board_y;
-  set_i32_le b 9 (if success then response.revision else 0l);
-  if success then Bytes.blit response.board 0 b 13 64;
+  set_i64_le b 9 (if success then response.revision else 0L);
+  if success then Bytes.blit response.board 0 b 17 64;
   b
 
 let snapshot_response_of_bytes b : snapshot_response option =
@@ -391,8 +391,8 @@ let snapshot_response_of_bytes b : snapshot_response option =
     let board_x = get_u16_le b 5 and board_y = get_u16_le b 7 in
     if not (valid_board_coord board_x && valid_board_coord board_y) then None
     else
-      let revision = get_i32_le b 9 in
-      let board = Bytes.sub b 13 64 in
+      let revision = get_i64_le b 9 in
+      let board = Bytes.sub b 17 64 in
       Some
         {
           request_id = get_i32_le b 1;
@@ -420,7 +420,7 @@ type event_change = {
 type event_board = {
   board_x : int;
   board_y : int;
-  revision : int32;
+  revision : int64;
   changes : event_change list;
 }
 
@@ -449,7 +449,7 @@ let move_event_payload_to_bytes (event : move_event) =
     8 + 4 + 1
     + List.fold_left
         (fun total (board : event_board) ->
-          total + 9 + (List.length board.changes * 2))
+          total + 13 + (List.length board.changes * 2))
         0 event.boards
   in
   if payload_size > wire_response_bytes then
@@ -471,9 +471,9 @@ let move_event_payload_to_bytes (event : move_event) =
           "Protocol.Types.move_event_payload_to_bytes: too many changes";
       set_u16_le bytes !offset board.board_x;
       set_u16_le bytes (!offset + 2) board.board_y;
-      set_i32_le bytes (!offset + 4) board.revision;
-      Bytes.set bytes (!offset + 8) (Char.chr change_count);
-      offset := !offset + 9;
+      set_i64_le bytes (!offset + 4) board.revision;
+      Bytes.set bytes (!offset + 12) (Char.chr change_count);
+      offset := !offset + 13;
       List.iter
         (fun (change : event_change) ->
           if change.square < 0 || change.square >= 64 then
@@ -507,13 +507,13 @@ let move_event_of_bytes bytes =
       let boards = ref [] in
       let ok = ref true in
       for _ = 1 to board_count do
-        if !offset + 9 > wire_response_bytes then ok := false
+        if !offset + 13 > wire_response_bytes then ok := false
         else begin
           let board_x = get_u16_le bytes !offset in
           let board_y = get_u16_le bytes (!offset + 2) in
-          let revision = get_i32_le bytes (!offset + 4) in
-          let change_count = Char.code (Bytes.get bytes (!offset + 8)) in
-          offset := !offset + 9;
+          let revision = get_i64_le bytes (!offset + 4) in
+          let change_count = Char.code (Bytes.get bytes (!offset + 12)) in
+          offset := !offset + 13;
           if
             (not (valid_board_coord board_x && valid_board_coord board_y))
             || !offset + (change_count * 2) > wire_response_bytes
@@ -553,13 +553,13 @@ let move_event_payload_of_bytes bytes offset =
       let boards = ref [] in
       let ok = ref true in
       for _ = 1 to board_count do
-        if !cursor + 9 > length then ok := false
+        if !cursor + 13 > length then ok := false
         else begin
           let board_x = get_u16_le bytes !cursor in
           let board_y = get_u16_le bytes (!cursor + 2) in
-          let revision = get_i32_le bytes (!cursor + 4) in
-          let change_count = Char.code (Bytes.get bytes (!cursor + 8)) in
-          cursor := !cursor + 9;
+          let revision = get_i64_le bytes (!cursor + 4) in
+          let change_count = Char.code (Bytes.get bytes (!cursor + 12)) in
+          cursor := !cursor + 13;
           if
             (not (valid_board_coord board_x && valid_board_coord board_y))
             || !cursor + (change_count * 2) > length

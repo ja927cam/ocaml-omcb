@@ -35,7 +35,7 @@ let () =
   Connection_manager.subscribe a 500 500;
   Connection_manager.subscribe b 500 500;
   Connection_manager.subscribe c 600 600;
-  let board = event_board ~x:500 ~y:500 ~revision:1l [ (52, changed_piece ()) ] in
+  let board = event_board ~x:500 ~y:500 ~revision:1L [ (52, changed_piece ()) ] in
   Connection_manager.enqueue_move manager (committed [ board ]);
   settle ();
   check "same board A" (List.length (sent_events sent_a) = 1);
@@ -46,7 +46,7 @@ let () =
      check "event sequence" (event.sequence = 1L);
      check "event request" (event.request_id = 7l);
      check "event board revision"
-       ((List.hd event.boards).revision = 1l)
+       ((List.hd event.boards).revision = 1L)
    | _ -> failwith "expected one event");
 
   (* A subscribed to both boards gets one event; B only sees one board. *)
@@ -61,8 +61,8 @@ let () =
   Connection_manager.subscribe a 500 500;
   Connection_manager.subscribe a 501 500;
   Connection_manager.subscribe b 500 500;
-  let left = event_board ~x:500 ~y:500 ~revision:2l [ (52, Piece.empty) ] in
-  let right = event_board ~x:501 ~y:500 ~revision:1l [ (36, changed_piece ()) ] in
+  let left = event_board ~x:500 ~y:500 ~revision:2L [ (52, Piece.empty) ] in
+  let right = event_board ~x:501 ~y:500 ~revision:1L [ (36, changed_piece ()) ] in
   Connection_manager.enqueue_move manager (committed [ left; right ]);
   settle ();
   check "cross-board A one event" (List.length (sent_events sent_a) = 1);
@@ -85,7 +85,7 @@ let () =
   in
   Connection_manager.subscribe a 500 500;
   Connection_manager.subscribe b 500 500;
-  let board = event_board ~x:500 ~y:500 ~revision:3l [ (52, changed_piece ()) ] in
+  let board = event_board ~x:500 ~y:500 ~revision:3L [ (52, changed_piece ()) ] in
   Connection_manager.enqueue_move manager (committed [ board ]);
   settle ();
   check "failed client isolated" (List.length (sent_events sent_a) = 1);
@@ -101,7 +101,7 @@ let () =
   in
   Connection_manager.subscribe a 500 500;
   Connection_manager.unregister manager a;
-  let board = event_board ~x:500 ~y:500 ~revision:4l [ (52, changed_piece ()) ] in
+  let board = event_board ~x:500 ~y:500 ~revision:4L [ (52, changed_piece ()) ] in
   Connection_manager.enqueue_move manager (committed [ board ]);
   settle ();
   check "disconnected client gets nothing" (!sent = []);
@@ -117,7 +117,7 @@ let () =
   in
   Connection_manager.subscribe a 700 700;
   Connection_manager.unsubscribe a 700 700;
-  let board = event_board ~x:700 ~y:700 ~revision:1l [ (0, changed_piece ()) ] in
+  let board = event_board ~x:700 ~y:700 ~revision:1L [ (0, changed_piece ()) ] in
   Connection_manager.enqueue_move manager (committed [ board ]);
   settle ();
   check "unsubscribed client gets nothing" (sent_events sent = []);
@@ -131,12 +131,12 @@ let () =
         Lwt.return_unit)
   in
   Connection_manager.set_window a ~center_x:500 ~center_y:500 ~radius:2;
-  let inside = event_board ~x:502 ~y:500 ~revision:1l [ (0, changed_piece ()) ] in
+  let inside = event_board ~x:502 ~y:500 ~revision:1L [ (0, changed_piece ()) ] in
   Connection_manager.enqueue_move manager (committed [ inside ]);
   settle ();
   check "window inside" (List.length (sent_events sent) = 1);
   sent := [];
-  let outside = event_board ~x:503 ~y:500 ~revision:1l [ (0, changed_piece ()) ] in
+  let outside = event_board ~x:503 ~y:500 ~revision:1L [ (0, changed_piece ()) ] in
   Connection_manager.enqueue_move manager (committed [ outside ]);
   settle ();
   check "window outside" (sent_events sent = []);
@@ -157,7 +157,7 @@ let () =
   Connection_manager.subscribe fast 800 800;
   for i = 1 to 5 do
     let board =
-      event_board ~x:800 ~y:800 ~revision:(Int32.of_int i)
+      event_board ~x:800 ~y:800 ~revision:(Int64.of_int i)
         [ (52, changed_piece ()) ]
     in
     Connection_manager.enqueue_move manager
@@ -188,7 +188,7 @@ let () =
   Connection_manager.subscribe a 900 900;
   for i = 1 to 3 do
     let board =
-      event_board ~x:900 ~y:900 ~revision:(Int32.of_int i)
+      event_board ~x:900 ~y:900 ~revision:(Int64.of_int i)
         [ (52, changed_piece ()) ]
     in
     Connection_manager.enqueue_move manager
@@ -203,5 +203,184 @@ let () =
      check "batch: kind" (Char.code (Bytes.get frame 0) = 4);
      check "batch: count" (Char.code (Bytes.get frame 1) = 3)
    | _ -> failwith "expected one batch frame");
+
+  (* Snapshot pending buffers events until the snapshot is delivered. *)
+  let manager = Connection_manager.create () in
+  let sent = ref [] in
+  let a =
+    Connection_manager.register manager ~send_raw:(fun bytes ->
+        sent := bytes :: !sent;
+        Lwt.return_unit)
+  in
+  Connection_manager.subscribe a 950 950;
+  let token = Connection_manager.begin_snapshot a ~board_x:950 ~board_y:950 in
+  let board = event_board ~x:950 ~y:950 ~revision:1L [ (52, changed_piece ()) ] in
+  Connection_manager.enqueue_move manager (committed [ board ]);
+  settle ();
+  check "snapshot pending buffers event" (sent_events sent = []);
+  let released =
+    match
+      Connection_manager.complete_snapshot a ~board_x:950 ~board_y:950
+        ~token ~revision:0L
+    with
+    | Some events -> events
+    | None -> failwith "snapshot token was not current"
+  in
+  check "snapshot releases one event" (List.length released = 1);
+  Connection_manager.release_snapshot_events a released;
+  settle ();
+  check "snapshot buffered event delivered" (List.length (sent_events sent) = 1);
+
+  (* A snapshot that already contains the move discards the buffered event. *)
+  let manager = Connection_manager.create () in
+  let sent = ref [] in
+  let a =
+    Connection_manager.register manager ~send_raw:(fun bytes ->
+        sent := bytes :: !sent;
+        Lwt.return_unit)
+  in
+  Connection_manager.subscribe a 951 951;
+  let token = Connection_manager.begin_snapshot a ~board_x:951 ~board_y:951 in
+  let board = event_board ~x:951 ~y:951 ~revision:1L [ (36, changed_piece ()) ] in
+  Connection_manager.enqueue_move manager (committed [ board ]);
+  settle ();
+  let released =
+    match
+      Connection_manager.complete_snapshot a ~board_x:951 ~board_y:951
+        ~token ~revision:1L
+    with
+    | Some events -> events
+    | None -> failwith "snapshot token was not current"
+  in
+  check "snapshot discards represented event" (released = []);
+  Connection_manager.release_snapshot_events a released;
+  settle ();
+  check "represented event not sent" (sent_events sent = []);
+
+  (* Multiple buffered moves are released in revision order. *)
+  let manager = Connection_manager.create () in
+  let sent = ref [] in
+  let a =
+    Connection_manager.register manager ~send_raw:(fun bytes ->
+        sent := bytes :: !sent;
+        Lwt.return_unit)
+  in
+  Connection_manager.subscribe a 952 952;
+  let token = Connection_manager.begin_snapshot a ~board_x:952 ~board_y:952 in
+  for revision = 1 to 3 do
+    let board =
+      event_board ~x:952 ~y:952 ~revision:(Int64.of_int revision)
+        [ (52, changed_piece ()) ]
+    in
+    Connection_manager.enqueue_move manager
+      (committed ~sequence:(Int64.of_int revision) [ board ])
+  done;
+  settle ();
+  let released =
+    match
+      Connection_manager.complete_snapshot a ~board_x:952 ~board_y:952
+        ~token ~revision:1L
+    with
+    | Some events -> events
+    | None -> failwith "snapshot token was not current"
+  in
+  check "multiple buffered events released"
+    (List.map (fun (e : Protocol.Types.move_event) ->
+         (List.hd e.boards).revision) released
+     = [ 2L; 3L ]);
+  Connection_manager.release_snapshot_events a released;
+  settle ();
+  check "multiple events delivered"
+    (List.map (fun (e : Protocol.Types.move_event) -> (List.hd e.boards).revision)
+       (List.rev (sent_events sent))
+     = [ 2L; 3L ]);
+
+  (* A cross-board move with one pending board delivers the other immediately. *)
+  let manager = Connection_manager.create () in
+  let sent = ref [] in
+  let a =
+    Connection_manager.register manager ~send_raw:(fun bytes ->
+        sent := bytes :: !sent;
+        Lwt.return_unit)
+  in
+  Connection_manager.subscribe a 953 953;
+  Connection_manager.subscribe a 954 953;
+  let token = Connection_manager.begin_snapshot a ~board_x:953 ~board_y:953 in
+  let first = event_board ~x:953 ~y:953 ~revision:2L [ (52, Piece.empty) ] in
+  let second = event_board ~x:954 ~y:953 ~revision:1L [ (36, changed_piece ()) ] in
+  Connection_manager.enqueue_move manager (committed [ first; second ]);
+  settle ();
+  (match sent_events sent with
+   | [ event ] ->
+     check "cross-board immediate board" (List.length event.boards = 1);
+     check "cross-board immediate x" ((List.hd event.boards).board_x = 954)
+   | _ -> failwith "expected the non-pending board immediately");
+  let released =
+    match
+      Connection_manager.complete_snapshot a ~board_x:953 ~board_y:953
+        ~token ~revision:1L
+    with
+    | Some events -> events
+    | None -> failwith "snapshot token was not current"
+  in
+  Connection_manager.release_snapshot_events a released;
+  settle ();
+  check "cross-board buffered board delivered"
+    (List.exists
+       (fun (e : Protocol.Types.move_event) -> (List.hd e.boards).board_x = 953)
+       (sent_events sent));
+
+  (* A superseded snapshot token cannot release the newer buffer. *)
+  let manager = Connection_manager.create () in
+  let sent = ref [] in
+  let a =
+    Connection_manager.register manager ~send_raw:(fun bytes ->
+        sent := bytes :: !sent;
+        Lwt.return_unit)
+  in
+  Connection_manager.subscribe a 955 955;
+  let first_token = Connection_manager.begin_snapshot a ~board_x:955 ~board_y:955 in
+  let second_token = Connection_manager.begin_snapshot a ~board_x:955 ~board_y:955 in
+  check "old snapshot token ignored"
+    (Connection_manager.complete_snapshot a ~board_x:955 ~board_y:955
+       ~token:first_token ~revision:0L
+     = None);
+  check "new snapshot token current"
+    (match
+       Connection_manager.complete_snapshot a ~board_x:955 ~board_y:955
+         ~token:second_token ~revision:0L
+     with
+     | Some events -> events = []
+     | None -> false);
+
+  (* A released snapshot event batches correctly. *)
+  let manager = Connection_manager.create ~event_batching:true () in
+  let sent = ref [] in
+  let a =
+    Connection_manager.register manager ~send_raw:(fun bytes ->
+        sent := bytes :: !sent;
+        Lwt.return_unit)
+  in
+  Connection_manager.subscribe a 956 956;
+  let token = Connection_manager.begin_snapshot a ~board_x:956 ~board_y:956 in
+  let board = event_board ~x:956 ~y:956 ~revision:1L [ (52, Piece.empty) ] in
+  Connection_manager.enqueue_move manager (committed [ board ]);
+  settle ();
+  let released =
+    match
+      Connection_manager.complete_snapshot a ~board_x:956 ~board_y:956
+        ~token ~revision:0L
+    with
+    | Some events -> events
+    | None -> failwith "snapshot token was not current"
+  in
+  Connection_manager.release_snapshot_events a released;
+  Connection_manager.flush_all_event_buffers manager;
+  settle ();
+  (match !sent with
+   | [ frame ] ->
+     check "batched snapshot release kind" (Char.code (Bytes.get frame 0) = 4);
+     check "batched snapshot release count" (Char.code (Bytes.get frame 1) = 1)
+   | _ -> failwith "expected one released batch frame");
 
   Printf.printf "All connection manager tests passed.\n"

@@ -1,5 +1,5 @@
 {
-  "generated": "2026-11-22T00:24:31.091Z",
+  "generated": "2026-11-23T00:08:02.504Z",
   "config": {
     "levels": [
       0,
@@ -30,9 +30,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_0.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-0\n\nGenerated: 2026-11-22T00:23:09.860Z\n\n## Idle baseline\n\n- 0 active clients, 0 silent clients, no load\n- Duration: 1201 ms\n- RSS: 513 MiB\n- fds: 7\n- CPU: 0.0% average over the sample\n- Worker queue: 0/4096, connections 0\n\nWrote /home/james/Work/sim-map/bench/scale_0_results.json, /home/james/Work/sim-map/bench/scale_0_results.md and /home/james/Work/sim-map/bench/scale_0_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-0\n\nGenerated: 2026-11-23T00:06:41.155Z\n\n## Idle baseline\n\n- 0 active clients, 0 silent clients, no load\n- Duration: 1201 ms\n- RSS: 517 MiB\n- fds: 7\n- CPU: 0.0% average over the sample\n- Worker queue: 0/4096, connections 0\n\nWrote /home/james/Work/sim-map/bench/scale_0_results.json, /home/james/Work/sim-map/bench/scale_0_results.md and /home/james/Work/sim-map/bench/scale_0_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:23:09.860Z",
+        "generated": "2026-11-23T00:06:41.155Z",
         "label": "clients-0",
         "baseline": true,
         "profile": {
@@ -52,7 +52,7 @@
           "moves": 0,
           "requests": 0
         },
-        "duration_ms": 1201.3479909999999,
+        "duration_ms": 1201.2447280000001,
         "throughput_requests_per_second": 0,
         "snapshot_rtt": null,
         "silent_snapshot_rtt": null,
@@ -90,9 +90,9 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 525556,
-          "rss_before_kb": 525556,
-          "rss_peak_kb": 525556,
+          "rss_baseline_kb": 529384,
+          "rss_before_kb": 529384,
+          "rss_peak_kb": 529384,
           "fds_baseline": 7,
           "fds_before": 7,
           "fds_peak": 7,
@@ -100,13 +100,13 @@
           "cpu_peak_percent": 0,
           "cpu_peak_window_ms": 1201,
           "fds_after_close_requests": 7,
-          "rss_after_close_requests_kb": 525556,
+          "rss_after_close_requests_kb": 529384,
           "cpu_idle_ticks_per_second": 0,
           "fds_after_exit": 7
         },
         "server_metrics": {
-          "started_ns": 137870084211710,
-          "uptime_ms": 1857.729281,
+          "started_ns": 223281386125091,
+          "uptime_ms": 1850.655125,
           "stages": {
             "receive_to_submit": {
               "n": 0,
@@ -239,9 +239,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_20.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-20\n\nGenerated: 2026-11-22T00:23:11.227Z\n\n## Load\n\n- 20 active clients, 4 silent clients, high subscription distribution\n- 236 requests: 24 connections, 24 subscriptions, 88 snapshots, 100 moves\n- 20 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 300 ms, throughput 786 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 1.5 ms, p95 2.9 ms, p99 3.1 ms, max 3.1 ms\n- Move RTT: p50 2.7 ms, p95 4.4 ms, p99 5.4 ms, max 5.4 ms\n- Client event delivery lag: p50 2.7 ms, p95 4.4 ms, p99 4.9 ms, max 6.4 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- worker queue wait: p50 0.002 ms, p95 0.050 ms, p99 0.067 ms, max 0.067 ms (n=100)\n- move processing: p50 0.001 ms, p95 0.002 ms, p99 0.009 ms, max 0.009 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- broadcast wait: p50 0.001 ms, p95 0.161 ms, p99 0.216 ms, max 0.216 ms (n=100)\n- recipient lookup: p50 0.002 ms, p95 0.003 ms, p99 0.006 ms, max 0.006 ms (n=100)\n- event encoding: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- outbox enqueue: p50 0.001 ms, p95 0.003 ms, p99 0.006 ms, max 0.006 ms (n=100)\n- WebSocket write: p50 0.010 ms, p95 0.021 ms, p99 0.045 ms, max 0.197 ms (n=290)\n- end-to-end broadcast: p50 0.962 ms, p95 2.324 ms, p99 2.479 ms, max 2.479 ms (n=100)\n\n- Broadcasts: 100 events, 20.0 recipients/event average, 20 max\n- Outbox: 0 max depth, 256 capacity, 578 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 80/80 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 20/20 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 516 MiB baseline, 520 MiB peak, 520 MiB after close requests\n- fds: 8 baseline, 32 with clients, 32 peak, 33 after close requests\n- CPU: 6.7% average, 10.0% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_20_results.json, /home/james/Work/sim-map/bench/scale_20_results.md and /home/james/Work/sim-map/bench/scale_20_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-20\n\nGenerated: 2026-11-23T00:06:42.525Z\n\n## Load\n\n- 20 active clients, 4 silent clients, high subscription distribution\n- 236 requests: 24 connections, 24 subscriptions, 88 snapshots, 100 moves\n- 20 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 299 ms, throughput 791 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 1.6 ms, p95 3.0 ms, p99 3.1 ms, max 3.1 ms\n- Move RTT: p50 3.1 ms, p95 3.9 ms, p99 6.0 ms, max 6.0 ms\n- Client event delivery lag: p50 2.6 ms, p95 4.3 ms, p99 5.0 ms, max 6.4 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.002 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- worker queue wait: p50 0.004 ms, p95 0.049 ms, p99 0.072 ms, max 0.072 ms (n=100)\n- move processing: p50 0.001 ms, p95 0.004 ms, p99 0.029 ms, max 0.029 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- broadcast wait: p50 0.002 ms, p95 0.199 ms, p99 0.359 ms, max 0.359 ms (n=100)\n- recipient lookup: p50 0.002 ms, p95 0.004 ms, p99 0.008 ms, max 0.008 ms (n=100)\n- event encoding: p50 0.000 ms, p95 0.001 ms, p99 0.002 ms, max 0.002 ms (n=100)\n- outbox enqueue: p50 0.001 ms, p95 0.003 ms, p99 0.007 ms, max 0.007 ms (n=100)\n- WebSocket write: p50 0.010 ms, p95 0.026 ms, p99 0.048 ms, max 0.068 ms (n=271)\n- end-to-end broadcast: p50 1.086 ms, p95 1.765 ms, p99 2.078 ms, max 2.078 ms (n=100)\n\n- Broadcasts: 100 events, 20.0 recipients/event average, 20 max\n- Outbox: 0 max depth, 256 capacity, 559 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 80/80 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 20/20 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 518 MiB baseline, 522 MiB peak, 522 MiB after close requests\n- fds: 8 baseline, 32 with clients, 32 peak, 33 after close requests\n- CPU: 6.7% average, 19.3% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_20_results.json, /home/james/Work/sim-map/bench/scale_20_results.md and /home/james/Work/sim-map/bench/scale_20_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:23:11.227Z",
+        "generated": "2026-11-23T00:06:42.525Z",
         "label": "clients-20",
         "profile": {
           "clients": 20,
@@ -260,39 +260,39 @@
           "moves": 100,
           "requests": 236
         },
-        "duration_ms": 300.355273,
-        "throughput_requests_per_second": 785.7361638528649,
+        "duration_ms": 298.520793,
+        "throughput_requests_per_second": 790.56469610812,
         "snapshot_rtt": {
           "n": 80,
-          "mean_ms": 1.5259552875,
-          "p50_ms": 1.460015999999996,
-          "p95_ms": 2.9131599999999764,
-          "p99_ms": 3.0759979999999985,
-          "max_ms": 3.0759979999999985
+          "mean_ms": 1.5208855250000028,
+          "p50_ms": 1.5543070000000228,
+          "p95_ms": 3.0270780000000173,
+          "p99_ms": 3.1475759999999866,
+          "max_ms": 3.1475759999999866
         },
         "silent_snapshot_rtt": {
           "n": 8,
-          "mean_ms": 0.4564744999999988,
-          "p50_ms": 0.22772999999997978,
-          "p95_ms": 1.2426759999999888,
-          "p99_ms": 1.2426759999999888,
-          "max_ms": 1.2426759999999888
+          "mean_ms": 0.6815401249999979,
+          "p50_ms": 1.0654329999999845,
+          "p95_ms": 1.2801580000000001,
+          "p99_ms": 1.2801580000000001,
+          "max_ms": 1.2801580000000001
         },
         "move_rtt": {
           "n": 100,
-          "mean_ms": 2.7325335000000006,
-          "p50_ms": 2.7445610000000045,
-          "p95_ms": 4.3546619999999905,
-          "p99_ms": 5.358746999999994,
-          "max_ms": 5.358746999999994
+          "mean_ms": 2.7538292400000013,
+          "p50_ms": 3.0798079999999857,
+          "p95_ms": 3.9227000000000203,
+          "p99_ms": 6.01821799999999,
+          "max_ms": 6.01821799999999
         },
         "event_delivery_lag": {
           "n": 2000,
-          "mean_ms": 2.6849500115000042,
-          "p50_ms": 2.6987650000000087,
-          "p95_ms": 4.382623999999993,
-          "p99_ms": 4.919457999999992,
-          "max_ms": 6.369786000000005
+          "mean_ms": 2.6499604229999987,
+          "p50_ms": 2.6482819999999947,
+          "p95_ms": 4.333616000000006,
+          "p99_ms": 4.969297000000012,
+          "max_ms": 6.413755000000009
         },
         "accuracy": {
           "snapshots_ok": 80,
@@ -326,121 +326,121 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 527960,
-          "rss_before_kb": 528580,
-          "rss_peak_kb": 532744,
+          "rss_baseline_kb": 530072,
+          "rss_before_kb": 530844,
+          "rss_peak_kb": 534696,
           "fds_baseline": 8,
           "fds_before": 32,
           "fds_peak": 32,
-          "cpu_average_percent": 6.65878104960055,
-          "cpu_peak_percent": 9.994414421612193,
+          "cpu_average_percent": 6.699700814475594,
+          "cpu_peak_percent": 19.29382478949714,
           "cpu_peak_window_ms": 100,
           "fds_after_close_requests": 33,
-          "rss_after_close_requests_kb": 532852,
+          "rss_after_close_requests_kb": 534772,
           "cpu_idle_ticks_per_second": 0,
-          "rss_after_exit_kb": 532868,
+          "rss_after_exit_kb": 534788,
           "fds_after_exit": 6,
           "cpu_idle_after_exit_ticks_per_second": 0
         },
         "server_metrics": {
-          "started_ns": 137872276937256,
-          "uptime_ms": 1028.215378,
+          "started_ns": 223283573570168,
+          "uptime_ms": 1027.139371,
           "stages": {
             "receive_to_submit": {
               "n": 100,
-              "mean_ms": 0.000364,
-              "p50_ms": 0.00027,
-              "p95_ms": 0.000722,
-              "p99_ms": 0.003477,
-              "max_ms": 0.003477,
-              "total_ms": 0.036401
+              "mean_ms": 0.000505,
+              "p50_ms": 0.00032,
+              "p95_ms": 0.001513,
+              "p99_ms": 0.002605,
+              "max_ms": 0.002605,
+              "total_ms": 0.05053
             },
             "worker_queue_wait": {
               "n": 100,
-              "mean_ms": 0.01078,
-              "p50_ms": 0.002003,
-              "p95_ms": 0.049835,
-              "p99_ms": 0.066625,
-              "max_ms": 0.066625,
-              "total_ms": 1.078044
+              "mean_ms": 0.012436,
+              "p50_ms": 0.003677,
+              "p95_ms": 0.048982,
+              "p99_ms": 0.072056,
+              "max_ms": 0.072056,
+              "total_ms": 1.243622
             },
             "move_processing": {
               "n": 100,
-              "mean_ms": 0.000924,
-              "p50_ms": 0.000771,
-              "p95_ms": 0.002064,
-              "p99_ms": 0.009097,
-              "max_ms": 0.009097,
-              "total_ms": 0.092492
+              "mean_ms": 0.001469,
+              "p50_ms": 0.000841,
+              "p95_ms": 0.003526,
+              "p99_ms": 0.028824,
+              "max_ms": 0.028824,
+              "total_ms": 0.146982
             },
             "commit_to_broadcast": {
               "n": 100,
-              "mean_ms": 0.000454,
-              "p50_ms": 0.000371,
-              "p95_ms": 0.000932,
-              "p99_ms": 0.003046,
-              "max_ms": 0.003046,
-              "total_ms": 0.045441
+              "mean_ms": 0.0006,
+              "p50_ms": 0.000471,
+              "p95_ms": 0.001313,
+              "p99_ms": 0.002715,
+              "max_ms": 0.002715,
+              "total_ms": 0.060058
             },
             "broadcast_wait": {
               "n": 100,
-              "mean_ms": 0.030444,
-              "p50_ms": 0.001212,
-              "p95_ms": 0.161235,
-              "p99_ms": 0.215567,
-              "max_ms": 0.215567,
-              "total_ms": 3.044457
+              "mean_ms": 0.042661,
+              "p50_ms": 0.001623,
+              "p95_ms": 0.199136,
+              "p99_ms": 0.358708,
+              "max_ms": 0.358708,
+              "total_ms": 4.266187
             },
             "broadcast_dispatch": {
               "n": 100,
-              "mean_ms": 0.001789,
-              "p50_ms": 0.001663,
-              "p95_ms": 0.003216,
-              "p99_ms": 0.005691,
-              "max_ms": 0.005691,
-              "total_ms": 0.178998
+              "mean_ms": 0.002012,
+              "p50_ms": 0.001864,
+              "p95_ms": 0.003847,
+              "p99_ms": 0.008396,
+              "max_ms": 0.008396,
+              "total_ms": 0.201288
             },
             "encoding": {
               "n": 100,
-              "mean_ms": 0.000426,
-              "p50_ms": 0.000351,
-              "p95_ms": 0.000882,
-              "p99_ms": 0.002595,
-              "max_ms": 0.002595,
-              "total_ms": 0.042625
+              "mean_ms": 0.000523,
+              "p50_ms": 0.000381,
+              "p95_ms": 0.001022,
+              "p99_ms": 0.002395,
+              "max_ms": 0.002395,
+              "total_ms": 0.052379
             },
             "outbox_enqueue": {
               "n": 100,
-              "mean_ms": 0.001382,
-              "p50_ms": 0.001182,
-              "p95_ms": 0.002605,
-              "p99_ms": 0.006202,
-              "max_ms": 0.006202,
-              "total_ms": 0.138235
+              "mean_ms": 0.001763,
+              "p50_ms": 0.001373,
+              "p95_ms": 0.003357,
+              "p99_ms": 0.006853,
+              "max_ms": 0.006853,
+              "total_ms": 0.176349
             },
             "websocket_write": {
-              "n": 290,
-              "mean_ms": 0.011887,
-              "p50_ms": 0.009699,
-              "p95_ms": 0.020549,
-              "p99_ms": 0.044965,
-              "max_ms": 0.196501,
-              "total_ms": 3.447463
+              "n": 271,
+              "mean_ms": 0.0131,
+              "p50_ms": 0.009838,
+              "p95_ms": 0.025729,
+              "p99_ms": 0.04797,
+              "max_ms": 0.06843,
+              "total_ms": 3.550138
             },
             "end_to_end_broadcast": {
               "n": 100,
-              "mean_ms": 1.050766,
-              "p50_ms": 0.961856,
-              "p95_ms": 2.323897,
-              "p99_ms": 2.47921,
-              "max_ms": 2.47921,
-              "total_ms": 105.076676
+              "mean_ms": 1.096282,
+              "p50_ms": 1.086242,
+              "p95_ms": 1.764734,
+              "p99_ms": 2.077935,
+              "max_ms": 2.077935,
+              "total_ms": 109.628209
             }
           },
           "counters": {
             "events_broadcast": 100,
             "recipients": 2000,
-            "outbox_enqueues": 578,
+            "outbox_enqueues": 559,
             "outbox_dropped": 0,
             "send_failures": 0,
             "outbox_full_unregisters": 0,
@@ -448,16 +448,16 @@
             "max_outbox_depth": 1,
             "max_recipients": 20
           },
-          "end_to_end_p95_ms": 2.323897,
+          "end_to_end_p95_ms": 1.764734,
           "worker": {
             "queue_depth": 0,
             "queue_capacity": 4096,
             "requests_processed": 288,
             "requests_rejected": 0,
-            "avg_queue_wait_ms": 0.034948,
-            "max_queue_wait_ms": 1.083044,
-            "avg_processing_ms": 0.000677,
-            "max_processing_ms": 0.009097
+            "avg_queue_wait_ms": 0.034895,
+            "max_queue_wait_ms": 1.13799,
+            "avg_processing_ms": 0.002269,
+            "max_processing_ms": 0.392512
           },
           "connections": {
             "clients": 24,
@@ -468,7 +468,7 @@
           }
         },
         "metrics_error": null,
-        "post_exit_measured_at": "2026-11-22T00:23:16.770Z"
+        "post_exit_measured_at": "2026-11-23T00:06:48.066Z"
       }
     },
     {
@@ -478,9 +478,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_40.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-40\n\nGenerated: 2026-11-22T00:23:18.143Z\n\n## Load\n\n- 40 active clients, 4 silent clients, high subscription distribution\n- 356 requests: 44 connections, 44 subscriptions, 168 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 283 ms, throughput 1257 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 1.9 ms, p95 8.2 ms, p99 8.8 ms, max 9.6 ms\n- Move RTT: p50 4.5 ms, p95 9.8 ms, p99 11.3 ms, max 11.3 ms\n- Client event delivery lag: p50 5.3 ms, p95 11.3 ms, p99 11.9 ms, max 12.4 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.004 ms, max 0.004 ms (n=100)\n- worker queue wait: p50 0.091 ms, p95 1.283 ms, p99 1.327 ms, max 1.327 ms (n=100)\n- move processing: p50 0.001 ms, p95 0.003 ms, p99 0.025 ms, max 0.025 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.004 ms, max 0.004 ms (n=100)\n- broadcast wait: p50 0.252 ms, p95 0.884 ms, p99 1.004 ms, max 1.004 ms (n=100)\n- recipient lookup: p50 0.003 ms, p95 0.008 ms, p99 0.014 ms, max 0.014 ms (n=100)\n- event encoding: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- outbox enqueue: p50 0.002 ms, p95 0.006 ms, p99 0.024 ms, max 0.024 ms (n=100)\n- WebSocket write: p50 0.010 ms, p95 0.018 ms, p99 0.035 ms, max 0.060 ms (n=256)\n- end-to-end broadcast: p50 2.605 ms, p95 3.565 ms, p99 3.641 ms, max 3.641 ms (n=100)\n\n- Broadcasts: 100 events, 40.0 recipients/event average, 40 max\n- Outbox: 0 max depth, 256 capacity, 624 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 160/160 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 40/40 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 514 MiB baseline, 521 MiB peak, 521 MiB after close requests\n- fds: 8 baseline, 52 with clients, 52 peak, 53 after close requests\n- CPU: 7.1% average, 19.1% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_40_results.json, /home/james/Work/sim-map/bench/scale_40_results.md and /home/james/Work/sim-map/bench/scale_40_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-40\n\nGenerated: 2026-11-23T00:06:49.458Z\n\n## Load\n\n- 40 active clients, 4 silent clients, high subscription distribution\n- 356 requests: 44 connections, 44 subscriptions, 168 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 311 ms, throughput 1145 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 2.8 ms, p95 6.6 ms, p99 7.0 ms, max 7.1 ms\n- Move RTT: p50 5.8 ms, p95 11.0 ms, p99 12.6 ms, max 12.6 ms\n- Client event delivery lag: p50 5.6 ms, p95 12.7 ms, p99 14.4 ms, max 15.0 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- worker queue wait: p50 0.042 ms, p95 0.241 ms, p99 0.259 ms, max 0.259 ms (n=100)\n- move processing: p50 0.001 ms, p95 0.003 ms, p99 0.024 ms, max 0.024 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- broadcast wait: p50 0.152 ms, p95 1.183 ms, p99 1.934 ms, max 1.934 ms (n=100)\n- recipient lookup: p50 0.003 ms, p95 0.007 ms, p99 0.337 ms, max 0.337 ms (n=100)\n- event encoding: p50 0.000 ms, p95 0.001 ms, p99 0.004 ms, max 0.004 ms (n=100)\n- outbox enqueue: p50 0.002 ms, p95 0.007 ms, p99 0.022 ms, max 0.022 ms (n=100)\n- WebSocket write: p50 0.010 ms, p95 0.017 ms, p99 0.031 ms, max 0.096 ms (n=373)\n- end-to-end broadcast: p50 1.904 ms, p95 2.718 ms, p99 3.109 ms, max 3.109 ms (n=100)\n\n- Broadcasts: 100 events, 40.0 recipients/event average, 40 max\n- Outbox: 0 max depth, 256 capacity, 741 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 160/160 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 40/40 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 518 MiB baseline, 525 MiB peak, 526 MiB after close requests\n- fds: 8 baseline, 52 with clients, 52 peak, 53 after close requests\n- CPU: 6.4% average, 19.4% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_40_results.json, /home/james/Work/sim-map/bench/scale_40_results.md and /home/james/Work/sim-map/bench/scale_40_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:23:18.143Z",
+        "generated": "2026-11-23T00:06:49.458Z",
         "label": "clients-40",
         "profile": {
           "clients": 40,
@@ -499,39 +499,39 @@
           "moves": 100,
           "requests": 356
         },
-        "duration_ms": 283.146035,
-        "throughput_requests_per_second": 1257.3017312426784,
+        "duration_ms": 310.97264400000006,
+        "throughput_requests_per_second": 1144.7952315702726,
         "snapshot_rtt": {
           "n": 160,
-          "mean_ms": 3.284070500000003,
-          "p50_ms": 1.930014,
-          "p95_ms": 8.239084999999989,
-          "p99_ms": 8.795314999999988,
-          "max_ms": 9.632196000000022
+          "mean_ms": 3.1517275187499996,
+          "p50_ms": 2.7957509999999957,
+          "p95_ms": 6.643268000000006,
+          "p99_ms": 7.0495559999999955,
+          "max_ms": 7.118717000000004
         },
         "silent_snapshot_rtt": {
           "n": 8,
-          "mean_ms": 0.2603955000000049,
-          "p50_ms": 0.2991350000000068,
-          "p95_ms": 0.4293910000000096,
-          "p99_ms": 0.4293910000000096,
-          "max_ms": 0.4293910000000096
+          "mean_ms": 0.2607338750000032,
+          "p50_ms": 0.33731700000001297,
+          "p95_ms": 0.448978000000011,
+          "p99_ms": 0.448978000000011,
+          "max_ms": 0.448978000000011
         },
         "move_rtt": {
           "n": 100,
-          "mean_ms": 4.672453950000003,
-          "p50_ms": 4.481691000000012,
-          "p95_ms": 9.829097999999988,
-          "p99_ms": 11.318449000000015,
-          "max_ms": 11.318449000000015
+          "mean_ms": 5.664661980000002,
+          "p50_ms": 5.7576460000000225,
+          "p95_ms": 10.994038000000018,
+          "p99_ms": 12.628454000000033,
+          "max_ms": 12.628454000000033
         },
         "event_delivery_lag": {
           "n": 4000,
-          "mean_ms": 5.78127061299999,
-          "p50_ms": 5.269529000000006,
-          "p95_ms": 11.265419000000009,
-          "p99_ms": 11.855253000000033,
-          "max_ms": 12.42750300000003
+          "mean_ms": 5.968926680749993,
+          "p50_ms": 5.566134000000005,
+          "p95_ms": 12.671155999999968,
+          "p99_ms": 14.421520999999984,
+          "max_ms": 15.045599999999979
         },
         "accuracy": {
           "snapshots_ok": 160,
@@ -565,121 +565,121 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 525976,
-          "rss_before_kb": 527308,
-          "rss_peak_kb": 533068,
+          "rss_baseline_kb": 530164,
+          "rss_before_kb": 531500,
+          "rss_peak_kb": 538064,
           "fds_baseline": 8,
           "fds_before": 52,
           "fds_peak": 52,
-          "cpu_average_percent": 7.0634928721498795,
-          "cpu_peak_percent": 19.129164489648193,
+          "cpu_average_percent": 6.43143388522625,
+          "cpu_peak_percent": 19.37709837020389,
           "cpu_peak_window_ms": 100,
           "fds_after_close_requests": 53,
-          "rss_after_close_requests_kb": 533196,
+          "rss_after_close_requests_kb": 538204,
           "cpu_idle_ticks_per_second": 0,
-          "rss_after_exit_kb": 533204,
+          "rss_after_exit_kb": 538228,
           "fds_after_exit": 6,
           "cpu_idle_after_exit_ticks_per_second": 0
         },
         "server_metrics": {
-          "started_ns": 137879188506556,
-          "uptime_ms": 1035.247295,
+          "started_ns": 223290484780009,
+          "uptime_ms": 1054.610292,
           "stages": {
             "receive_to_submit": {
               "n": 100,
-              "mean_ms": 0.000365,
+              "mean_ms": 0.000415,
               "p50_ms": 0.00023,
-              "p95_ms": 0.000992,
-              "p99_ms": 0.004459,
-              "max_ms": 0.004459,
-              "total_ms": 0.036551
+              "p95_ms": 0.001283,
+              "p99_ms": 0.004879,
+              "max_ms": 0.004879,
+              "total_ms": 0.041582
             },
             "worker_queue_wait": {
               "n": 100,
-              "mean_ms": 0.346547,
-              "p50_ms": 0.090952,
-              "p95_ms": 1.283263,
-              "p99_ms": 1.327476,
-              "max_ms": 1.327476,
-              "total_ms": 34.654791
+              "mean_ms": 0.078453,
+              "p50_ms": 0.041729,
+              "p95_ms": 0.240594,
+              "p99_ms": 0.25929,
+              "max_ms": 0.25929,
+              "total_ms": 7.845375
             },
             "move_processing": {
               "n": 100,
-              "mean_ms": 0.001027,
-              "p50_ms": 0.000551,
-              "p95_ms": 0.003156,
-              "p99_ms": 0.025248,
-              "max_ms": 0.025248,
-              "total_ms": 0.102716
+              "mean_ms": 0.001047,
+              "p50_ms": 0.000591,
+              "p95_ms": 0.002965,
+              "p99_ms": 0.024106,
+              "max_ms": 0.024106,
+              "total_ms": 0.104744
             },
             "commit_to_broadcast": {
               "n": 100,
-              "mean_ms": 0.000432,
-              "p50_ms": 0.000331,
-              "p95_ms": 0.001223,
-              "p99_ms": 0.004077,
-              "max_ms": 0.004077,
-              "total_ms": 0.043285
+              "mean_ms": 0.000459,
+              "p50_ms": 0.000301,
+              "p95_ms": 0.001232,
+              "p99_ms": 0.00524,
+              "max_ms": 0.00524,
+              "total_ms": 0.045902
             },
             "broadcast_wait": {
               "n": 100,
-              "mean_ms": 0.310198,
-              "p50_ms": 0.251836,
-              "p95_ms": 0.88441,
-              "p99_ms": 1.004015,
-              "max_ms": 1.004015,
-              "total_ms": 31.019849
+              "mean_ms": 0.34963,
+              "p50_ms": 0.152267,
+              "p95_ms": 1.182824,
+              "p99_ms": 1.933943,
+              "max_ms": 1.933943,
+              "total_ms": 34.963047
             },
             "broadcast_dispatch": {
               "n": 100,
-              "mean_ms": 0.003482,
-              "p50_ms": 0.003016,
-              "p95_ms": 0.008005,
-              "p99_ms": 0.013545,
-              "max_ms": 0.013545,
-              "total_ms": 0.34828
+              "mean_ms": 0.006795,
+              "p50_ms": 0.003347,
+              "p95_ms": 0.007294,
+              "p99_ms": 0.337066,
+              "max_ms": 0.337066,
+              "total_ms": 0.679538
             },
             "encoding": {
               "n": 100,
-              "mean_ms": 0.000417,
-              "p50_ms": 0.000301,
-              "p95_ms": 0.001122,
-              "p99_ms": 0.002705,
-              "max_ms": 0.002705,
-              "total_ms": 0.041708
+              "mean_ms": 0.000513,
+              "p50_ms": 0.000341,
+              "p95_ms": 0.001333,
+              "p99_ms": 0.004308,
+              "max_ms": 0.004308,
+              "total_ms": 0.051358
             },
             "outbox_enqueue": {
               "n": 100,
-              "mean_ms": 0.002849,
-              "p50_ms": 0.002245,
-              "p95_ms": 0.005541,
-              "p99_ms": 0.023745,
-              "max_ms": 0.023745,
-              "total_ms": 0.284921
+              "mean_ms": 0.003105,
+              "p50_ms": 0.002185,
+              "p95_ms": 0.006672,
+              "p99_ms": 0.021751,
+              "max_ms": 0.021751,
+              "total_ms": 0.310545
             },
             "websocket_write": {
-              "n": 256,
-              "mean_ms": 0.010927,
-              "p50_ms": 0.009748,
-              "p95_ms": 0.018475,
-              "p99_ms": 0.035407,
-              "max_ms": 0.059853,
-              "total_ms": 2.797533
+              "n": 373,
+              "mean_ms": 0.011078,
+              "p50_ms": 0.009909,
+              "p95_ms": 0.017303,
+              "p99_ms": 0.030858,
+              "max_ms": 0.096452,
+              "total_ms": 4.132228
             },
             "end_to_end_broadcast": {
               "n": 100,
-              "mean_ms": 2.26747,
-              "p50_ms": 2.605028,
-              "p95_ms": 3.565071,
-              "p99_ms": 3.640834,
-              "max_ms": 3.640834,
-              "total_ms": 226.747022
+              "mean_ms": 1.828018,
+              "p50_ms": 1.903836,
+              "p95_ms": 2.718225,
+              "p99_ms": 3.109233,
+              "max_ms": 3.109233,
+              "total_ms": 182.801844
             }
           },
           "counters": {
             "events_broadcast": 100,
             "recipients": 4000,
-            "outbox_enqueues": 624,
+            "outbox_enqueues": 741,
             "outbox_dropped": 0,
             "send_failures": 0,
             "outbox_full_unregisters": 0,
@@ -687,16 +687,16 @@
             "max_outbox_depth": 1,
             "max_recipients": 40
           },
-          "end_to_end_p95_ms": 3.565071,
+          "end_to_end_p95_ms": 2.718225,
           "worker": {
             "queue_depth": 0,
             "queue_capacity": 4096,
             "requests_processed": 368,
             "requests_rejected": 0,
-            "avg_queue_wait_ms": 0.310403,
-            "max_queue_wait_ms": 4.418021,
-            "avg_processing_ms": 0.003829,
-            "max_processing_ms": 1.174186
+            "avg_queue_wait_ms": 0.193737,
+            "max_queue_wait_ms": 2.538164,
+            "avg_processing_ms": 0.001667,
+            "max_processing_ms": 0.374147
           },
           "connections": {
             "clients": 44,
@@ -707,7 +707,7 @@
           }
         },
         "metrics_error": null,
-        "post_exit_measured_at": "2026-11-22T00:23:23.683Z"
+        "post_exit_measured_at": "2026-11-23T00:06:54.999Z"
       }
     },
     {
@@ -717,9 +717,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_80.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-80\n\nGenerated: 2026-11-22T00:23:25.139Z\n\n## Load\n\n- 80 active clients, 4 silent clients, high subscription distribution\n- 596 requests: 84 connections, 84 subscriptions, 328 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 334 ms, throughput 1787 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 4.8 ms, p95 19.7 ms, p99 21.8 ms, max 23.6 ms\n- Move RTT: p50 6.3 ms, p95 16.6 ms, p99 17.8 ms, max 17.8 ms\n- Client event delivery lag: p50 7.8 ms, p95 18.6 ms, p99 20.1 ms, max 20.7 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- worker queue wait: p50 0.042 ms, p95 0.377 ms, p99 0.402 ms, max 0.402 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.002 ms, p99 0.007 ms, max 0.007 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- broadcast wait: p50 0.187 ms, p95 0.693 ms, p99 0.777 ms, max 0.777 ms (n=100)\n- recipient lookup: p50 0.007 ms, p95 0.011 ms, p99 0.372 ms, max 0.372 ms (n=100)\n- event encoding: p50 0.000 ms, p95 0.001 ms, p99 0.002 ms, max 0.002 ms (n=100)\n- outbox enqueue: p50 0.004 ms, p95 0.011 ms, p99 0.137 ms, max 0.137 ms (n=100)\n- WebSocket write: p50 0.010 ms, p95 0.015 ms, p99 0.022 ms, max 0.567 ms (n=495)\n- end-to-end broadcast: p50 2.587 ms, p95 3.352 ms, p99 3.383 ms, max 3.383 ms (n=100)\n\n- Broadcasts: 100 events, 80.0 recipients/event average, 80 max\n- Outbox: 0 max depth, 256 capacity, 1023 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 320/320 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 80/80 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 514 MiB baseline, 527 MiB peak, 527 MiB after close requests\n- fds: 8 baseline, 92 with clients, 92 peak, 93 after close requests\n- CPU: 15.0% average, 48.8% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_80_results.json, /home/james/Work/sim-map/bench/scale_80_results.md and /home/james/Work/sim-map/bench/scale_80_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-80\n\nGenerated: 2026-11-23T00:06:56.436Z\n\n## Load\n\n- 80 active clients, 4 silent clients, high subscription distribution\n- 596 requests: 84 connections, 84 subscriptions, 328 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 335 ms, throughput 1777 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 4.3 ms, p95 17.7 ms, p99 21.0 ms, max 21.2 ms\n- Move RTT: p50 10.1 ms, p95 19.8 ms, p99 21.1 ms, max 21.1 ms\n- Client event delivery lag: p50 9.1 ms, p95 20.1 ms, p99 22.4 ms, max 23.5 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- worker queue wait: p50 0.081 ms, p95 0.791 ms, p99 0.824 ms, max 0.824 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.003 ms, p99 0.686 ms, max 0.686 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- broadcast wait: p50 0.237 ms, p95 1.177 ms, p99 1.320 ms, max 1.320 ms (n=100)\n- recipient lookup: p50 0.007 ms, p95 0.012 ms, p99 0.018 ms, max 0.018 ms (n=100)\n- event encoding: p50 0.000 ms, p95 0.001 ms, p99 0.518 ms, max 0.518 ms (n=100)\n- outbox enqueue: p50 0.004 ms, p95 0.012 ms, p99 0.027 ms, max 0.027 ms (n=100)\n- WebSocket write: p50 0.010 ms, p95 0.017 ms, p99 0.028 ms, max 0.372 ms (n=574)\n- end-to-end broadcast: p50 2.962 ms, p95 4.013 ms, p99 4.046 ms, max 4.046 ms (n=100)\n\n- Broadcasts: 100 events, 80.0 recipients/event average, 80 max\n- Outbox: 0 max depth, 256 capacity, 1102 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 320/320 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 80/80 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 517 MiB baseline, 531 MiB peak, 531 MiB after close requests\n- fds: 8 baseline, 92 with clients, 92 peak, 93 after close requests\n- CPU: 11.9% average, 38.3% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_80_results.json, /home/james/Work/sim-map/bench/scale_80_results.md and /home/james/Work/sim-map/bench/scale_80_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:23:25.139Z",
+        "generated": "2026-11-23T00:06:56.436Z",
         "label": "clients-80",
         "profile": {
           "clients": 80,
@@ -738,39 +738,39 @@
           "moves": 100,
           "requests": 596
         },
-        "duration_ms": 333.507581,
-        "throughput_requests_per_second": 1787.0658238500432,
+        "duration_ms": 335.395838,
+        "throughput_requests_per_second": 1777.0047581806903,
         "snapshot_rtt": {
           "n": 320,
-          "mean_ms": 7.1735715624999985,
-          "p50_ms": 4.7978689999999915,
-          "p95_ms": 19.66384499999998,
-          "p99_ms": 21.816550000000007,
-          "max_ms": 23.629233
+          "mean_ms": 6.841008268749995,
+          "p50_ms": 4.270778000000007,
+          "p95_ms": 17.69831099999999,
+          "p99_ms": 21.049341999999996,
+          "max_ms": 21.235352999999975
         },
         "silent_snapshot_rtt": {
           "n": 8,
-          "mean_ms": 0.4944237500000028,
-          "p50_ms": 0.603650000000016,
-          "p95_ms": 1.0081539999999904,
-          "p99_ms": 1.0081539999999904,
-          "max_ms": 1.0081539999999904
+          "mean_ms": 0.31427362499999845,
+          "p50_ms": 0.29088899999999285,
+          "p95_ms": 0.6178370000000086,
+          "p99_ms": 0.6178370000000086,
+          "max_ms": 0.6178370000000086
         },
         "move_rtt": {
           "n": 100,
-          "mean_ms": 7.409798299999998,
-          "p50_ms": 6.327987000000007,
-          "p95_ms": 16.606914000000017,
-          "p99_ms": 17.83907099999999,
-          "max_ms": 17.83907099999999
+          "mean_ms": 8.94790633,
+          "p50_ms": 10.131498000000022,
+          "p95_ms": 19.84961499999997,
+          "p99_ms": 21.12006500000001,
+          "max_ms": 21.12006500000001
         },
         "event_delivery_lag": {
           "n": 8000,
-          "mean_ms": 8.867719078125022,
-          "p50_ms": 7.844840999999974,
-          "p95_ms": 18.61501499999997,
-          "p99_ms": 20.06409100000002,
-          "max_ms": 20.71605199999999
+          "mean_ms": 10.105303594624997,
+          "p50_ms": 9.134584999999959,
+          "p95_ms": 20.093084999999974,
+          "p99_ms": 22.366558999999995,
+          "max_ms": 23.502515000000017
         },
         "accuracy": {
           "snapshots_ok": 320,
@@ -804,121 +804,121 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 526168,
-          "rss_before_kb": 529436,
-          "rss_peak_kb": 539544,
+          "rss_baseline_kb": 529900,
+          "rss_before_kb": 533256,
+          "rss_peak_kb": 543980,
           "fds_baseline": 8,
           "fds_before": 92,
           "fds_peak": 92,
-          "cpu_average_percent": 14.992162951762108,
-          "cpu_peak_percent": 48.84918644122443,
+          "cpu_average_percent": 11.926206430742889,
+          "cpu_peak_percent": 38.27826946852882,
           "cpu_peak_window_ms": 100,
           "fds_after_close_requests": 93,
-          "rss_after_close_requests_kb": 539704,
+          "rss_after_close_requests_kb": 544240,
           "cpu_idle_ticks_per_second": 0,
-          "rss_after_exit_kb": 539712,
+          "rss_after_exit_kb": 544240,
           "fds_after_exit": 6,
           "cpu_idle_after_exit_ticks_per_second": 0
         },
         "server_metrics": {
-          "started_ns": 137886109915882,
-          "uptime_ms": 1106.147436,
+          "started_ns": 223297416177695,
+          "uptime_ms": 1097.592424,
           "stages": {
             "receive_to_submit": {
               "n": 100,
-              "mean_ms": 0.000297,
-              "p50_ms": 0.00018,
-              "p95_ms": 0.000841,
-              "p99_ms": 0.003417,
-              "max_ms": 0.003417,
-              "total_ms": 0.029738
+              "mean_ms": 0.000336,
+              "p50_ms": 0.000191,
+              "p95_ms": 0.001102,
+              "p99_ms": 0.003236,
+              "max_ms": 0.003236,
+              "total_ms": 0.033666
             },
             "worker_queue_wait": {
               "n": 100,
-              "mean_ms": 0.06983,
-              "p50_ms": 0.041579,
-              "p95_ms": 0.376641,
-              "p99_ms": 0.401888,
-              "max_ms": 0.401888,
-              "total_ms": 6.983095
+              "mean_ms": 0.194762,
+              "p50_ms": 0.081354,
+              "p95_ms": 0.791445,
+              "p99_ms": 0.824207,
+              "max_ms": 0.824207,
+              "total_ms": 19.476254
             },
             "move_processing": {
               "n": 100,
-              "mean_ms": 0.000632,
-              "p50_ms": 0.00036,
-              "p95_ms": 0.002084,
-              "p99_ms": 0.006523,
-              "max_ms": 0.006523,
-              "total_ms": 0.063203
+              "mean_ms": 0.007585,
+              "p50_ms": 0.000401,
+              "p95_ms": 0.003377,
+              "p99_ms": 0.686046,
+              "max_ms": 0.686046,
+              "total_ms": 0.758569
             },
             "commit_to_broadcast": {
               "n": 100,
-              "mean_ms": 0.000322,
-              "p50_ms": 0.00022,
-              "p95_ms": 0.000881,
-              "p99_ms": 0.002885,
-              "max_ms": 0.002885,
-              "total_ms": 0.032293
+              "mean_ms": 0.000383,
+              "p50_ms": 0.000231,
+              "p95_ms": 0.001263,
+              "p99_ms": 0.002534,
+              "max_ms": 0.002534,
+              "total_ms": 0.038389
             },
             "broadcast_wait": {
               "n": 100,
-              "mean_ms": 0.246738,
-              "p50_ms": 0.186562,
-              "p95_ms": 0.692798,
-              "p99_ms": 0.777488,
-              "max_ms": 0.777488,
-              "total_ms": 24.673879
+              "mean_ms": 0.358862,
+              "p50_ms": 0.236647,
+              "p95_ms": 1.176993,
+              "p99_ms": 1.320344,
+              "max_ms": 1.320344,
+              "total_ms": 35.886217
             },
             "broadcast_dispatch": {
               "n": 100,
-              "mean_ms": 0.010671,
-              "p50_ms": 0.006703,
-              "p95_ms": 0.01071,
-              "p99_ms": 0.372163,
-              "max_ms": 0.372163,
-              "total_ms": 1.067148
+              "mean_ms": 0.007386,
+              "p50_ms": 0.006653,
+              "p95_ms": 0.012283,
+              "p99_ms": 0.017563,
+              "max_ms": 0.017563,
+              "total_ms": 0.738673
             },
             "encoding": {
               "n": 100,
-              "mean_ms": 0.000367,
-              "p50_ms": 0.00029,
-              "p95_ms": 0.000892,
-              "p99_ms": 0.001673,
-              "max_ms": 0.001673,
-              "total_ms": 0.036788
+              "mean_ms": 0.005563,
+              "p50_ms": 0.00031,
+              "p95_ms": 0.000942,
+              "p99_ms": 0.517798,
+              "max_ms": 0.517798,
+              "total_ms": 0.556396
             },
             "outbox_enqueue": {
               "n": 100,
-              "mean_ms": 0.006331,
-              "p50_ms": 0.004138,
-              "p95_ms": 0.01067,
-              "p99_ms": 0.137009,
-              "max_ms": 0.137009,
-              "total_ms": 0.633194
+              "mean_ms": 0.005471,
+              "p50_ms": 0.004469,
+              "p95_ms": 0.012483,
+              "p99_ms": 0.026611,
+              "max_ms": 0.026611,
+              "total_ms": 0.547145
             },
             "websocket_write": {
-              "n": 495,
-              "mean_ms": 0.011593,
-              "p50_ms": 0.009608,
-              "p95_ms": 0.015288,
-              "p99_ms": 0.022472,
-              "max_ms": 0.56675,
-              "total_ms": 5.738851
+              "n": 574,
+              "mean_ms": 0.012078,
+              "p50_ms": 0.010339,
+              "p95_ms": 0.016902,
+              "p99_ms": 0.027792,
+              "max_ms": 0.371652,
+              "total_ms": 6.93307
             },
             "end_to_end_broadcast": {
               "n": 100,
-              "mean_ms": 2.414444,
-              "p50_ms": 2.587456,
-              "p95_ms": 3.352068,
-              "p99_ms": 3.382937,
-              "max_ms": 3.382937,
-              "total_ms": 241.44445
+              "mean_ms": 3.033097,
+              "p50_ms": 2.962005,
+              "p95_ms": 4.01254,
+              "p99_ms": 4.046233,
+              "max_ms": 4.046233,
+              "total_ms": 303.309798
             }
           },
           "counters": {
             "events_broadcast": 100,
             "recipients": 8000,
-            "outbox_enqueues": 1023,
+            "outbox_enqueues": 1102,
             "outbox_dropped": 0,
             "send_failures": 0,
             "outbox_full_unregisters": 0,
@@ -926,16 +926,16 @@
             "max_outbox_depth": 1,
             "max_recipients": 80
           },
-          "end_to_end_p95_ms": 3.352068,
+          "end_to_end_p95_ms": 4.01254,
           "worker": {
             "queue_depth": 0,
             "queue_capacity": 4096,
             "requests_processed": 528,
             "requests_rejected": 0,
-            "avg_queue_wait_ms": 0.702985,
-            "max_queue_wait_ms": 12.740625,
-            "avg_processing_ms": 0.000503,
-            "max_processing_ms": 0.006523
+            "avg_queue_wait_ms": 0.686387,
+            "max_queue_wait_ms": 12.006379,
+            "avg_processing_ms": 0.002543,
+            "max_processing_ms": 0.686046
           },
           "connections": {
             "clients": 84,
@@ -946,7 +946,7 @@
           }
         },
         "metrics_error": null,
-        "post_exit_measured_at": "2026-11-22T00:23:30.690Z"
+        "post_exit_measured_at": "2026-11-23T00:07:01.981Z"
       }
     },
     {
@@ -956,9 +956,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_160.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-160\n\nGenerated: 2026-11-22T00:23:32.218Z\n\n## Load\n\n- 160 active clients, 4 silent clients, high subscription distribution\n- 1076 requests: 164 connections, 164 subscriptions, 648 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 368 ms, throughput 2924 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 9.5 ms, p95 32.2 ms, p99 33.3 ms, max 33.6 ms\n- Move RTT: p50 12.0 ms, p95 21.4 ms, p99 26.6 ms, max 26.6 ms\n- Client event delivery lag: p50 14.4 ms, p95 24.6 ms, p99 29.4 ms, max 31.3 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.984 ms, max 0.984 ms (n=100)\n- worker queue wait: p50 0.116 ms, p95 1.214 ms, p99 1.249 ms, max 1.249 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.003 ms, p99 0.006 ms, max 0.006 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.002 ms, p99 0.002 ms, max 0.002 ms (n=100)\n- broadcast wait: p50 0.511 ms, p95 1.263 ms, p99 1.363 ms, max 1.363 ms (n=100)\n- recipient lookup: p50 0.015 ms, p95 0.026 ms, p99 0.050 ms, max 0.050 ms (n=100)\n- event encoding: p50 0.000 ms, p95 0.001 ms, p99 0.370 ms, max 0.370 ms (n=100)\n- outbox enqueue: p50 0.009 ms, p95 0.031 ms, p99 0.093 ms, max 0.093 ms (n=100)\n- WebSocket write: p50 0.013 ms, p95 0.021 ms, p99 0.038 ms, max 0.777 ms (n=895)\n- end-to-end broadcast: p50 5.666 ms, p95 7.104 ms, p99 7.152 ms, max 7.152 ms (n=100)\n\n- Broadcasts: 100 events, 160.0 recipients/event average, 160 max\n- Outbox: 0 max depth, 256 capacity, 1743 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 640/640 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 160/160 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 514 MiB baseline, 540 MiB peak, 540 MiB after close requests\n- fds: 8 baseline, 172 with clients, 172 peak, 173 after close requests\n- CPU: 21.7% average, 67.8% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_160_results.json, /home/james/Work/sim-map/bench/scale_160_results.md and /home/james/Work/sim-map/bench/scale_160_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-160\n\nGenerated: 2026-11-23T00:07:03.519Z\n\n## Load\n\n- 160 active clients, 4 silent clients, high subscription distribution\n- 1076 requests: 164 connections, 164 subscriptions, 648 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 376 ms, throughput 2859 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 8.5 ms, p95 38.4 ms, p99 40.1 ms, max 40.3 ms\n- Move RTT: p50 10.7 ms, p95 28.1 ms, p99 29.9 ms, max 29.9 ms\n- Client event delivery lag: p50 16.3 ms, p95 29.5 ms, p99 31.0 ms, max 34.0 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.002 ms, p99 0.558 ms, max 0.558 ms (n=100)\n- worker queue wait: p50 0.142 ms, p95 1.167 ms, p99 1.199 ms, max 1.199 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.002 ms, p99 0.007 ms, max 0.007 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.002 ms, max 0.002 ms (n=100)\n- broadcast wait: p50 0.577 ms, p95 1.368 ms, p99 1.914 ms, max 1.914 ms (n=100)\n- recipient lookup: p50 0.015 ms, p95 0.029 ms, p99 0.447 ms, max 0.447 ms (n=100)\n- event encoding: p50 0.000 ms, p95 0.001 ms, p99 0.002 ms, max 0.002 ms (n=100)\n- outbox enqueue: p50 0.010 ms, p95 0.027 ms, p99 0.054 ms, max 0.054 ms (n=100)\n- WebSocket write: p50 0.012 ms, p95 0.019 ms, p99 0.030 ms, max 0.355 ms (n=736)\n- end-to-end broadcast: p50 5.398 ms, p95 6.332 ms, p99 6.429 ms, max 6.429 ms (n=100)\n\n- Broadcasts: 100 events, 160.0 recipients/event average, 160 max\n- Outbox: 0 max depth, 256 capacity, 1584 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 640/640 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 160/160 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 517 MiB baseline, 542 MiB peak, 543 MiB after close requests\n- fds: 8 baseline, 172 with clients, 172 peak, 173 after close requests\n- CPU: 18.6% average, 59.2% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_160_results.json, /home/james/Work/sim-map/bench/scale_160_results.md and /home/james/Work/sim-map/bench/scale_160_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:23:32.218Z",
+        "generated": "2026-11-23T00:07:03.519Z",
         "label": "clients-160",
         "profile": {
           "clients": 160,
@@ -977,39 +977,39 @@
           "moves": 100,
           "requests": 1076
         },
-        "duration_ms": 367.99440699999997,
-        "throughput_requests_per_second": 2923.9574828646787,
+        "duration_ms": 376.31169700000004,
+        "throughput_requests_per_second": 2859.3317948338977,
         "snapshot_rtt": {
           "n": 640,
-          "mean_ms": 13.061897554687516,
-          "p50_ms": 9.477814999999964,
-          "p95_ms": 32.22254800000002,
-          "p99_ms": 33.29502200000002,
-          "max_ms": 33.585801000000004
+          "mean_ms": 14.1223013046875,
+          "p50_ms": 8.471362,
+          "p95_ms": 38.35177399999998,
+          "p99_ms": 40.065582000000006,
+          "max_ms": 40.25973899999997
         },
         "silent_snapshot_rtt": {
           "n": 8,
-          "mean_ms": 0.5755818749999975,
-          "p50_ms": 0.6288969999999949,
-          "p95_ms": 1.0900480000000243,
-          "p99_ms": 1.0900480000000243,
-          "max_ms": 1.0900480000000243
+          "mean_ms": 0.22165862499998923,
+          "p50_ms": 0.25295799999997826,
+          "p95_ms": 0.38195100000001503,
+          "p99_ms": 0.38195100000001503,
+          "max_ms": 0.38195100000001503
         },
         "move_rtt": {
           "n": 100,
-          "mean_ms": 10.660162879999998,
-          "p50_ms": 12.036565999999993,
-          "p95_ms": 21.354738999999995,
-          "p99_ms": 26.558523999999977,
-          "max_ms": 26.558523999999977
+          "mean_ms": 11.008022589999998,
+          "p50_ms": 10.666478999999981,
+          "p95_ms": 28.133422999999993,
+          "p99_ms": 29.854372999999953,
+          "max_ms": 29.854372999999953
         },
         "event_delivery_lag": {
           "n": 16000,
-          "mean_ms": 14.640349635687507,
-          "p50_ms": 14.408343000000002,
-          "p95_ms": 24.619302000000005,
-          "p99_ms": 29.416559000000007,
-          "max_ms": 31.328509999999994
+          "mean_ms": 17.131527788812573,
+          "p50_ms": 16.32850400000001,
+          "p95_ms": 29.470778999999993,
+          "p99_ms": 31.035034000000053,
+          "max_ms": 34.024050000000045
         },
         "accuracy": {
           "snapshots_ok": 640,
@@ -1043,121 +1043,121 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 526008,
-          "rss_before_kb": 532692,
-          "rss_peak_kb": 552796,
+          "rss_baseline_kb": 529816,
+          "rss_before_kb": 536472,
+          "rss_peak_kb": 555400,
           "fds_baseline": 8,
           "fds_before": 172,
           "fds_peak": 172,
-          "cpu_average_percent": 21.739460839142595,
-          "cpu_peak_percent": 67.82905183599823,
+          "cpu_average_percent": 18.60160089575956,
+          "cpu_peak_percent": 59.195525702243444,
           "cpu_peak_window_ms": 100,
           "fds_after_close_requests": 173,
-          "rss_after_close_requests_kb": 553232,
+          "rss_after_close_requests_kb": 556044,
           "cpu_idle_ticks_per_second": 0,
-          "rss_after_exit_kb": 553384,
+          "rss_after_exit_kb": 556060,
           "fds_after_exit": 6,
           "cpu_idle_after_exit_ticks_per_second": 0
         },
         "server_metrics": {
-          "started_ns": 137893108898436,
-          "uptime_ms": 1176.69864,
+          "started_ns": 223304399622457,
+          "uptime_ms": 1188.538007,
           "stages": {
             "receive_to_submit": {
               "n": 100,
-              "mean_ms": 0.010124,
-              "p50_ms": 0.00017,
-              "p95_ms": 0.001462,
-              "p99_ms": 0.983917,
-              "max_ms": 0.983917,
-              "total_ms": 1.012453
+              "mean_ms": 0.005941,
+              "p50_ms": 0.000231,
+              "p95_ms": 0.001874,
+              "p99_ms": 0.557944,
+              "max_ms": 0.557944,
+              "total_ms": 0.594135
             },
             "worker_queue_wait": {
               "n": 100,
-              "mean_ms": 0.396714,
-              "p50_ms": 0.115718,
-              "p95_ms": 1.213541,
-              "p99_ms": 1.248617,
-              "max_ms": 1.248617,
-              "total_ms": 39.67149
+              "mean_ms": 0.401278,
+              "p50_ms": 0.141928,
+              "p95_ms": 1.166944,
+              "p99_ms": 1.199356,
+              "max_ms": 1.199356,
+              "total_ms": 40.127842
             },
             "move_processing": {
               "n": 100,
-              "mean_ms": 0.000655,
-              "p50_ms": 0.00037,
-              "p95_ms": 0.003297,
-              "p99_ms": 0.006492,
-              "max_ms": 0.006492,
-              "total_ms": 0.065534
+              "mean_ms": 0.000644,
+              "p50_ms": 0.000381,
+              "p95_ms": 0.002324,
+              "p99_ms": 0.007054,
+              "max_ms": 0.007054,
+              "total_ms": 0.064419
             },
             "commit_to_broadcast": {
               "n": 100,
-              "mean_ms": 0.000349,
-              "p50_ms": 0.000211,
-              "p95_ms": 0.001873,
-              "p99_ms": 0.002404,
-              "max_ms": 0.002404,
-              "total_ms": 0.034902
+              "mean_ms": 0.000334,
+              "p50_ms": 0.000221,
+              "p95_ms": 0.001293,
+              "p99_ms": 0.002083,
+              "max_ms": 0.002083,
+              "total_ms": 0.033473
             },
             "broadcast_wait": {
               "n": 100,
-              "mean_ms": 0.552943,
-              "p50_ms": 0.510614,
-              "p95_ms": 1.262543,
-              "p99_ms": 1.363464,
-              "max_ms": 1.363464,
-              "total_ms": 55.294313
+              "mean_ms": 0.631896,
+              "p50_ms": 0.576789,
+              "p95_ms": 1.368344,
+              "p99_ms": 1.913955,
+              "max_ms": 1.913955,
+              "total_ms": 63.189613
             },
             "broadcast_dispatch": {
               "n": 100,
-              "mean_ms": 0.016504,
-              "p50_ms": 0.014738,
-              "p95_ms": 0.02649,
-              "p99_ms": 0.050175,
-              "max_ms": 0.050175,
-              "total_ms": 1.650418
+              "mean_ms": 0.020153,
+              "p50_ms": 0.014808,
+              "p95_ms": 0.028614,
+              "p99_ms": 0.447426,
+              "max_ms": 0.447426,
+              "total_ms": 2.015356
             },
             "encoding": {
               "n": 100,
-              "mean_ms": 0.004094,
-              "p50_ms": 0.000301,
-              "p95_ms": 0.001252,
-              "p99_ms": 0.370159,
-              "max_ms": 0.370159,
-              "total_ms": 0.409487
+              "mean_ms": 0.000425,
+              "p50_ms": 0.000331,
+              "p95_ms": 0.001062,
+              "p99_ms": 0.001964,
+              "max_ms": 0.001964,
+              "total_ms": 0.042561
             },
             "outbox_enqueue": {
               "n": 100,
-              "mean_ms": 0.01168,
-              "p50_ms": 0.008967,
-              "p95_ms": 0.031269,
-              "p99_ms": 0.093476,
-              "max_ms": 0.093476,
-              "total_ms": 1.168007
+              "mean_ms": 0.01182,
+              "p50_ms": 0.009899,
+              "p95_ms": 0.027051,
+              "p99_ms": 0.054372,
+              "max_ms": 0.054372,
+              "total_ms": 1.182062
             },
             "websocket_write": {
-              "n": 895,
-              "mean_ms": 0.015193,
-              "p50_ms": 0.012533,
-              "p95_ms": 0.021261,
-              "p99_ms": 0.037822,
-              "max_ms": 0.777087,
-              "total_ms": 13.598044
+              "n": 736,
+              "mean_ms": 0.013174,
+              "p50_ms": 0.011602,
+              "p95_ms": 0.019076,
+              "p99_ms": 0.030017,
+              "max_ms": 0.355141,
+              "total_ms": 9.696783
             },
             "end_to_end_broadcast": {
               "n": 100,
-              "mean_ms": 5.762538,
-              "p50_ms": 5.665697,
-              "p95_ms": 7.103532,
-              "p99_ms": 7.152384,
-              "max_ms": 7.152384,
-              "total_ms": 576.253834
+              "mean_ms": 5.380308,
+              "p50_ms": 5.397586,
+              "p95_ms": 6.331621,
+              "p99_ms": 6.428503,
+              "max_ms": 6.428503,
+              "total_ms": 538.030876
             }
           },
           "counters": {
             "events_broadcast": 100,
             "recipients": 16000,
-            "outbox_enqueues": 1743,
+            "outbox_enqueues": 1584,
             "outbox_dropped": 0,
             "send_failures": 0,
             "outbox_full_unregisters": 0,
@@ -1165,16 +1165,16 @@
             "max_outbox_depth": 1,
             "max_recipients": 160
           },
-          "end_to_end_p95_ms": 7.103532,
+          "end_to_end_p95_ms": 6.331621,
           "worker": {
             "queue_depth": 0,
             "queue_capacity": 4096,
             "requests_processed": 848,
             "requests_rejected": 0,
-            "avg_queue_wait_ms": 3.697887,
-            "max_queue_wait_ms": 19.807167,
-            "avg_processing_ms": 0.000456,
-            "max_processing_ms": 0.008436
+            "avg_queue_wait_ms": 2.232517,
+            "max_queue_wait_ms": 15.78115,
+            "avg_processing_ms": 0.004306,
+            "max_processing_ms": 1.782197
           },
           "connections": {
             "clients": 164,
@@ -1185,7 +1185,7 @@
           }
         },
         "metrics_error": null,
-        "post_exit_measured_at": "2026-11-22T00:23:37.774Z"
+        "post_exit_measured_at": "2026-11-23T00:07:09.075Z"
       }
     },
     {
@@ -1195,9 +1195,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_200.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-200\n\nGenerated: 2026-11-22T00:23:39.336Z\n\n## Load\n\n- 200 active clients, 4 silent clients, high subscription distribution\n- 1316 requests: 204 connections, 204 subscriptions, 808 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 370 ms, throughput 3559 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 9.6 ms, p95 40.5 ms, p99 42.2 ms, max 43.4 ms\n- Move RTT: p50 11.0 ms, p95 24.0 ms, p99 24.8 ms, max 24.8 ms\n- Client event delivery lag: p50 17.0 ms, p95 29.0 ms, p99 31.0 ms, max 33.1 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.002 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- worker queue wait: p50 0.125 ms, p95 0.260 ms, p99 0.275 ms, max 0.275 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.005 ms, p99 0.049 ms, max 0.049 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.002 ms, p99 0.013 ms, max 0.013 ms (n=100)\n- broadcast wait: p50 0.606 ms, p95 1.655 ms, p99 1.883 ms, max 1.883 ms (n=100)\n- recipient lookup: p50 0.016 ms, p95 0.031 ms, p99 0.143 ms, max 0.143 ms (n=100)\n- event encoding: p50 0.000 ms, p95 0.001 ms, p99 0.002 ms, max 0.002 ms (n=100)\n- outbox enqueue: p50 0.011 ms, p95 0.048 ms, p99 0.065 ms, max 0.065 ms (n=100)\n- WebSocket write: p50 0.012 ms, p95 0.023 ms, p99 0.033 ms, max 0.671 ms (n=1095)\n- end-to-end broadcast: p50 6.270 ms, p95 7.793 ms, p99 7.983 ms, max 7.983 ms (n=100)\n\n- Broadcasts: 100 events, 200.0 recipients/event average, 200 max\n- Outbox: 0 max depth, 256 capacity, 2103 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 800/800 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 200/200 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 514 MiB baseline, 546 MiB peak, 546 MiB after close requests\n- fds: 8 baseline, 212 with clients, 212 peak, 213 after close requests\n- CPU: 27.0% average, 87.0% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_200_results.json, /home/james/Work/sim-map/bench/scale_200_results.md and /home/james/Work/sim-map/bench/scale_200_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-200\n\nGenerated: 2026-11-23T00:07:10.628Z\n\n## Load\n\n- 200 active clients, 4 silent clients, high subscription distribution\n- 1316 requests: 204 connections, 204 subscriptions, 808 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 377 ms, throughput 3487 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 10.2 ms, p95 49.9 ms, p99 52.2 ms, max 52.7 ms\n- Move RTT: p50 12.6 ms, p95 29.4 ms, p99 38.4 ms, max 38.4 ms\n- Client event delivery lag: p50 21.0 ms, p95 38.8 ms, p99 41.0 ms, max 42.9 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.004 ms, max 0.004 ms (n=100)\n- worker queue wait: p50 0.214 ms, p95 1.141 ms, p99 1.212 ms, max 1.212 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.002 ms, p99 0.007 ms, max 0.007 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.909 ms, max 0.909 ms (n=100)\n- broadcast wait: p50 0.764 ms, p95 3.100 ms, p99 3.282 ms, max 3.282 ms (n=100)\n- recipient lookup: p50 0.016 ms, p95 0.026 ms, p99 0.043 ms, max 0.043 ms (n=100)\n- event encoding: p50 0.000 ms, p95 0.001 ms, p99 0.002 ms, max 0.002 ms (n=100)\n- outbox enqueue: p50 0.013 ms, p95 0.056 ms, p99 1.562 ms, max 1.562 ms (n=100)\n- WebSocket write: p50 0.013 ms, p95 0.020 ms, p99 0.037 ms, max 0.762 ms (n=697)\n- end-to-end broadcast: p50 8.898 ms, p95 11.901 ms, p99 12.057 ms, max 12.057 ms (n=100)\n\n- Broadcasts: 100 events, 200.0 recipients/event average, 200 max\n- Outbox: 0 max depth, 256 capacity, 1705 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 800/800 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 200/200 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 518 MiB baseline, 548 MiB peak, 548 MiB after close requests\n- fds: 8 baseline, 212 with clients, 212 peak, 213 after close requests\n- CPU: 26.5% average, 74.1% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_200_results.json, /home/james/Work/sim-map/bench/scale_200_results.md and /home/james/Work/sim-map/bench/scale_200_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:23:39.336Z",
+        "generated": "2026-11-23T00:07:10.628Z",
         "label": "clients-200",
         "profile": {
           "clients": 200,
@@ -1216,39 +1216,39 @@
           "moves": 100,
           "requests": 1316
         },
-        "duration_ms": 369.722072,
-        "throughput_requests_per_second": 3559.430446987217,
+        "duration_ms": 377.451059,
+        "throughput_requests_per_second": 3486.544728438555,
         "snapshot_rtt": {
           "n": 800,
-          "mean_ms": 15.892694166249992,
-          "p50_ms": 9.627306999999973,
-          "p95_ms": 40.452796999999975,
-          "p99_ms": 42.21989300000001,
-          "max_ms": 43.374874000000034
+          "mean_ms": 17.286652366249974,
+          "p50_ms": 10.19059900000002,
+          "p95_ms": 49.913062999999966,
+          "p99_ms": 52.163013000000035,
+          "max_ms": 52.661355000000015
         },
         "silent_snapshot_rtt": {
           "n": 8,
-          "mean_ms": 0.17966662500000297,
-          "p50_ms": 0.18036100000000488,
-          "p95_ms": 0.32713699999999335,
-          "p99_ms": 0.32713699999999335,
-          "max_ms": 0.32713699999999335
+          "mean_ms": 0.14398075000001143,
+          "p50_ms": 0.1666649999999663,
+          "p95_ms": 0.2231209999999919,
+          "p99_ms": 0.2231209999999919,
+          "max_ms": 0.2231209999999919
         },
         "move_rtt": {
           "n": 100,
-          "mean_ms": 13.165498880000005,
-          "p50_ms": 10.960984999999994,
-          "p95_ms": 24.04259300000001,
-          "p99_ms": 24.80166700000001,
-          "max_ms": 24.80166700000001
+          "mean_ms": 12.099557050000001,
+          "p50_ms": 12.553964000000008,
+          "p95_ms": 29.432677000000012,
+          "p99_ms": 38.38451699999996,
+          "max_ms": 38.38451699999996
         },
         "event_delivery_lag": {
           "n": 20000,
-          "mean_ms": 17.20394480514985,
-          "p50_ms": 16.981732000000022,
-          "p95_ms": 28.962000999999987,
-          "p99_ms": 31.026269000000013,
-          "max_ms": 33.10746799999998
+          "mean_ms": 21.74772702235006,
+          "p50_ms": 20.965802999999994,
+          "p95_ms": 38.84405399999997,
+          "p99_ms": 41.028189999999995,
+          "max_ms": 42.93369999999999
         },
         "accuracy": {
           "snapshots_ok": 800,
@@ -1282,121 +1282,121 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 526156,
-          "rss_before_kb": 534552,
-          "rss_peak_kb": 559128,
+          "rss_baseline_kb": 530208,
+          "rss_before_kb": 537932,
+          "rss_peak_kb": 561116,
           "fds_baseline": 8,
           "fds_before": 212,
           "fds_peak": 212,
-          "cpu_average_percent": 27.047343822091314,
-          "cpu_peak_percent": 86.96360133248415,
+          "cpu_average_percent": 26.493500975976865,
+          "cpu_peak_percent": 74.12598178421534,
           "cpu_peak_window_ms": 100,
           "fds_after_close_requests": 213,
-          "rss_after_close_requests_kb": 559160,
+          "rss_after_close_requests_kb": 561508,
           "cpu_idle_ticks_per_second": 0,
-          "rss_after_exit_kb": 559184,
+          "rss_after_exit_kb": 561508,
           "fds_after_exit": 6,
           "cpu_idle_after_exit_ticks_per_second": 0
         },
         "server_metrics": {
-          "started_ns": 137900201780204,
-          "uptime_ms": 1195.883924,
+          "started_ns": 223311504882104,
+          "uptime_ms": 1196.42741,
           "stages": {
             "receive_to_submit": {
               "n": 100,
-              "mean_ms": 0.000325,
-              "p50_ms": 0.00018,
-              "p95_ms": 0.001963,
-              "p99_ms": 0.003376,
-              "max_ms": 0.003376,
-              "total_ms": 0.03258
+              "mean_ms": 0.000351,
+              "p50_ms": 0.00025,
+              "p95_ms": 0.000681,
+              "p99_ms": 0.003967,
+              "max_ms": 0.003967,
+              "total_ms": 0.035167
             },
             "worker_queue_wait": {
               "n": 100,
-              "mean_ms": 0.131574,
-              "p50_ms": 0.124996,
-              "p95_ms": 0.2598,
-              "p99_ms": 0.275209,
-              "max_ms": 0.275209,
-              "total_ms": 13.157413
+              "mean_ms": 0.375855,
+              "p50_ms": 0.214274,
+              "p95_ms": 1.140875,
+              "p99_ms": 1.211689,
+              "max_ms": 1.211689,
+              "total_ms": 37.585559
             },
             "move_processing": {
               "n": 100,
-              "mean_ms": 0.001175,
-              "p50_ms": 0.000381,
-              "p95_ms": 0.00525,
-              "p99_ms": 0.049173,
-              "max_ms": 0.049173,
-              "total_ms": 0.117503
+              "mean_ms": 0.000626,
+              "p50_ms": 0.000391,
+              "p95_ms": 0.001974,
+              "p99_ms": 0.007063,
+              "max_ms": 0.007063,
+              "total_ms": 0.062635
             },
             "commit_to_broadcast": {
               "n": 100,
-              "mean_ms": 0.000458,
+              "mean_ms": 0.00939,
               "p50_ms": 0.000211,
-              "p95_ms": 0.001844,
-              "p99_ms": 0.012704,
-              "max_ms": 0.012704,
-              "total_ms": 0.045864
+              "p95_ms": 0.001092,
+              "p99_ms": 0.908587,
+              "max_ms": 0.908587,
+              "total_ms": 0.939057
             },
             "broadcast_wait": {
               "n": 100,
-              "mean_ms": 0.673311,
-              "p50_ms": 0.605684,
-              "p95_ms": 1.654614,
-              "p99_ms": 1.882705,
-              "max_ms": 1.882705,
-              "total_ms": 67.331115
+              "mean_ms": 0.917705,
+              "p50_ms": 0.763642,
+              "p95_ms": 3.099535,
+              "p99_ms": 3.28234,
+              "max_ms": 3.28234,
+              "total_ms": 91.770572
             },
             "broadcast_dispatch": {
               "n": 100,
-              "mean_ms": 0.018591,
-              "p50_ms": 0.016171,
-              "p95_ms": 0.030969,
-              "p99_ms": 0.14317,
-              "max_ms": 0.14317,
-              "total_ms": 1.859146
+              "mean_ms": 0.017235,
+              "p50_ms": 0.01624,
+              "p95_ms": 0.025919,
+              "p99_ms": 0.043322,
+              "max_ms": 0.043322,
+              "total_ms": 1.723507
             },
             "encoding": {
               "n": 100,
-              "mean_ms": 0.00042,
+              "mean_ms": 0.000432,
               "p50_ms": 0.000341,
-              "p95_ms": 0.001032,
-              "p99_ms": 0.001593,
-              "max_ms": 0.001593,
-              "total_ms": 0.042034
+              "p95_ms": 0.001041,
+              "p99_ms": 0.001963,
+              "max_ms": 0.001963,
+              "total_ms": 0.043232
             },
             "outbox_enqueue": {
               "n": 100,
-              "mean_ms": 0.013964,
-              "p50_ms": 0.011252,
-              "p95_ms": 0.047761,
-              "p99_ms": 0.065003,
-              "max_ms": 0.065003,
-              "total_ms": 1.396406
+              "mean_ms": 0.041223,
+              "p50_ms": 0.012774,
+              "p95_ms": 0.056437,
+              "p99_ms": 1.562382,
+              "max_ms": 1.562382,
+              "total_ms": 4.122323
             },
             "websocket_write": {
-              "n": 1095,
-              "mean_ms": 0.014977,
-              "p50_ms": 0.012063,
-              "p95_ms": 0.022592,
-              "p99_ms": 0.033353,
-              "max_ms": 0.670886,
-              "total_ms": 16.400591
+              "n": 697,
+              "mean_ms": 0.01511,
+              "p50_ms": 0.012934,
+              "p95_ms": 0.019567,
+              "p99_ms": 0.036679,
+              "max_ms": 0.761519,
+              "total_ms": 10.531827
             },
             "end_to_end_broadcast": {
               "n": 100,
-              "mean_ms": 6.212647,
-              "p50_ms": 6.269617,
-              "p95_ms": 7.792793,
-              "p99_ms": 7.983373,
-              "max_ms": 7.983373,
-              "total_ms": 621.264714
+              "mean_ms": 9.233696,
+              "p50_ms": 8.898138,
+              "p95_ms": 11.901452,
+              "p99_ms": 12.056604,
+              "max_ms": 12.056604,
+              "total_ms": 923.369663
             }
           },
           "counters": {
             "events_broadcast": 100,
             "recipients": 20000,
-            "outbox_enqueues": 2103,
+            "outbox_enqueues": 1705,
             "outbox_dropped": 0,
             "send_failures": 0,
             "outbox_full_unregisters": 0,
@@ -1404,16 +1404,16 @@
             "max_outbox_depth": 1,
             "max_recipients": 200
           },
-          "end_to_end_p95_ms": 7.792793,
+          "end_to_end_p95_ms": 11.901452,
           "worker": {
             "queue_depth": 0,
             "queue_capacity": 4096,
             "requests_processed": 1008,
             "requests_rejected": 0,
-            "avg_queue_wait_ms": 5.117808,
-            "max_queue_wait_ms": 25.713839,
-            "avg_processing_ms": 0.00284,
-            "max_processing_ms": 1.244139
+            "avg_queue_wait_ms": 5.341447,
+            "max_queue_wait_ms": 22.582287,
+            "avg_processing_ms": 0.00094,
+            "max_processing_ms": 0.436745
           },
           "connections": {
             "clients": 204,
@@ -1424,7 +1424,7 @@
           }
         },
         "metrics_error": null,
-        "post_exit_measured_at": "2026-11-22T00:23:44.891Z"
+        "post_exit_measured_at": "2026-11-23T00:07:16.177Z"
       }
     },
     {
@@ -1434,9 +1434,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_320.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-320\n\nGenerated: 2026-11-22T00:23:46.600Z\n\n## Load\n\n- 320 active clients, 4 silent clients, high subscription distribution\n- 2036 requests: 324 connections, 324 subscriptions, 1288 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 462 ms, throughput 4403 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 18.5 ms, p95 76.8 ms, p99 79.0 ms, max 82.6 ms\n- Move RTT: p50 16.9 ms, p95 35.0 ms, p99 35.7 ms, max 35.7 ms\n- Client event delivery lag: p50 26.6 ms, p95 45.0 ms, p99 47.5 ms, max 55.2 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.004 ms, max 0.004 ms (n=100)\n- worker queue wait: p50 0.169 ms, p95 0.888 ms, p99 0.936 ms, max 0.936 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.002 ms, p99 0.007 ms, max 0.007 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- broadcast wait: p50 1.666 ms, p95 3.962 ms, p99 6.172 ms, max 6.172 ms (n=100)\n- recipient lookup: p50 0.032 ms, p95 0.065 ms, p99 0.862 ms, max 0.862 ms (n=100)\n- event encoding: p50 0.001 ms, p95 0.002 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- outbox enqueue: p50 0.020 ms, p95 0.086 ms, p99 1.816 ms, max 1.816 ms (n=100)\n- WebSocket write: p50 0.013 ms, p95 0.023 ms, p99 0.037 ms, max 0.514 ms (n=1376)\n- end-to-end broadcast: p50 11.087 ms, p95 17.322 ms, p99 17.376 ms, max 17.376 ms (n=100)\n\n- Broadcasts: 100 events, 320.0 recipients/event average, 320 max\n- Outbox: 0 max depth, 256 capacity, 2864 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 1280/1280 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 320/320 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 514 MiB baseline, 563 MiB peak, 564 MiB after close requests\n- fds: 8 baseline, 332 with clients, 332 peak, 333 after close requests\n- CPU: 36.8% average, 89.7% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_320_results.json, /home/james/Work/sim-map/bench/scale_320_results.md and /home/james/Work/sim-map/bench/scale_320_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-320\n\nGenerated: 2026-11-23T00:07:17.912Z\n\n## Load\n\n- 320 active clients, 4 silent clients, high subscription distribution\n- 2036 requests: 324 connections, 324 subscriptions, 1288 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 482 ms, throughput 4224 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 20.1 ms, p95 78.8 ms, p99 82.4 ms, max 83.3 ms\n- Move RTT: p50 25.2 ms, p95 35.8 ms, p99 35.9 ms, max 35.9 ms\n- Client event delivery lag: p50 29.3 ms, p95 50.9 ms, p99 53.2 ms, max 54.3 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.003 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- worker queue wait: p50 0.180 ms, p95 0.703 ms, p99 0.745 ms, max 0.745 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.005 ms, p99 0.008 ms, max 0.008 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.002 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- broadcast wait: p50 1.540 ms, p95 3.949 ms, p99 4.294 ms, max 4.294 ms (n=100)\n- recipient lookup: p50 0.035 ms, p95 0.076 ms, p99 0.974 ms, max 0.974 ms (n=100)\n- event encoding: p50 0.001 ms, p95 0.002 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- outbox enqueue: p50 0.022 ms, p95 0.109 ms, p99 0.735 ms, max 0.735 ms (n=100)\n- WebSocket write: p50 0.013 ms, p95 0.022 ms, p99 0.046 ms, max 0.783 ms (n=1695)\n- end-to-end broadcast: p50 11.691 ms, p95 14.120 ms, p99 14.210 ms, max 14.210 ms (n=100)\n\n- Broadcasts: 100 events, 320.0 recipients/event average, 320 max\n- Outbox: 0 max depth, 256 capacity, 3183 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 1280/1280 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 320/320 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 518 MiB baseline, 568 MiB peak, 569 MiB after close requests\n- fds: 8 baseline, 332 with clients, 332 peak, 333 after close requests\n- CPU: 37.3% average, 99.3% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_320_results.json, /home/james/Work/sim-map/bench/scale_320_results.md and /home/james/Work/sim-map/bench/scale_320_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:23:46.600Z",
+        "generated": "2026-11-23T00:07:17.912Z",
         "label": "clients-320",
         "profile": {
           "clients": 320,
@@ -1455,39 +1455,39 @@
           "moves": 100,
           "requests": 2036
         },
-        "duration_ms": 462.367726,
-        "throughput_requests_per_second": 4403.421531199174,
+        "duration_ms": 482.008894,
+        "throughput_requests_per_second": 4223.988447814823,
         "snapshot_rtt": {
           "n": 1280,
-          "mean_ms": 29.769053667187514,
-          "p50_ms": 18.484940999999992,
-          "p95_ms": 76.75949600000001,
-          "p99_ms": 78.99357400000002,
-          "max_ms": 82.62595200000004
+          "mean_ms": 31.417523866406235,
+          "p50_ms": 20.06410999999997,
+          "p95_ms": 78.75381299999998,
+          "p99_ms": 82.397806,
+          "max_ms": 83.26968299999999
         },
         "silent_snapshot_rtt": {
           "n": 8,
-          "mean_ms": 0.1782603749999936,
-          "p50_ms": 0.2069909999999595,
-          "p95_ms": 0.3372969999999782,
-          "p99_ms": 0.3372969999999782,
-          "max_ms": 0.3372969999999782
+          "mean_ms": 0.1717896250000024,
+          "p50_ms": 0.17955900000004021,
+          "p95_ms": 0.3095349999999826,
+          "p99_ms": 0.3095349999999826,
+          "max_ms": 0.3095349999999826
         },
         "move_rtt": {
           "n": 100,
-          "mean_ms": 18.74315738,
-          "p50_ms": 16.90734200000003,
-          "p95_ms": 35.022695000000056,
-          "p99_ms": 35.65731299999999,
-          "max_ms": 35.65731299999999
+          "mean_ms": 21.002281100000015,
+          "p50_ms": 25.225369,
+          "p95_ms": 35.75130200000001,
+          "p99_ms": 35.90785900000003,
+          "max_ms": 35.90785900000003
         },
         "event_delivery_lag": {
           "n": 32000,
-          "mean_ms": 25.580628137656248,
-          "p50_ms": 26.569365000000005,
-          "p95_ms": 45.02571100000006,
-          "p99_ms": 47.49130599999995,
-          "max_ms": 55.21659199999999
+          "mean_ms": 28.799242577437344,
+          "p50_ms": 29.29785199999992,
+          "p95_ms": 50.88641199999995,
+          "p99_ms": 53.20839799999993,
+          "max_ms": 54.25790100000006
         },
         "accuracy": {
           "snapshots_ok": 1280,
@@ -1521,121 +1521,121 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 526008,
-          "rss_before_kb": 540308,
-          "rss_peak_kb": 576372,
+          "rss_baseline_kb": 530108,
+          "rss_before_kb": 544472,
+          "rss_peak_kb": 581656,
           "fds_baseline": 8,
           "fds_before": 332,
           "fds_peak": 332,
-          "cpu_average_percent": 36.76727211708544,
-          "cpu_peak_percent": 89.71418227810567,
+          "cpu_average_percent": 37.34370926358881,
+          "cpu_peak_percent": 99.28886435968526,
           "cpu_peak_window_ms": 100,
           "fds_after_close_requests": 333,
-          "rss_after_close_requests_kb": 577408,
+          "rss_after_close_requests_kb": 582224,
           "cpu_idle_ticks_per_second": 0,
-          "rss_after_exit_kb": 577432,
+          "rss_after_exit_kb": 582252,
           "fds_after_exit": 6,
           "cpu_idle_after_exit_ticks_per_second": 0
         },
         "server_metrics": {
-          "started_ns": 137907321285417,
-          "uptime_ms": 1341.935058,
+          "started_ns": 223318608793074,
+          "uptime_ms": 1362.379116,
           "stages": {
             "receive_to_submit": {
               "n": 100,
-              "mean_ms": 0.000327,
-              "p50_ms": 0.00017,
-              "p95_ms": 0.000621,
-              "p99_ms": 0.003577,
-              "max_ms": 0.003577,
-              "total_ms": 0.032789
+              "mean_ms": 0.000505,
+              "p50_ms": 0.000281,
+              "p95_ms": 0.003497,
+              "p99_ms": 0.004659,
+              "max_ms": 0.004659,
+              "total_ms": 0.050562
             },
             "worker_queue_wait": {
               "n": 100,
-              "mean_ms": 0.279052,
-              "p50_ms": 0.168729,
-              "p95_ms": 0.888297,
-              "p99_ms": 0.936388,
-              "max_ms": 0.936388,
-              "total_ms": 27.905219
+              "mean_ms": 0.275934,
+              "p50_ms": 0.179579,
+              "p95_ms": 0.702838,
+              "p99_ms": 0.744927,
+              "max_ms": 0.744927,
+              "total_ms": 27.593467
             },
             "move_processing": {
               "n": 100,
-              "mean_ms": 0.000633,
-              "p50_ms": 0.000351,
-              "p95_ms": 0.002104,
-              "p99_ms": 0.007254,
-              "max_ms": 0.007254,
-              "total_ms": 0.063393
+              "mean_ms": 0.000796,
+              "p50_ms": 0.000411,
+              "p95_ms": 0.00549,
+              "p99_ms": 0.008356,
+              "max_ms": 0.008356,
+              "total_ms": 0.079679
             },
             "commit_to_broadcast": {
               "n": 100,
-              "mean_ms": 0.000329,
-              "p50_ms": 0.000211,
-              "p95_ms": 0.001273,
-              "p99_ms": 0.002534,
-              "max_ms": 0.002534,
-              "total_ms": 0.032908
+              "mean_ms": 0.000369,
+              "p50_ms": 0.000221,
+              "p95_ms": 0.001964,
+              "p99_ms": 0.002845,
+              "max_ms": 0.002845,
+              "total_ms": 0.036914
             },
             "broadcast_wait": {
               "n": 100,
-              "mean_ms": 1.751526,
-              "p50_ms": 1.665775,
-              "p95_ms": 3.96159,
-              "p99_ms": 6.171803,
-              "max_ms": 6.171803,
-              "total_ms": 175.152612
+              "mean_ms": 1.743154,
+              "p50_ms": 1.539648,
+              "p95_ms": 3.948609,
+              "p99_ms": 4.294432,
+              "max_ms": 4.294432,
+              "total_ms": 174.315493
             },
             "broadcast_dispatch": {
               "n": 100,
-              "mean_ms": 0.050764,
-              "p50_ms": 0.03174,
-              "p95_ms": 0.065364,
-              "p99_ms": 0.862018,
-              "max_ms": 0.862018,
-              "total_ms": 5.076414
+              "mean_ms": 0.056966,
+              "p50_ms": 0.035477,
+              "p95_ms": 0.076304,
+              "p99_ms": 0.9741,
+              "max_ms": 0.9741,
+              "total_ms": 5.696654
             },
             "encoding": {
               "n": 100,
-              "mean_ms": 0.000673,
-              "p50_ms": 0.000581,
-              "p95_ms": 0.001663,
-              "p99_ms": 0.002865,
-              "max_ms": 0.002865,
-              "total_ms": 0.067372
+              "mean_ms": 0.000801,
+              "p50_ms": 0.000651,
+              "p95_ms": 0.001924,
+              "p99_ms": 0.002595,
+              "max_ms": 0.002595,
+              "total_ms": 0.080133
             },
             "outbox_enqueue": {
               "n": 100,
-              "mean_ms": 0.055181,
-              "p50_ms": 0.020048,
-              "p95_ms": 0.085632,
-              "p99_ms": 1.816038,
-              "max_ms": 1.816038,
-              "total_ms": 5.518139
+              "mean_ms": 0.039521,
+              "p50_ms": 0.022061,
+              "p95_ms": 0.108866,
+              "p99_ms": 0.735089,
+              "max_ms": 0.735089,
+              "total_ms": 3.952166
             },
             "websocket_write": {
-              "n": 1376,
-              "mean_ms": 0.015084,
-              "p50_ms": 0.013045,
-              "p95_ms": 0.023274,
-              "p99_ms": 0.036599,
-              "max_ms": 0.51402,
-              "total_ms": 20.756148
+              "n": 1695,
+              "mean_ms": 0.01553,
+              "p50_ms": 0.013315,
+              "p95_ms": 0.022131,
+              "p99_ms": 0.046287,
+              "max_ms": 0.782519,
+              "total_ms": 26.324059
             },
             "end_to_end_broadcast": {
               "n": 100,
-              "mean_ms": 12.797861,
-              "p50_ms": 11.087433,
-              "p95_ms": 17.322265,
-              "p99_ms": 17.375977,
-              "max_ms": 17.375977,
-              "total_ms": 1279.786187
+              "mean_ms": 11.657922,
+              "p50_ms": 11.691094,
+              "p95_ms": 14.119751,
+              "p99_ms": 14.209501,
+              "max_ms": 14.209501,
+              "total_ms": 1165.792202
             }
           },
           "counters": {
             "events_broadcast": 100,
             "recipients": 32000,
-            "outbox_enqueues": 2864,
+            "outbox_enqueues": 3183,
             "outbox_dropped": 0,
             "send_failures": 0,
             "outbox_full_unregisters": 0,
@@ -1643,16 +1643,16 @@
             "max_outbox_depth": 1,
             "max_recipients": 320
           },
-          "end_to_end_p95_ms": 17.322265,
+          "end_to_end_p95_ms": 14.119751,
           "worker": {
             "queue_depth": 0,
             "queue_capacity": 4096,
             "requests_processed": 1488,
             "requests_rejected": 0,
-            "avg_queue_wait_ms": 13.269481,
-            "max_queue_wait_ms": 51.740779,
-            "avg_processing_ms": 0.001829,
-            "max_processing_ms": 1.087093
+            "avg_queue_wait_ms": 14.416006,
+            "max_queue_wait_ms": 55.91969,
+            "avg_processing_ms": 0.006449,
+            "max_processing_ms": 2.420352
           },
           "connections": {
             "clients": 324,
@@ -1663,7 +1663,7 @@
           }
         },
         "metrics_error": null,
-        "post_exit_measured_at": "2026-11-22T00:23:52.178Z"
+        "post_exit_measured_at": "2026-11-23T00:07:23.494Z"
       }
     },
     {
@@ -1673,9 +1673,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_400.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-400\n\nGenerated: 2026-11-22T00:23:53.937Z\n\n## Load\n\n- 400 active clients, 4 silent clients, high subscription distribution\n- 2516 requests: 404 connections, 404 subscriptions, 1608 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 481 ms, throughput 5227 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 20.8 ms, p95 96.1 ms, p99 102.4 ms, max 103.5 ms\n- Move RTT: p50 18.0 ms, p95 33.2 ms, p99 46.4 ms, max 46.4 ms\n- Client event delivery lag: p50 28.4 ms, p95 46.7 ms, p99 50.6 ms, max 56.6 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.003 ms, p99 0.528 ms, max 0.528 ms (n=100)\n- worker queue wait: p50 0.278 ms, p95 1.068 ms, p99 1.128 ms, max 1.128 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.002 ms, p99 0.008 ms, max 0.008 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.004 ms, max 0.004 ms (n=100)\n- broadcast wait: p50 1.478 ms, p95 5.281 ms, p99 5.653 ms, max 5.653 ms (n=100)\n- recipient lookup: p50 0.038 ms, p95 0.081 ms, p99 0.919 ms, max 0.919 ms (n=100)\n- event encoding: p50 0.001 ms, p95 0.002 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- outbox enqueue: p50 0.028 ms, p95 0.165 ms, p99 1.223 ms, max 1.223 ms (n=100)\n- WebSocket write: p50 0.013 ms, p95 0.020 ms, p99 0.032 ms, max 0.530 ms (n=1696)\n- end-to-end broadcast: p50 14.313 ms, p95 14.881 ms, p99 15.193 ms, max 15.193 ms (n=100)\n\n- Broadcasts: 100 events, 400.0 recipients/event average, 400 max\n- Outbox: 0 max depth, 256 capacity, 3504 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 1600/1600 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 400/400 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 514 MiB baseline, 574 MiB peak, 575 MiB after close requests\n- fds: 8 baseline, 412 with clients, 412 peak, 413 after close requests\n- CPU: 41.6% average, 96.8% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_400_results.json, /home/james/Work/sim-map/bench/scale_400_results.md and /home/james/Work/sim-map/bench/scale_400_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-400\n\nGenerated: 2026-11-23T00:07:25.329Z\n\n## Load\n\n- 400 active clients, 4 silent clients, high subscription distribution\n- 2516 requests: 404 connections, 404 subscriptions, 1608 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 546 ms, throughput 4610 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 25.1 ms, p95 122.3 ms, p99 125.9 ms, max 126.9 ms\n- Move RTT: p50 21.4 ms, p95 41.4 ms, p99 61.2 ms, max 61.2 ms\n- Client event delivery lag: p50 29.1 ms, p95 52.0 ms, p99 61.9 ms, max 69.4 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- worker queue wait: p50 0.157 ms, p95 0.502 ms, p99 0.550 ms, max 0.550 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.002 ms, p99 0.009 ms, max 0.009 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.004 ms, max 0.004 ms (n=100)\n- broadcast wait: p50 2.089 ms, p95 5.000 ms, p99 6.690 ms, max 6.690 ms (n=100)\n- recipient lookup: p50 0.036 ms, p95 0.085 ms, p99 0.880 ms, max 0.880 ms (n=100)\n- event encoding: p50 0.001 ms, p95 0.002 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- outbox enqueue: p50 0.030 ms, p95 0.128 ms, p99 1.200 ms, max 1.200 ms (n=100)\n- WebSocket write: p50 0.014 ms, p95 0.021 ms, p99 0.040 ms, max 0.730 ms (n=1696)\n- end-to-end broadcast: p50 12.474 ms, p95 15.305 ms, p99 15.372 ms, max 15.372 ms (n=100)\n\n- Broadcasts: 100 events, 400.0 recipients/event average, 400 max\n- Outbox: 0 max depth, 256 capacity, 3504 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 1600/1600 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 400/400 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 518 MiB baseline, 579 MiB peak, 580 MiB after close requests\n- fds: 8 baseline, 412 with clients, 412 peak, 413 after close requests\n- CPU: 40.3% average, 94.3% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_400_results.json, /home/james/Work/sim-map/bench/scale_400_results.md and /home/james/Work/sim-map/bench/scale_400_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:23:53.937Z",
+        "generated": "2026-11-23T00:07:25.329Z",
         "label": "clients-400",
         "profile": {
           "clients": 400,
@@ -1694,39 +1694,39 @@
           "moves": 100,
           "requests": 2516
         },
-        "duration_ms": 481.321297,
-        "throughput_requests_per_second": 5227.277528922639,
+        "duration_ms": 545.801866,
+        "throughput_requests_per_second": 4609.731400222072,
         "snapshot_rtt": {
           "n": 1600,
-          "mean_ms": 36.666895574374955,
-          "p50_ms": 20.819998999999996,
-          "p95_ms": 96.14759199999997,
-          "p99_ms": 102.40136000000001,
-          "max_ms": 103.52150499999999
+          "mean_ms": 46.0015314343751,
+          "p50_ms": 25.126732999999945,
+          "p95_ms": 122.28209499999997,
+          "p99_ms": 125.93216100000001,
+          "max_ms": 126.85736799999995
         },
         "silent_snapshot_rtt": {
           "n": 8,
-          "mean_ms": 0.28771950000000857,
-          "p50_ms": 0.28872499999999945,
-          "p95_ms": 0.3831639999999652,
-          "p99_ms": 0.3831639999999652,
-          "max_ms": 0.3831639999999652
+          "mean_ms": 0.6524373750000052,
+          "p50_ms": 0.6216039999999339,
+          "p95_ms": 1.1946970000000192,
+          "p99_ms": 1.1946970000000192,
+          "max_ms": 1.1946970000000192
         },
         "move_rtt": {
           "n": 100,
-          "mean_ms": 16.390949460000012,
-          "p50_ms": 18.011066000000028,
-          "p95_ms": 33.21333900000002,
-          "p99_ms": 46.44945999999993,
-          "max_ms": 46.44945999999993
+          "mean_ms": 22.033775089999995,
+          "p50_ms": 21.407517999999982,
+          "p95_ms": 41.4073370000001,
+          "p99_ms": 61.20773799999995,
+          "max_ms": 61.20773799999995
         },
         "event_delivery_lag": {
           "n": 40000,
-          "mean_ms": 27.672971722524952,
-          "p50_ms": 28.398668000000043,
-          "p95_ms": 46.73701200000005,
-          "p99_ms": 50.61809100000005,
-          "max_ms": 56.603951999999936
+          "mean_ms": 29.108788690925355,
+          "p50_ms": 29.087485000000015,
+          "p95_ms": 52.03877899999998,
+          "p99_ms": 61.94149499999992,
+          "max_ms": 69.40013299999998
         },
         "accuracy": {
           "snapshots_ok": 1600,
@@ -1760,115 +1760,115 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 526116,
-          "rss_before_kb": 543708,
-          "rss_peak_kb": 587916,
+          "rss_baseline_kb": 530028,
+          "rss_before_kb": 547880,
+          "rss_peak_kb": 592384,
           "fds_baseline": 8,
           "fds_before": 412,
           "fds_peak": 412,
-          "cpu_average_percent": 41.5522856035186,
-          "cpu_peak_percent": 96.84228961010157,
+          "cpu_average_percent": 40.30766725154435,
+          "cpu_peak_percent": 94.29973741106524,
           "cpu_peak_window_ms": 100,
           "fds_after_close_requests": 413,
-          "rss_after_close_requests_kb": 588744,
+          "rss_after_close_requests_kb": 593460,
           "cpu_idle_ticks_per_second": 0,
-          "rss_after_exit_kb": 588752,
+          "rss_after_exit_kb": 593468,
           "fds_after_exit": 6,
           "cpu_idle_after_exit_ticks_per_second": 0
         },
         "server_metrics": {
-          "started_ns": 137914614173235,
-          "uptime_ms": 1381.320374,
+          "started_ns": 223325924585060,
+          "uptime_ms": 1462.831185,
           "stages": {
             "receive_to_submit": {
               "n": 100,
-              "mean_ms": 0.005676,
-              "p50_ms": 0.00024,
-              "p95_ms": 0.002695,
-              "p99_ms": 0.528338,
-              "max_ms": 0.528338,
-              "total_ms": 0.567621
+              "mean_ms": 0.00038,
+              "p50_ms": 0.0002,
+              "p95_ms": 0.000541,
+              "p99_ms": 0.004569,
+              "max_ms": 0.004569,
+              "total_ms": 0.038034
             },
             "worker_queue_wait": {
               "n": 100,
-              "mean_ms": 0.393087,
-              "p50_ms": 0.278226,
-              "p95_ms": 1.067736,
-              "p99_ms": 1.127609,
-              "max_ms": 1.127609,
-              "total_ms": 39.308721
+              "mean_ms": 0.193118,
+              "p50_ms": 0.157127,
+              "p95_ms": 0.502149,
+              "p99_ms": 0.550119,
+              "max_ms": 0.550119,
+              "total_ms": 19.311859
             },
             "move_processing": {
               "n": 100,
-              "mean_ms": 0.000724,
-              "p50_ms": 0.000411,
-              "p95_ms": 0.002074,
-              "p99_ms": 0.008116,
-              "max_ms": 0.008116,
-              "total_ms": 0.072489
+              "mean_ms": 0.000683,
+              "p50_ms": 0.000381,
+              "p95_ms": 0.001903,
+              "p99_ms": 0.009087,
+              "max_ms": 0.009087,
+              "total_ms": 0.068347
             },
             "commit_to_broadcast": {
               "n": 100,
-              "mean_ms": 0.000362,
-              "p50_ms": 0.00022,
-              "p95_ms": 0.001062,
-              "p99_ms": 0.004047,
-              "max_ms": 0.004047,
-              "total_ms": 0.036254
+              "mean_ms": 0.000352,
+              "p50_ms": 0.000211,
+              "p95_ms": 0.000812,
+              "p99_ms": 0.003557,
+              "max_ms": 0.003557,
+              "total_ms": 0.035271
             },
             "broadcast_wait": {
               "n": 100,
-              "mean_ms": 2.019029,
-              "p50_ms": 1.478312,
-              "p95_ms": 5.281412,
-              "p99_ms": 5.653495,
-              "max_ms": 5.653495,
-              "total_ms": 201.902987
+              "mean_ms": 2.263919,
+              "p50_ms": 2.089487,
+              "p95_ms": 5.000015,
+              "p99_ms": 6.689847,
+              "max_ms": 6.689847,
+              "total_ms": 226.391915
             },
             "broadcast_dispatch": {
               "n": 100,
-              "mean_ms": 0.050122,
-              "p50_ms": 0.038313,
-              "p95_ms": 0.080542,
-              "p99_ms": 0.919135,
-              "max_ms": 0.919135,
-              "total_ms": 5.012251
+              "mean_ms": 0.051417,
+              "p50_ms": 0.036158,
+              "p95_ms": 0.085481,
+              "p99_ms": 0.879872,
+              "max_ms": 0.879872,
+              "total_ms": 5.141741
             },
             "encoding": {
               "n": 100,
-              "mean_ms": 0.000665,
-              "p50_ms": 0.000581,
-              "p95_ms": 0.001703,
-              "p99_ms": 0.002585,
-              "max_ms": 0.002585,
-              "total_ms": 0.066596
+              "mean_ms": 0.00085,
+              "p50_ms": 0.000701,
+              "p95_ms": 0.001683,
+              "p99_ms": 0.004699,
+              "max_ms": 0.004699,
+              "total_ms": 0.085013
             },
             "outbox_enqueue": {
               "n": 100,
-              "mean_ms": 0.051412,
-              "p50_ms": 0.028243,
-              "p95_ms": 0.165462,
-              "p99_ms": 1.222989,
-              "max_ms": 1.222989,
-              "total_ms": 5.141286
+              "mean_ms": 0.049412,
+              "p50_ms": 0.029817,
+              "p95_ms": 0.128052,
+              "p99_ms": 1.200167,
+              "max_ms": 1.200167,
+              "total_ms": 4.94127
             },
             "websocket_write": {
               "n": 1696,
-              "mean_ms": 0.014287,
-              "p50_ms": 0.012664,
-              "p95_ms": 0.019727,
-              "p99_ms": 0.03215,
-              "max_ms": 0.52976,
-              "total_ms": 24.231856
+              "mean_ms": 0.015182,
+              "p50_ms": 0.013636,
+              "p95_ms": 0.02108,
+              "p99_ms": 0.039805,
+              "max_ms": 0.729678,
+              "total_ms": 25.7503
             },
             "end_to_end_broadcast": {
               "n": 100,
-              "mean_ms": 13.228938,
-              "p50_ms": 14.312913,
-              "p95_ms": 14.881407,
-              "p99_ms": 15.192945,
-              "max_ms": 15.192945,
-              "total_ms": 1322.893858
+              "mean_ms": 13.329893,
+              "p50_ms": 12.473773,
+              "p95_ms": 15.30504,
+              "p99_ms": 15.372478,
+              "max_ms": 15.372478,
+              "total_ms": 1332.989384
             }
           },
           "counters": {
@@ -1882,27 +1882,27 @@
             "max_outbox_depth": 1,
             "max_recipients": 400
           },
-          "end_to_end_p95_ms": 14.881407,
+          "end_to_end_p95_ms": 15.30504,
           "worker": {
             "queue_depth": 0,
             "queue_capacity": 4096,
             "requests_processed": 1808,
             "requests_rejected": 0,
-            "avg_queue_wait_ms": 17.488189,
-            "max_queue_wait_ms": 54.250679,
-            "avg_processing_ms": 0.00161,
-            "max_processing_ms": 1.728293
+            "avg_queue_wait_ms": 23.770533,
+            "max_queue_wait_ms": 91.308058,
+            "avg_processing_ms": 0.002806,
+            "max_processing_ms": 1.500013
           },
           "connections": {
             "clients": 404,
-            "subscriptions": 251400,
+            "subscriptions": 252500,
             "max_outbox_depth": 0,
             "outbox_capacity": 256,
             "event_batching": true
           }
         },
         "metrics_error": null,
-        "post_exit_measured_at": "2026-11-22T00:23:59.510Z"
+        "post_exit_measured_at": "2026-11-23T00:07:30.904Z"
       }
     },
     {
@@ -1912,9 +1912,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_600.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-600\n\nGenerated: 2026-11-22T00:24:01.524Z\n\n## Load\n\n- 600 active clients, 4 silent clients, high subscription distribution\n- 3716 requests: 604 connections, 604 subscriptions, 2408 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 636 ms, throughput 5839 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 36.0 ms, p95 167.5 ms, p99 177.0 ms, max 178.4 ms\n- Move RTT: p50 38.6 ms, p95 45.3 ms, p99 62.7 ms, max 62.7 ms\n- Client event delivery lag: p50 54.0 ms, p95 72.1 ms, p99 77.0 ms, max 107.0 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- worker queue wait: p50 0.220 ms, p95 0.425 ms, p99 0.470 ms, max 0.470 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.001 ms, p99 0.009 ms, max 0.009 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- broadcast wait: p50 3.427 ms, p95 10.494 ms, p99 11.129 ms, max 11.129 ms (n=100)\n- recipient lookup: p50 0.078 ms, p95 0.147 ms, p99 1.884 ms, max 1.884 ms (n=100)\n- event encoding: p50 0.000 ms, p95 0.002 ms, p99 0.002 ms, max 0.002 ms (n=100)\n- outbox enqueue: p50 0.046 ms, p95 0.285 ms, p99 2.719 ms, max 2.719 ms (n=100)\n- WebSocket write: p50 0.015 ms, p95 0.031 ms, p99 0.058 ms, max 0.911 ms (n=1897)\n- end-to-end broadcast: p50 31.619 ms, p95 35.768 ms, p99 36.269 ms, max 36.269 ms (n=100)\n\n- Broadcasts: 100 events, 600.0 recipients/event average, 600 max\n- Outbox: 0 max depth, 256 capacity, 4505 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 2400/2400 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 600/600 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 514 MiB baseline, 608 MiB peak, 609 MiB after close requests\n- fds: 8 baseline, 612 with clients, 612 peak, 613 after close requests\n- CPU: 53.4% average, 98.3% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_600_results.json, /home/james/Work/sim-map/bench/scale_600_results.md and /home/james/Work/sim-map/bench/scale_600_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-600\n\nGenerated: 2026-11-23T00:07:32.937Z\n\n## Load\n\n- 600 active clients, 4 silent clients, high subscription distribution\n- 3716 requests: 604 connections, 604 subscriptions, 2408 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 670 ms, throughput 5549 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 33.1 ms, p95 176.3 ms, p99 186.7 ms, max 187.6 ms\n- Move RTT: p50 38.1 ms, p95 52.0 ms, p99 62.1 ms, max 62.1 ms\n- Client event delivery lag: p50 51.1 ms, p95 75.3 ms, p99 80.6 ms, max 106.8 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.002 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- worker queue wait: p50 0.257 ms, p95 1.461 ms, p99 1.505 ms, max 1.505 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.006 ms, p99 1.237 ms, max 1.237 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.002 ms, p99 0.006 ms, max 0.006 ms (n=100)\n- broadcast wait: p50 2.938 ms, p95 13.046 ms, p99 14.305 ms, max 14.305 ms (n=100)\n- recipient lookup: p50 0.075 ms, p95 0.182 ms, p99 2.648 ms, max 2.648 ms (n=100)\n- event encoding: p50 0.001 ms, p95 0.002 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- outbox enqueue: p50 0.048 ms, p95 0.304 ms, p99 4.458 ms, max 4.458 ms (n=100)\n- WebSocket write: p50 0.014 ms, p95 0.023 ms, p99 0.041 ms, max 1.278 ms (n=2496)\n- end-to-end broadcast: p50 30.170 ms, p95 31.559 ms, p99 32.109 ms, max 32.109 ms (n=100)\n\n- Broadcasts: 100 events, 600.0 recipients/event average, 600 max\n- Outbox: 0 max depth, 256 capacity, 5104 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 2400/2400 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 600/600 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 518 MiB baseline, 615 MiB peak, 615 MiB after close requests\n- fds: 8 baseline, 612 with clients, 612 peak, 613 after close requests\n- CPU: 50.8% average, 99.4% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_600_results.json, /home/james/Work/sim-map/bench/scale_600_results.md and /home/james/Work/sim-map/bench/scale_600_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:24:01.524Z",
+        "generated": "2026-11-23T00:07:32.937Z",
         "label": "clients-600",
         "profile": {
           "clients": 600,
@@ -1933,39 +1933,39 @@
           "moves": 100,
           "requests": 3716
         },
-        "duration_ms": 636.4309800000001,
-        "throughput_requests_per_second": 5838.810675118297,
+        "duration_ms": 669.6735039999999,
+        "throughput_requests_per_second": 5548.9727125294785,
         "snapshot_rtt": {
           "n": 2400,
-          "mean_ms": 62.03402172499991,
-          "p50_ms": 36.01897599999995,
-          "p95_ms": 167.50118499999996,
-          "p99_ms": 176.99567100000002,
-          "max_ms": 178.416023
+          "mean_ms": 63.87919829916669,
+          "p50_ms": 33.12357900000006,
+          "p95_ms": 176.321283,
+          "p99_ms": 186.70540900000003,
+          "max_ms": 187.623172
         },
         "silent_snapshot_rtt": {
           "n": 8,
-          "mean_ms": 0.14955712499998697,
-          "p50_ms": 0.1375189999999975,
-          "p95_ms": 0.23791900000003352,
-          "p99_ms": 0.23791900000003352,
-          "max_ms": 0.23791900000003352
+          "mean_ms": 0.1483267499999954,
+          "p50_ms": 0.14322100000003957,
+          "p95_ms": 0.22703899999999066,
+          "p99_ms": 0.22703899999999066,
+          "max_ms": 0.22703899999999066
         },
         "move_rtt": {
           "n": 100,
-          "mean_ms": 28.889716899999982,
-          "p50_ms": 38.624225000000024,
-          "p95_ms": 45.34166899999991,
-          "p99_ms": 62.73368599999992,
-          "max_ms": 62.73368599999992
+          "mean_ms": 30.09242626000001,
+          "p50_ms": 38.09685300000001,
+          "p95_ms": 51.9632170000001,
+          "p99_ms": 62.09769000000006,
+          "max_ms": 62.09769000000006
         },
         "event_delivery_lag": {
           "n": 60000,
-          "mean_ms": 51.746945515350035,
-          "p50_ms": 53.99859399999991,
-          "p95_ms": 72.13394400000004,
-          "p99_ms": 76.991986,
-          "max_ms": 107.02027199999998
+          "mean_ms": 49.44531631983364,
+          "p50_ms": 51.10844199999997,
+          "p95_ms": 75.31378499999994,
+          "p99_ms": 80.62951499999997,
+          "max_ms": 106.7792310000001
         },
         "accuracy": {
           "snapshots_ok": 2400,
@@ -1999,121 +1999,121 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 526056,
-          "rss_before_kb": 552864,
-          "rss_peak_kb": 622436,
+          "rss_baseline_kb": 529996,
+          "rss_before_kb": 556800,
+          "rss_peak_kb": 629756,
           "fds_baseline": 8,
           "fds_before": 612,
           "fds_peak": 612,
-          "cpu_average_percent": 53.422917910124355,
-          "cpu_peak_percent": 98.25852196406638,
+          "cpu_average_percent": 50.77100974865508,
+          "cpu_peak_percent": 99.42299665047908,
           "cpu_peak_window_ms": 100,
           "fds_after_close_requests": 613,
-          "rss_after_close_requests_kb": 623676,
+          "rss_after_close_requests_kb": 630036,
           "cpu_idle_ticks_per_second": 0,
-          "rss_after_exit_kb": 623772,
+          "rss_after_exit_kb": 630052,
           "fds_after_exit": 6,
           "cpu_idle_after_exit_ticks_per_second": 0
         },
         "server_metrics": {
-          "started_ns": 137921950174195,
-          "uptime_ms": 1625.495247,
+          "started_ns": 223333337586863,
+          "uptime_ms": 1655.500058,
           "stages": {
             "receive_to_submit": {
               "n": 100,
-              "mean_ms": 0.000358,
-              "p50_ms": 0.00024,
-              "p95_ms": 0.000501,
-              "p99_ms": 0.00519,
-              "max_ms": 0.00519,
-              "total_ms": 0.035873
+              "mean_ms": 0.000395,
+              "p50_ms": 0.00025,
+              "p95_ms": 0.001843,
+              "p99_ms": 0.004599,
+              "max_ms": 0.004599,
+              "total_ms": 0.039596
             },
             "worker_queue_wait": {
               "n": 100,
-              "mean_ms": 0.219709,
-              "p50_ms": 0.219514,
-              "p95_ms": 0.425344,
-              "p99_ms": 0.470158,
-              "max_ms": 0.470158,
-              "total_ms": 21.970905
+              "mean_ms": 0.517029,
+              "p50_ms": 0.257326,
+              "p95_ms": 1.4611,
+              "p99_ms": 1.505013,
+              "max_ms": 1.505013,
+              "total_ms": 51.702948
             },
             "move_processing": {
               "n": 100,
-              "mean_ms": 0.000667,
-              "p50_ms": 0.000411,
-              "p95_ms": 0.000922,
-              "p99_ms": 0.008887,
-              "max_ms": 0.008887,
-              "total_ms": 0.066777
+              "mean_ms": 0.013176,
+              "p50_ms": 0.000391,
+              "p95_ms": 0.006302,
+              "p99_ms": 1.236847,
+              "max_ms": 1.236847,
+              "total_ms": 1.317662
             },
             "commit_to_broadcast": {
               "n": 100,
-              "mean_ms": 0.000318,
-              "p50_ms": 0.00021,
-              "p95_ms": 0.000661,
-              "p99_ms": 0.003426,
-              "max_ms": 0.003426,
-              "total_ms": 0.031886
+              "mean_ms": 0.000388,
+              "p50_ms": 0.00022,
+              "p95_ms": 0.001824,
+              "p99_ms": 0.005881,
+              "max_ms": 0.005881,
+              "total_ms": 0.038811
             },
             "broadcast_wait": {
               "n": 100,
-              "mean_ms": 4.499272,
-              "p50_ms": 3.427201,
-              "p95_ms": 10.493643,
-              "p99_ms": 11.129323,
-              "max_ms": 11.129323,
-              "total_ms": 449.927263
+              "mean_ms": 4.036448,
+              "p50_ms": 2.938029,
+              "p95_ms": 13.045983,
+              "p99_ms": 14.304551,
+              "max_ms": 14.304551,
+              "total_ms": 403.644877
             },
             "broadcast_dispatch": {
               "n": 100,
-              "mean_ms": 0.121715,
-              "p50_ms": 0.077716,
-              "p95_ms": 0.147148,
-              "p99_ms": 1.883967,
-              "max_ms": 1.883967,
-              "total_ms": 12.171547
+              "mean_ms": 0.128817,
+              "p50_ms": 0.075472,
+              "p95_ms": 0.182214,
+              "p99_ms": 2.648132,
+              "max_ms": 2.648132,
+              "total_ms": 12.88175
             },
             "encoding": {
               "n": 100,
-              "mean_ms": 0.000565,
-              "p50_ms": 0.000461,
-              "p95_ms": 0.001523,
-              "p99_ms": 0.001984,
-              "max_ms": 0.001984,
-              "total_ms": 0.056516
+              "mean_ms": 0.000668,
+              "p50_ms": 0.000511,
+              "p95_ms": 0.001863,
+              "p99_ms": 0.003307,
+              "max_ms": 0.003307,
+              "total_ms": 0.066823
             },
             "outbox_enqueue": {
               "n": 100,
-              "mean_ms": 0.11586,
-              "p50_ms": 0.046337,
-              "p95_ms": 0.285168,
-              "p99_ms": 2.719294,
-              "max_ms": 2.719294,
-              "total_ms": 11.586025
+              "mean_ms": 0.140541,
+              "p50_ms": 0.048242,
+              "p95_ms": 0.303824,
+              "p99_ms": 4.45751,
+              "max_ms": 4.45751,
+              "total_ms": 14.054171
             },
             "websocket_write": {
-              "n": 1897,
-              "mean_ms": 0.018794,
-              "p50_ms": 0.015308,
-              "p95_ms": 0.031009,
-              "p99_ms": 0.057599,
-              "max_ms": 0.91131,
-              "total_ms": 35.654064
+              "n": 2496,
+              "mean_ms": 0.016579,
+              "p50_ms": 0.014317,
+              "p95_ms": 0.023123,
+              "p99_ms": 0.040807,
+              "max_ms": 1.278065,
+              "total_ms": 41.381466
             },
             "end_to_end_broadcast": {
               "n": 100,
-              "mean_ms": 30.591026,
-              "p50_ms": 31.619129,
-              "p95_ms": 35.768233,
-              "p99_ms": 36.269409,
-              "max_ms": 36.269409,
-              "total_ms": 3059.102656
+              "mean_ms": 26.795178,
+              "p50_ms": 30.170059,
+              "p95_ms": 31.559104,
+              "p99_ms": 32.109363,
+              "max_ms": 32.109363,
+              "total_ms": 2679.517884
             }
           },
           "counters": {
             "events_broadcast": 100,
             "recipients": 60000,
-            "outbox_enqueues": 4505,
+            "outbox_enqueues": 5104,
             "outbox_dropped": 0,
             "send_failures": 0,
             "outbox_full_unregisters": 0,
@@ -2121,16 +2121,16 @@
             "max_outbox_depth": 1,
             "max_recipients": 600
           },
-          "end_to_end_p95_ms": 35.768233,
+          "end_to_end_p95_ms": 31.559104,
           "worker": {
             "queue_depth": 0,
             "queue_capacity": 4096,
             "requests_processed": 2608,
             "requests_rejected": 0,
-            "avg_queue_wait_ms": 34.451267,
-            "max_queue_wait_ms": 128.89826,
-            "avg_processing_ms": 0.00349,
-            "max_processing_ms": 1.914605
+            "avg_queue_wait_ms": 35.380077,
+            "max_queue_wait_ms": 140.207626,
+            "avg_processing_ms": 0.003038,
+            "max_processing_ms": 2.092473
           },
           "connections": {
             "clients": 604,
@@ -2141,7 +2141,7 @@
           }
         },
         "metrics_error": null,
-        "post_exit_measured_at": "2026-11-22T00:24:07.124Z"
+        "post_exit_measured_at": "2026-11-23T00:07:38.540Z"
       }
     },
     {
@@ -2151,9 +2151,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_640.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-640\n\nGenerated: 2026-11-22T00:24:09.220Z\n\n## Load\n\n- 640 active clients, 4 silent clients, high subscription distribution\n- 3956 requests: 644 connections, 644 subscriptions, 2568 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 698 ms, throughput 5669 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 33.8 ms, p95 194.7 ms, p99 202.3 ms, max 203.9 ms\n- Move RTT: p50 33.7 ms, p95 73.8 ms, p99 77.0 ms, max 77.0 ms\n- Client event delivery lag: p50 54.4 ms, p95 79.5 ms, p99 84.0 ms, max 100.4 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.003 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- worker queue wait: p50 0.170 ms, p95 0.413 ms, p99 0.427 ms, max 0.427 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.006 ms, p99 0.008 ms, max 0.008 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.002 ms, p99 0.024 ms, max 0.024 ms (n=100)\n- broadcast wait: p50 3.402 ms, p95 11.952 ms, p99 12.488 ms, max 12.488 ms (n=100)\n- recipient lookup: p50 0.077 ms, p95 0.163 ms, p99 1.354 ms, max 1.354 ms (n=100)\n- event encoding: p50 0.001 ms, p95 0.002 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- outbox enqueue: p50 0.050 ms, p95 0.766 ms, p99 3.497 ms, max 3.497 ms (n=100)\n- WebSocket write: p50 0.014 ms, p95 0.029 ms, p99 0.062 ms, max 1.221 ms (n=3295)\n- end-to-end broadcast: p50 25.965 ms, p95 30.437 ms, p99 32.171 ms, max 32.171 ms (n=100)\n\n- Broadcasts: 100 events, 640.0 recipients/event average, 640 max\n- Outbox: 0 max depth, 256 capacity, 6063 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 2560/2560 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 640/640 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 514 MiB baseline, 619 MiB peak, 619 MiB after close requests\n- fds: 8 baseline, 652 with clients, 652 peak, 653 after close requests\n- CPU: 53.0% average, 106.9% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_640_results.json, /home/james/Work/sim-map/bench/scale_640_results.md and /home/james/Work/sim-map/bench/scale_640_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-640\n\nGenerated: 2026-11-23T00:07:40.631Z\n\n## Load\n\n- 640 active clients, 4 silent clients, high subscription distribution\n- 3956 requests: 644 connections, 644 subscriptions, 2568 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 703 ms, throughput 5629 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 34.3 ms, p95 202.1 ms, p99 209.2 ms, max 210.8 ms\n- Move RTT: p50 28.8 ms, p95 61.6 ms, p99 67.6 ms, max 67.6 ms\n- Client event delivery lag: p50 55.1 ms, p95 85.1 ms, p99 98.4 ms, max 105.6 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.004 ms, max 0.004 ms (n=100)\n- worker queue wait: p50 0.196 ms, p95 2.721 ms, p99 2.761 ms, max 2.761 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.004 ms, p99 0.007 ms, max 0.007 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.002 ms, p99 0.006 ms, max 0.006 ms (n=100)\n- broadcast wait: p50 3.900 ms, p95 9.366 ms, p99 10.035 ms, max 10.035 ms (n=100)\n- recipient lookup: p50 0.082 ms, p95 0.185 ms, p99 1.734 ms, max 1.734 ms (n=100)\n- event encoding: p50 0.001 ms, p95 0.002 ms, p99 0.002 ms, max 0.002 ms (n=100)\n- outbox enqueue: p50 0.055 ms, p95 0.287 ms, p99 1.764 ms, max 1.764 ms (n=100)\n- WebSocket write: p50 0.014 ms, p95 0.021 ms, p99 0.043 ms, max 1.275 ms (n=2656)\n- end-to-end broadcast: p50 25.860 ms, p95 28.341 ms, p99 28.947 ms, max 28.947 ms (n=100)\n\n- Broadcasts: 100 events, 640.0 recipients/event average, 640 max\n- Outbox: 0 max depth, 256 capacity, 5424 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 2560/2560 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 640/640 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 517 MiB baseline, 620 MiB peak, 621 MiB after close requests\n- fds: 8 baseline, 652 with clients, 652 peak, 653 after close requests\n- CPU: 52.6% average, 106.6% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_640_results.json, /home/james/Work/sim-map/bench/scale_640_results.md and /home/james/Work/sim-map/bench/scale_640_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:24:09.220Z",
+        "generated": "2026-11-23T00:07:40.631Z",
         "label": "clients-640",
         "profile": {
           "clients": 640,
@@ -2172,39 +2172,39 @@
           "moves": 100,
           "requests": 3956
         },
-        "duration_ms": 697.810466,
-        "throughput_requests_per_second": 5669.161173056982,
+        "duration_ms": 702.7967130000001,
+        "throughput_requests_per_second": 5628.939246333669,
         "snapshot_rtt": {
           "n": 2560,
-          "mean_ms": 68.87040232226556,
-          "p50_ms": 33.75471200000004,
-          "p95_ms": 194.69836700000002,
-          "p99_ms": 202.30052100000006,
-          "max_ms": 203.85454499999997
+          "mean_ms": 72.04430050703121,
+          "p50_ms": 34.284793000000036,
+          "p95_ms": 202.13024500000006,
+          "p99_ms": 209.21547900000002,
+          "max_ms": 210.79153599999995
         },
         "silent_snapshot_rtt": {
           "n": 8,
-          "mean_ms": 0.5083637499999867,
-          "p50_ms": 0.8943590000000086,
-          "p95_ms": 0.9999679999999671,
-          "p99_ms": 0.9999679999999671,
-          "max_ms": 0.9999679999999671
+          "mean_ms": 0.20448737500002778,
+          "p50_ms": 0.22832099999993716,
+          "p95_ms": 0.3608010000000377,
+          "p99_ms": 0.3608010000000377,
+          "max_ms": 0.3608010000000377
         },
         "move_rtt": {
           "n": 100,
-          "mean_ms": 34.69682687,
-          "p50_ms": 33.68997999999999,
-          "p95_ms": 73.81682199999989,
-          "p99_ms": 76.96849300000008,
-          "max_ms": 76.96849300000008
+          "mean_ms": 28.244123419999987,
+          "p50_ms": 28.843384000000015,
+          "p95_ms": 61.629596000000106,
+          "p99_ms": 67.605684,
+          "max_ms": 67.605684
         },
         "event_delivery_lag": {
           "n": 64000,
-          "mean_ms": 52.6861783994843,
-          "p50_ms": 54.42169200000001,
-          "p95_ms": 79.47341200000005,
-          "p99_ms": 83.99152300000003,
-          "max_ms": 100.36622
+          "mean_ms": 53.373977786999944,
+          "p50_ms": 55.06303200000002,
+          "p95_ms": 85.14323200000001,
+          "p99_ms": 98.40569400000004,
+          "max_ms": 105.63504999999998
         },
         "accuracy": {
           "snapshots_ok": 2560,
@@ -2238,121 +2238,121 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 526084,
-          "rss_before_kb": 555220,
-          "rss_peak_kb": 633576,
+          "rss_baseline_kb": 529780,
+          "rss_before_kb": 558772,
+          "rss_peak_kb": 635016,
           "fds_baseline": 8,
           "fds_before": 652,
           "fds_peak": 652,
-          "cpu_average_percent": 53.022993782383296,
-          "cpu_peak_percent": 106.87037896731866,
+          "cpu_average_percent": 52.64680286004696,
+          "cpu_peak_percent": 106.64715838064782,
           "cpu_peak_window_ms": 100,
           "fds_after_close_requests": 653,
-          "rss_after_close_requests_kb": 634080,
+          "rss_after_close_requests_kb": 635520,
           "cpu_idle_ticks_per_second": 0,
-          "rss_after_exit_kb": 634136,
+          "rss_after_exit_kb": 635592,
           "fds_after_exit": 6,
           "cpu_idle_after_exit_ticks_per_second": 0
         },
         "server_metrics": {
-          "started_ns": 137929576868689,
-          "uptime_ms": 1698.867256,
+          "started_ns": 223340989678236,
+          "uptime_ms": 1695.806737,
           "stages": {
             "receive_to_submit": {
               "n": 100,
-              "mean_ms": 0.000434,
-              "p50_ms": 0.000241,
-              "p95_ms": 0.003126,
-              "p99_ms": 0.00508,
-              "max_ms": 0.00508,
-              "total_ms": 0.043475
+              "mean_ms": 0.000383,
+              "p50_ms": 0.00022,
+              "p95_ms": 0.001002,
+              "p99_ms": 0.003627,
+              "max_ms": 0.003627,
+              "total_ms": 0.038338
             },
             "worker_queue_wait": {
               "n": 100,
-              "mean_ms": 0.191052,
-              "p50_ms": 0.169721,
-              "p95_ms": 0.412509,
-              "p99_ms": 0.427237,
-              "max_ms": 0.427237,
-              "total_ms": 19.105263
+              "mean_ms": 0.326295,
+              "p50_ms": 0.19598,
+              "p95_ms": 2.72117,
+              "p99_ms": 2.761176,
+              "max_ms": 2.761176,
+              "total_ms": 32.629547
             },
             "move_processing": {
               "n": 100,
-              "mean_ms": 0.00078,
-              "p50_ms": 0.000391,
-              "p95_ms": 0.005902,
-              "p99_ms": 0.008096,
-              "max_ms": 0.008096,
-              "total_ms": 0.078039
+              "mean_ms": 0.000701,
+              "p50_ms": 0.000371,
+              "p95_ms": 0.004468,
+              "p99_ms": 0.007194,
+              "max_ms": 0.007194,
+              "total_ms": 0.070194
             },
             "commit_to_broadcast": {
               "n": 100,
-              "mean_ms": 0.000574,
-              "p50_ms": 0.000211,
-              "p95_ms": 0.002144,
-              "p99_ms": 0.023906,
-              "max_ms": 0.023906,
-              "total_ms": 0.05743
+              "mean_ms": 0.00041,
+              "p50_ms": 0.000221,
+              "p95_ms": 0.002214,
+              "p99_ms": 0.006191,
+              "max_ms": 0.006191,
+              "total_ms": 0.041069
             },
             "broadcast_wait": {
               "n": 100,
-              "mean_ms": 4.19379,
-              "p50_ms": 3.401883,
-              "p95_ms": 11.952337,
-              "p99_ms": 12.487918,
-              "max_ms": 12.487918,
-              "total_ms": 419.379078
+              "mean_ms": 3.997257,
+              "p50_ms": 3.900418,
+              "p95_ms": 9.366162,
+              "p99_ms": 10.034695,
+              "max_ms": 10.034695,
+              "total_ms": 399.725741
             },
             "broadcast_dispatch": {
               "n": 100,
-              "mean_ms": 0.094651,
-              "p50_ms": 0.076745,
-              "p95_ms": 0.162848,
-              "p99_ms": 1.353776,
-              "max_ms": 1.353776,
-              "total_ms": 9.465145
+              "mean_ms": 0.11677,
+              "p50_ms": 0.081685,
+              "p95_ms": 0.18539,
+              "p99_ms": 1.734206,
+              "max_ms": 1.734206,
+              "total_ms": 11.677
             },
             "encoding": {
               "n": 100,
-              "mean_ms": 0.000653,
-              "p50_ms": 0.000521,
-              "p95_ms": 0.001643,
-              "p99_ms": 0.003126,
-              "max_ms": 0.003126,
-              "total_ms": 0.065305
+              "mean_ms": 0.000685,
+              "p50_ms": 0.000561,
+              "p95_ms": 0.001744,
+              "p99_ms": 0.002345,
+              "max_ms": 0.002345,
+              "total_ms": 0.068511
             },
             "outbox_enqueue": {
               "n": 100,
-              "mean_ms": 0.167341,
-              "p50_ms": 0.049875,
-              "p95_ms": 0.766026,
-              "p99_ms": 3.496873,
-              "max_ms": 3.496873,
-              "total_ms": 16.734105
+              "mean_ms": 0.117163,
+              "p50_ms": 0.054923,
+              "p95_ms": 0.286872,
+              "p99_ms": 1.763661,
+              "max_ms": 1.763661,
+              "total_ms": 11.716389
             },
             "websocket_write": {
-              "n": 3295,
-              "mean_ms": 0.017495,
-              "p50_ms": 0.014227,
-              "p95_ms": 0.028865,
-              "p99_ms": 0.062277,
-              "max_ms": 1.220634,
-              "total_ms": 57.64806
+              "n": 2656,
+              "mean_ms": 0.016475,
+              "p50_ms": 0.014217,
+              "p95_ms": 0.02126,
+              "p99_ms": 0.043212,
+              "max_ms": 1.274708,
+              "total_ms": 43.758253
             },
             "end_to_end_broadcast": {
               "n": 100,
-              "mean_ms": 25.366319,
-              "p50_ms": 25.965004,
-              "p95_ms": 30.436898,
-              "p99_ms": 32.170861,
-              "max_ms": 32.170861,
-              "total_ms": 2536.631922
+              "mean_ms": 24.810122,
+              "p50_ms": 25.859668,
+              "p95_ms": 28.341206,
+              "p99_ms": 28.946509,
+              "max_ms": 28.946509,
+              "total_ms": 2481.012234
             }
           },
           "counters": {
             "events_broadcast": 100,
             "recipients": 64000,
-            "outbox_enqueues": 6063,
+            "outbox_enqueues": 5424,
             "outbox_dropped": 0,
             "send_failures": 0,
             "outbox_full_unregisters": 0,
@@ -2360,16 +2360,16 @@
             "max_outbox_depth": 1,
             "max_recipients": 640
           },
-          "end_to_end_p95_ms": 30.436898,
+          "end_to_end_p95_ms": 28.341206,
           "worker": {
             "queue_depth": 0,
             "queue_capacity": 4096,
             "requests_processed": 2768,
             "requests_rejected": 0,
-            "avg_queue_wait_ms": 39.065462,
-            "max_queue_wait_ms": 144.829801,
-            "avg_processing_ms": 0.004913,
-            "max_processing_ms": 4.820332
+            "avg_queue_wait_ms": 39.740485,
+            "max_queue_wait_ms": 154.369688,
+            "avg_processing_ms": 0.002421,
+            "max_processing_ms": 2.653031
           },
           "connections": {
             "clients": 644,
@@ -2380,7 +2380,7 @@
           }
         },
         "metrics_error": null,
-        "post_exit_measured_at": "2026-11-22T00:24:14.833Z"
+        "post_exit_measured_at": "2026-11-23T00:07:46.235Z"
       }
     },
     {
@@ -2390,9 +2390,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_800.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-800\n\nGenerated: 2026-11-22T00:24:17.035Z\n\n## Load\n\n- 800 active clients, 4 silent clients, high subscription distribution\n- 4916 requests: 804 connections, 804 subscriptions, 3208 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 751 ms, throughput 6547 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 41.2 ms, p95 209.4 ms, p99 223.8 ms, max 226.0 ms\n- Move RTT: p50 48.9 ms, p95 56.6 ms, p99 97.5 ms, max 97.5 ms\n- Client event delivery lag: p50 69.4 ms, p95 107.6 ms, p99 141.6 ms, max 153.8 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.006 ms, max 0.006 ms (n=100)\n- worker queue wait: p50 0.255 ms, p95 0.586 ms, p99 0.647 ms, max 0.647 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.001 ms, p99 0.012 ms, max 0.012 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.004 ms, max 0.004 ms (n=100)\n- broadcast wait: p50 5.202 ms, p95 16.229 ms, p99 17.149 ms, max 17.149 ms (n=100)\n- recipient lookup: p50 0.096 ms, p95 0.176 ms, p99 1.658 ms, max 1.658 ms (n=100)\n- event encoding: p50 0.001 ms, p95 0.002 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- outbox enqueue: p50 0.068 ms, p95 1.073 ms, p99 1.711 ms, max 1.711 ms (n=100)\n- WebSocket write: p50 0.015 ms, p95 0.026 ms, p99 0.042 ms, max 1.298 ms (n=2497)\n- end-to-end broadcast: p50 38.776 ms, p95 43.950 ms, p99 44.614 ms, max 44.614 ms (n=100)\n\n- Broadcasts: 100 events, 800.0 recipients/event average, 800 max\n- Outbox: 0 max depth, 256 capacity, 5905 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 3200/3200 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 800/800 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 514 MiB baseline, 631 MiB peak, 634 MiB after close requests\n- fds: 8 baseline, 812 with clients, 812 peak, 813 after close requests\n- CPU: 55.9% average, 95.9% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_800_results.json, /home/james/Work/sim-map/bench/scale_800_results.md and /home/james/Work/sim-map/bench/scale_800_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-800\n\nGenerated: 2026-11-23T00:07:48.455Z\n\n## Load\n\n- 800 active clients, 4 silent clients, high subscription distribution\n- 4916 requests: 804 connections, 804 subscriptions, 3208 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 797 ms, throughput 6166 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 44.5 ms, p95 228.1 ms, p99 241.9 ms, max 243.5 ms\n- Move RTT: p50 55.3 ms, p95 70.6 ms, p99 76.9 ms, max 76.9 ms\n- Client event delivery lag: p50 66.6 ms, p95 122.1 ms, p99 132.4 ms, max 166.0 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.004 ms, max 0.004 ms (n=100)\n- worker queue wait: p50 0.247 ms, p95 1.627 ms, p99 1.690 ms, max 1.690 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.002 ms, p99 0.009 ms, max 0.009 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- broadcast wait: p50 5.856 ms, p95 15.913 ms, p99 21.246 ms, max 21.246 ms (n=100)\n- recipient lookup: p50 0.100 ms, p95 0.178 ms, p99 2.530 ms, max 2.530 ms (n=100)\n- event encoding: p50 0.001 ms, p95 0.002 ms, p99 1.825 ms, max 1.825 ms (n=100)\n- outbox enqueue: p50 0.082 ms, p95 0.455 ms, p99 4.311 ms, max 4.311 ms (n=100)\n- WebSocket write: p50 0.015 ms, p95 0.027 ms, p99 0.047 ms, max 0.637 ms (n=3296)\n- end-to-end broadcast: p50 42.478 ms, p95 48.230 ms, p99 48.902 ms, max 48.902 ms (n=100)\n\n- Broadcasts: 100 events, 800.0 recipients/event average, 800 max\n- Outbox: 0 max depth, 256 capacity, 6704 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 3200/3200 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 800/800 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 518 MiB baseline, 639 MiB peak, 641 MiB after close requests\n- fds: 8 baseline, 812 with clients, 812 peak, 813 after close requests\n- CPU: 57.7% average, 108.3% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_800_results.json, /home/james/Work/sim-map/bench/scale_800_results.md and /home/james/Work/sim-map/bench/scale_800_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:24:17.035Z",
+        "generated": "2026-11-23T00:07:48.455Z",
         "label": "clients-800",
         "profile": {
           "clients": 800,
@@ -2411,39 +2411,39 @@
           "moves": 100,
           "requests": 4916
         },
-        "duration_ms": 750.9005719999999,
-        "throughput_requests_per_second": 6546.805507027901,
+        "duration_ms": 797.2750189999999,
+        "throughput_requests_per_second": 6166.002800596967,
         "snapshot_rtt": {
           "n": 3200,
-          "mean_ms": 76.45890040000003,
-          "p50_ms": 41.155895999999984,
-          "p95_ms": 209.41537600000004,
-          "p99_ms": 223.78943600000002,
-          "max_ms": 226.03055700000004
+          "mean_ms": 83.51085627875027,
+          "p50_ms": 44.458860999999956,
+          "p95_ms": 228.12250399999994,
+          "p99_ms": 241.92683,
+          "max_ms": 243.50620300000003
         },
         "silent_snapshot_rtt": {
           "n": 8,
-          "mean_ms": 1.3428830000000147,
-          "p50_ms": 0.29350399999998444,
-          "p95_ms": 3.19862999999998,
-          "p99_ms": 3.19862999999998,
-          "max_ms": 3.19862999999998
+          "mean_ms": 0.15267587500001412,
+          "p50_ms": 0.15300899999999729,
+          "p95_ms": 0.24816899999996167,
+          "p99_ms": 0.24816899999996167,
+          "max_ms": 0.24816899999996167
         },
         "move_rtt": {
           "n": 100,
-          "mean_ms": 35.608510110000005,
-          "p50_ms": 48.92452400000002,
-          "p95_ms": 56.61725899999999,
-          "p99_ms": 97.45783000000006,
-          "max_ms": 97.45783000000006
+          "mean_ms": 40.113735950000006,
+          "p50_ms": 55.27039300000001,
+          "p95_ms": 70.56999399999995,
+          "p99_ms": 76.85451499999999,
+          "max_ms": 76.85451499999999
         },
         "event_delivery_lag": {
           "n": 80000,
-          "mean_ms": 66.31344825977578,
-          "p50_ms": 69.44103099999995,
-          "p95_ms": 107.63504599999999,
-          "p99_ms": 141.552364,
-          "max_ms": 153.80933700000003
+          "mean_ms": 69.51990963315075,
+          "p50_ms": 66.61134600000003,
+          "p95_ms": 122.07267999999999,
+          "p99_ms": 132.44765799999993,
+          "max_ms": 166.03757799999994
         },
         "accuracy": {
           "snapshots_ok": 3200,
@@ -2477,121 +2477,121 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 526040,
-          "rss_before_kb": 560892,
-          "rss_peak_kb": 646124,
+          "rss_baseline_kb": 530140,
+          "rss_before_kb": 565080,
+          "rss_peak_kb": 654444,
           "fds_baseline": 8,
           "fds_before": 812,
           "fds_peak": 812,
-          "cpu_average_percent": 55.932837936365296,
-          "cpu_peak_percent": 95.85492257778728,
+          "cpu_average_percent": 57.696527426253155,
+          "cpu_peak_percent": 108.27031353104401,
           "cpu_peak_window_ms": 100,
           "fds_after_close_requests": 813,
-          "rss_after_close_requests_kb": 648956,
+          "rss_after_close_requests_kb": 656480,
           "cpu_idle_ticks_per_second": 0,
-          "rss_after_exit_kb": 649084,
+          "rss_after_exit_kb": 656532,
           "fds_after_exit": 6,
           "cpu_idle_after_exit_ticks_per_second": 0
         },
         "server_metrics": {
-          "started_ns": 137937281358983,
-          "uptime_ms": 1795.560058,
+          "started_ns": 223348679645979,
+          "uptime_ms": 1823.954552,
           "stages": {
             "receive_to_submit": {
               "n": 100,
-              "mean_ms": 0.000411,
-              "p50_ms": 0.00027,
-              "p95_ms": 0.000762,
-              "p99_ms": 0.005901,
-              "max_ms": 0.005901,
-              "total_ms": 0.041167
+              "mean_ms": 0.000419,
+              "p50_ms": 0.000261,
+              "p95_ms": 0.000661,
+              "p99_ms": 0.004428,
+              "max_ms": 0.004428,
+              "total_ms": 0.041946
             },
             "worker_queue_wait": {
               "n": 100,
-              "mean_ms": 0.265644,
-              "p50_ms": 0.255052,
-              "p95_ms": 0.585556,
-              "p99_ms": 0.647132,
-              "max_ms": 0.647132,
-              "total_ms": 26.564492
+              "mean_ms": 0.669197,
+              "p50_ms": 0.246976,
+              "p95_ms": 1.626803,
+              "p99_ms": 1.690103,
+              "max_ms": 1.690103,
+              "total_ms": 66.919741
             },
             "move_processing": {
               "n": 100,
-              "mean_ms": 0.000711,
-              "p50_ms": 0.000421,
-              "p95_ms": 0.001153,
-              "p99_ms": 0.011892,
-              "max_ms": 0.011892,
-              "total_ms": 0.071167
+              "mean_ms": 0.000723,
+              "p50_ms": 0.000361,
+              "p95_ms": 0.002194,
+              "p99_ms": 0.009437,
+              "max_ms": 0.009437,
+              "total_ms": 0.072345
             },
             "commit_to_broadcast": {
               "n": 100,
-              "mean_ms": 0.00033,
+              "mean_ms": 0.000372,
               "p50_ms": 0.000201,
-              "p95_ms": 0.000581,
-              "p99_ms": 0.003938,
-              "max_ms": 0.003938,
-              "total_ms": 0.033049
+              "p95_ms": 0.001282,
+              "p99_ms": 0.00518,
+              "max_ms": 0.00518,
+              "total_ms": 0.037269
             },
             "broadcast_wait": {
               "n": 100,
-              "mean_ms": 6.261032,
-              "p50_ms": 5.201742,
-              "p95_ms": 16.229213,
-              "p99_ms": 17.149089,
-              "max_ms": 17.149089,
-              "total_ms": 626.103235
+              "mean_ms": 7.297759,
+              "p50_ms": 5.855671,
+              "p95_ms": 15.912658,
+              "p99_ms": 21.245913,
+              "max_ms": 21.245913,
+              "total_ms": 729.775964
             },
             "broadcast_dispatch": {
               "n": 100,
-              "mean_ms": 0.110976,
-              "p50_ms": 0.096051,
-              "p95_ms": 0.175562,
-              "p99_ms": 1.65818,
-              "max_ms": 1.65818,
-              "total_ms": 11.097687
+              "mean_ms": 0.123593,
+              "p50_ms": 0.099628,
+              "p95_ms": 0.178257,
+              "p99_ms": 2.530099,
+              "max_ms": 2.530099,
+              "total_ms": 12.359333
             },
             "encoding": {
               "n": 100,
-              "mean_ms": 0.000924,
-              "p50_ms": 0.000761,
-              "p95_ms": 0.002244,
-              "p99_ms": 0.003146,
-              "max_ms": 0.003146,
-              "total_ms": 0.092498
+              "mean_ms": 0.01918,
+              "p50_ms": 0.000772,
+              "p95_ms": 0.002335,
+              "p99_ms": 1.825168,
+              "max_ms": 1.825168,
+              "total_ms": 1.918026
             },
             "outbox_enqueue": {
               "n": 100,
-              "mean_ms": 0.159343,
-              "p50_ms": 0.068379,
-              "p95_ms": 1.072625,
-              "p99_ms": 1.711,
-              "max_ms": 1.711,
-              "total_ms": 15.9343
+              "mean_ms": 0.207698,
+              "p50_ms": 0.081504,
+              "p95_ms": 0.45522,
+              "p99_ms": 4.310663,
+              "max_ms": 4.310663,
+              "total_ms": 20.769856
             },
             "websocket_write": {
-              "n": 2497,
-              "mean_ms": 0.017671,
-              "p50_ms": 0.014678,
-              "p95_ms": 0.025839,
-              "p99_ms": 0.04241,
-              "max_ms": 1.298081,
-              "total_ms": 44.125938
+              "n": 3296,
+              "mean_ms": 0.018063,
+              "p50_ms": 0.015199,
+              "p95_ms": 0.02655,
+              "p99_ms": 0.046628,
+              "max_ms": 0.636983,
+              "total_ms": 59.536601
             },
             "end_to_end_broadcast": {
               "n": 100,
-              "mean_ms": 37.82318,
-              "p50_ms": 38.776494,
-              "p95_ms": 43.949731,
-              "p99_ms": 44.614066,
-              "max_ms": 44.614066,
-              "total_ms": 3782.318024
+              "mean_ms": 41.055511,
+              "p50_ms": 42.478269,
+              "p95_ms": 48.230245,
+              "p99_ms": 48.902014,
+              "max_ms": 48.902014,
+              "total_ms": 4105.551197
             }
           },
           "counters": {
             "events_broadcast": 100,
             "recipients": 80000,
-            "outbox_enqueues": 5905,
+            "outbox_enqueues": 6704,
             "outbox_dropped": 0,
             "send_failures": 0,
             "outbox_full_unregisters": 0,
@@ -2599,16 +2599,16 @@
             "max_outbox_depth": 1,
             "max_recipients": 800
           },
-          "end_to_end_p95_ms": 43.949731,
+          "end_to_end_p95_ms": 48.230245,
           "worker": {
             "queue_depth": 0,
             "queue_capacity": 4096,
             "requests_processed": 3408,
             "requests_rejected": 0,
-            "avg_queue_wait_ms": 43.874203,
-            "max_queue_wait_ms": 162.925008,
-            "avg_processing_ms": 0.002482,
-            "max_processing_ms": 1.243908
+            "avg_queue_wait_ms": 48.35584,
+            "max_queue_wait_ms": 174.780492,
+            "avg_processing_ms": 0.003706,
+            "max_processing_ms": 2.091801
           },
           "connections": {
             "clients": 804,
@@ -2619,7 +2619,7 @@
           }
         },
         "metrics_error": null,
-        "post_exit_measured_at": "2026-11-22T00:24:22.660Z"
+        "post_exit_measured_at": "2026-11-23T00:07:54.067Z"
       }
     },
     {
@@ -2629,9 +2629,9 @@
       "exit_code": 0,
       "server_log": "/tmp/sim-map-scale_1020.log",
       "stderr": "",
-      "stdout": "# Live load test results\n\nProfile: clients-1020\n\nGenerated: 2026-11-22T00:24:25.084Z\n\n## Load\n\n- 1020 active clients, 4 silent clients, high subscription distribution\n- 6236 requests: 1024 connections, 1024 subscriptions, 4088 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 869 ms, throughput 7180 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 57.2 ms, p95 263.9 ms, p99 274.9 ms, max 277.0 ms\n- Move RTT: p50 63.2 ms, p95 85.6 ms, p99 133.4 ms, max 133.4 ms\n- Client event delivery lag: p50 80.6 ms, p95 144.8 ms, p99 157.9 ms, max 168.0 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.002 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- worker queue wait: p50 1.063 ms, p95 2.658 ms, p99 2.894 ms, max 2.894 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.001 ms, p99 0.009 ms, max 0.009 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)\n- broadcast wait: p50 8.654 ms, p95 21.180 ms, p99 22.212 ms, max 22.212 ms (n=100)\n- recipient lookup: p50 0.126 ms, p95 0.323 ms, p99 2.257 ms, max 2.257 ms (n=100)\n- event encoding: p50 0.001 ms, p95 0.002 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- outbox enqueue: p50 0.114 ms, p95 2.409 ms, p99 3.182 ms, max 3.182 ms (n=100)\n- WebSocket write: p50 0.016 ms, p95 0.029 ms, p99 0.051 ms, max 4.163 ms (n=3157)\n- end-to-end broadcast: p50 56.829 ms, p95 60.763 ms, p99 62.044 ms, max 62.044 ms (n=100)\n\n- Broadcasts: 100 events, 1020.0 recipients/event average, 1020 max\n- Outbox: 0 max depth, 256 capacity, 7445 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 4080/4080 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 1020/1020 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 514 MiB baseline, 662 MiB peak, 664 MiB after close requests\n- fds: 8 baseline, 1032 with clients, 1032 peak, 1033 after close requests\n- CPU: 61.0% average, 99.8% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_1020_results.json, /home/james/Work/sim-map/bench/scale_1020_results.md and /home/james/Work/sim-map/bench/scale_1020_results.js\n",
+      "stdout": "# Live load test results\n\nProfile: clients-1020\n\nGenerated: 2026-11-23T00:07:56.496Z\n\n## Load\n\n- 1020 active clients, 4 silent clients, high subscription distribution\n- 6236 requests: 1024 connections, 1024 subscriptions, 4088 snapshots, 100 moves\n- 40 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions\n- Duration: 894 ms, throughput 6976 requests/s\n\n## Latency\n\n- Snapshot RTT: p50 55.4 ms, p95 267.1 ms, p99 278.4 ms, max 279.7 ms\n- Move RTT: p50 62.2 ms, p95 103.2 ms, p99 159.5 ms, max 159.5 ms\n- Client event delivery lag: p50 85.5 ms, p95 164.4 ms, p99 174.1 ms, max 182.6 ms\n\n## Server pipeline\n\n- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.005 ms, max 0.005 ms (n=100)\n- worker queue wait: p50 0.253 ms, p95 1.459 ms, p99 1.506 ms, max 1.506 ms (n=100)\n- move processing: p50 0.000 ms, p95 0.002 ms, p99 0.012 ms, max 0.012 ms (n=100)\n- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.004 ms, max 0.004 ms (n=100)\n- broadcast wait: p50 7.827 ms, p95 21.845 ms, p99 23.085 ms, max 23.085 ms (n=100)\n- recipient lookup: p50 0.125 ms, p95 1.121 ms, p99 3.980 ms, max 3.980 ms (n=100)\n- event encoding: p50 0.001 ms, p95 0.003 ms, p99 0.008 ms, max 0.008 ms (n=100)\n- outbox enqueue: p50 0.108 ms, p95 1.480 ms, p99 2.803 ms, max 2.803 ms (n=100)\n- WebSocket write: p50 0.016 ms, p95 0.029 ms, p99 0.047 ms, max 2.163 ms (n=3157)\n- end-to-end broadcast: p50 57.126 ms, p95 60.036 ms, p99 60.108 ms, max 60.108 ms (n=100)\n\n- Broadcasts: 100 events, 1020.0 recipients/event average, 1020 max\n- Outbox: 0 max depth, 256 capacity, 7445 enqueues\n- Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters\n\n## Accuracy\n\n- Moves: 100/100 accepted, 0 rejected, 0 request-ID mismatches, 0 duplicate sequences\n- Snapshots: 4080/4080 active valid, 8 silent valid, 0 silent failures\n- Events: 0 missing, 0 duplicate, 0 extra; 1020/1020 clients received events\n- Expected/actual per client: 100-100 expected, 100-100 actual\n- Event contents: 0 wrong board, 0 wrong revision, 0 wrong changes, 0 wrong request ID, 0 wrong board count\n- Isolation: 0 events leaked to silent clients, 0 unexpected closes\n\n## Server resources\n\n- RSS: 518 MiB baseline, 666 MiB peak, 670 MiB after close requests\n- fds: 8 baseline, 1032 with clients, 1032 peak, 1033 after close requests\n- CPU: 60.4% average, 105.3% peak; 0 idle ticks/s after close requests\n\nPost-exit fds/RSS/CPU are appended by `bench/load_after.js`.\n\nWrote /home/james/Work/sim-map/bench/scale_1020_results.json, /home/james/Work/sim-map/bench/scale_1020_results.md and /home/james/Work/sim-map/bench/scale_1020_results.js\n",
       "result": {
-        "generated": "2026-11-22T00:24:25.084Z",
+        "generated": "2026-11-23T00:07:56.496Z",
         "label": "clients-1020",
         "profile": {
           "clients": 1020,
@@ -2650,39 +2650,39 @@
           "moves": 100,
           "requests": 6236
         },
-        "duration_ms": 868.549764,
-        "throughput_requests_per_second": 7179.784346818383,
+        "duration_ms": 893.9193560000001,
+        "throughput_requests_per_second": 6976.020776531882,
         "snapshot_rtt": {
           "n": 4080,
-          "mean_ms": 97.24637331519605,
-          "p50_ms": 57.18445099999997,
-          "p95_ms": 263.94964500000003,
-          "p99_ms": 274.92067899999995,
-          "max_ms": 276.96381700000006
+          "mean_ms": 98.01116954926457,
+          "p50_ms": 55.352779000000055,
+          "p95_ms": 267.1298569999999,
+          "p99_ms": 278.43850900000007,
+          "max_ms": 279.735769
         },
         "silent_snapshot_rtt": {
           "n": 8,
-          "mean_ms": 0.2926302500000304,
-          "p50_ms": 0.33489299999996547,
-          "p95_ms": 0.488262000000077,
-          "p99_ms": 0.488262000000077,
-          "max_ms": 0.488262000000077
+          "mean_ms": 0.21043387500000676,
+          "p50_ms": 0.2316480000000638,
+          "p95_ms": 0.26884800000004816,
+          "p99_ms": 0.26884800000004816,
+          "max_ms": 0.26884800000004816
         },
         "move_rtt": {
           "n": 100,
-          "mean_ms": 49.48090348000001,
-          "p50_ms": 63.191102,
-          "p95_ms": 85.5574009999998,
-          "p99_ms": 133.38948299999993,
-          "max_ms": 133.38948299999993
+          "mean_ms": 50.73994709999999,
+          "p50_ms": 62.15163099999995,
+          "p95_ms": 103.22246300000006,
+          "p99_ms": 159.535576,
+          "max_ms": 159.535576
         },
         "event_delivery_lag": {
           "n": 102000,
-          "mean_ms": 84.70558076377458,
-          "p50_ms": 80.62563999999998,
-          "p95_ms": 144.78214400000002,
-          "p99_ms": 157.8895419999999,
-          "max_ms": 167.99682599999983
+          "mean_ms": 89.88741946356824,
+          "p50_ms": 85.49464599999988,
+          "p95_ms": 164.41726700000004,
+          "p99_ms": 174.10073899999998,
+          "max_ms": 182.63023099999987
         },
         "accuracy": {
           "snapshots_ok": 4080,
@@ -2716,115 +2716,115 @@
           }
         },
         "resources": {
-          "rss_baseline_kb": 526092,
-          "rss_before_kb": 570976,
-          "rss_peak_kb": 678248,
+          "rss_baseline_kb": 529980,
+          "rss_before_kb": 575400,
+          "rss_peak_kb": 681972,
           "fds_baseline": 8,
           "fds_before": 1032,
           "fds_peak": 1032,
-          "cpu_average_percent": 61.02125888091313,
-          "cpu_peak_percent": 99.8126466715652,
+          "cpu_average_percent": 60.40813372878795,
+          "cpu_peak_percent": 105.33289330995945,
           "cpu_peak_window_ms": 100,
           "fds_after_close_requests": 1033,
-          "rss_after_close_requests_kb": 679812,
+          "rss_after_close_requests_kb": 686368,
           "cpu_idle_ticks_per_second": 0,
-          "rss_after_exit_kb": 680284,
+          "rss_after_exit_kb": 686984,
           "fds_after_exit": 6,
           "cpu_idle_after_exit_ticks_per_second": 0
         },
         "server_metrics": {
-          "started_ns": 137945117025927,
-          "uptime_ms": 1993.657054,
+          "started_ns": 223356522478587,
+          "uptime_ms": 1998.530801,
           "stages": {
             "receive_to_submit": {
               "n": 100,
-              "mean_ms": 0.000524,
-              "p50_ms": 0.000291,
-              "p95_ms": 0.002004,
-              "p99_ms": 0.004609,
-              "max_ms": 0.004609,
-              "total_ms": 0.052497
+              "mean_ms": 0.00045,
+              "p50_ms": 0.00027,
+              "p95_ms": 0.000911,
+              "p99_ms": 0.00525,
+              "max_ms": 0.00525,
+              "total_ms": 0.045071
             },
             "worker_queue_wait": {
               "n": 100,
-              "mean_ms": 1.127887,
-              "p50_ms": 1.062877,
-              "p95_ms": 2.657968,
-              "p99_ms": 2.894154,
-              "max_ms": 2.894154,
-              "total_ms": 112.788784
+              "mean_ms": 0.458758,
+              "p50_ms": 0.253419,
+              "p95_ms": 1.458926,
+              "p99_ms": 1.505814,
+              "max_ms": 1.505814,
+              "total_ms": 45.875855
             },
             "move_processing": {
               "n": 100,
-              "mean_ms": 0.000793,
-              "p50_ms": 0.00047,
-              "p95_ms": 0.001122,
-              "p99_ms": 0.008767,
-              "max_ms": 0.008767,
-              "total_ms": 0.07938
+              "mean_ms": 0.000784,
+              "p50_ms": 0.000471,
+              "p95_ms": 0.001623,
+              "p99_ms": 0.012163,
+              "max_ms": 0.012163,
+              "total_ms": 0.078482
             },
             "commit_to_broadcast": {
               "n": 100,
-              "mean_ms": 0.000381,
-              "p50_ms": 0.00029,
+              "mean_ms": 0.000364,
+              "p50_ms": 0.000251,
               "p95_ms": 0.000631,
-              "p99_ms": 0.003286,
-              "max_ms": 0.003286,
-              "total_ms": 0.038154
+              "p99_ms": 0.004398,
+              "max_ms": 0.004398,
+              "total_ms": 0.036407
             },
             "broadcast_wait": {
               "n": 100,
-              "mean_ms": 9.410911,
-              "p50_ms": 8.653679,
-              "p95_ms": 21.179549,
-              "p99_ms": 22.212419,
-              "max_ms": 22.212419,
-              "total_ms": 941.091188
+              "mean_ms": 9.675526,
+              "p50_ms": 7.827015,
+              "p95_ms": 21.845075,
+              "p99_ms": 23.085127,
+              "max_ms": 23.085127,
+              "total_ms": 967.552655
             },
             "broadcast_dispatch": {
               "n": 100,
-              "mean_ms": 0.170732,
-              "p50_ms": 0.126318,
-              "p95_ms": 0.322959,
-              "p99_ms": 2.256751,
-              "max_ms": 2.256751,
-              "total_ms": 17.073272
+              "mean_ms": 0.251434,
+              "p50_ms": 0.125226,
+              "p95_ms": 1.120527,
+              "p99_ms": 3.979878,
+              "max_ms": 3.979878,
+              "total_ms": 25.143456
             },
             "encoding": {
               "n": 100,
-              "mean_ms": 0.00108,
-              "p50_ms": 0.000912,
-              "p95_ms": 0.002475,
-              "p99_ms": 0.004649,
-              "max_ms": 0.004649,
-              "total_ms": 0.108063
+              "mean_ms": 0.001166,
+              "p50_ms": 0.000911,
+              "p95_ms": 0.002645,
+              "p99_ms": 0.008355,
+              "max_ms": 0.008355,
+              "total_ms": 0.116657
             },
             "outbox_enqueue": {
               "n": 100,
-              "mean_ms": 0.306387,
-              "p50_ms": 0.114356,
-              "p95_ms": 2.408958,
-              "p99_ms": 3.182109,
-              "max_ms": 3.182109,
-              "total_ms": 30.638765
+              "mean_ms": 0.245308,
+              "p50_ms": 0.107694,
+              "p95_ms": 1.479665,
+              "p99_ms": 2.802583,
+              "max_ms": 2.802583,
+              "total_ms": 24.530883
             },
             "websocket_write": {
               "n": 3157,
-              "mean_ms": 0.020473,
-              "p50_ms": 0.015749,
-              "p95_ms": 0.029085,
-              "p99_ms": 0.050836,
-              "max_ms": 4.162519,
-              "total_ms": 64.635725
+              "mean_ms": 0.019832,
+              "p50_ms": 0.01614,
+              "p95_ms": 0.028875,
+              "p99_ms": 0.046808,
+              "max_ms": 2.163136,
+              "total_ms": 62.612751
             },
             "end_to_end_broadcast": {
               "n": 100,
-              "mean_ms": 55.043711,
-              "p50_ms": 56.829219,
-              "p95_ms": 60.762616,
-              "p99_ms": 62.043645,
-              "max_ms": 62.043645,
-              "total_ms": 5504.371102
+              "mean_ms": 53.021677,
+              "p50_ms": 57.12643,
+              "p95_ms": 60.036065,
+              "p99_ms": 60.108322,
+              "max_ms": 60.108322,
+              "total_ms": 5302.16773
             }
           },
           "counters": {
@@ -2838,16 +2838,16 @@
             "max_outbox_depth": 1,
             "max_recipients": 1020
           },
-          "end_to_end_p95_ms": 60.762616,
+          "end_to_end_p95_ms": 60.036065,
           "worker": {
             "queue_depth": 0,
             "queue_capacity": 4096,
             "requests_processed": 4288,
             "requests_rejected": 0,
-            "avg_queue_wait_ms": 58.006814,
-            "max_queue_wait_ms": 197.363964,
-            "avg_processing_ms": 0.003455,
-            "max_processing_ms": 2.759931
+            "avg_queue_wait_ms": 58.108929,
+            "max_queue_wait_ms": 194.373644,
+            "avg_processing_ms": 0.001982,
+            "max_processing_ms": 1.760295
           },
           "connections": {
             "clients": 1024,
@@ -2858,7 +2858,7 @@
           }
         },
         "metrics_error": null,
-        "post_exit_measured_at": "2026-11-22T00:24:30.723Z"
+        "post_exit_measured_at": "2026-11-23T00:08:02.139Z"
       }
     }
   ]

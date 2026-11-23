@@ -115,13 +115,13 @@ The latest runs on the benchmark machine:
 
 | Profile | Requests | Throughput | Snapshot p50 | Move p50 | Event lag p50 | CPU avg / peak | RSS | fds peak → after exit |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `default` | 596 | ~1,873/s | 1.7 ms | 2.3 ms | 3.4 ms | 12.6% / 38.9% | 514 → 523 MiB | 51 → 6 |
-| `stress` | 1,176 | ~3,186/s | 2.8 ms | 7.3 ms | 7.5 ms | 21.7% / 77.1% | 514 → 534 MiB | 91 → 6 |
+| `default` | 596 | ~1,870/s | 1.6 ms | 1.8 ms | 3.9 ms | 9.4% / 19.5% | 526 MiB peak | 51 → 6 |
+| `stress` | 1,176 | ~3,318/s | 3.5 ms | 7.8 ms | 8.5 ms | 22.6% / 69.1% | 538 MiB peak | 91 → 6 |
 
 Both runs had 100% move acceptance, 100% valid snapshots, exactly one event per
 move per active client, no duplicates or misses, no events leaked to silent
 clients, and no unexpected closes. The final fds were measured after the load
-process exited. Event frames are batched: the default run used 295 WebSocket
+process exited. Event frames are batched: the default run used 334 WebSocket
 writes for 4,000 recipient events, and the stress run used 1,306 writes for
 16,000.
 
@@ -162,15 +162,15 @@ latest default run shows why the stage breakdown matters:
 | Stage | p50 | p95 |
 |---|---:|---:|
 | receive → submit | 0.0002 ms | 0.0006 ms |
-| worker queue wait | 0.020 ms | 0.11 ms |
-| move processing | 0.0004 ms | 0.0018 ms |
+| worker queue wait | 0.019 ms | 0.12 ms |
+| move processing | 0.0006 ms | 0.002 ms |
 | commit → broadcaster | 0.0003 ms | 0.0007 ms |
 | broadcast wait | 0.069 ms | 0.45 ms |
 | recipient lookup | 0.003 ms | 0.005 ms |
 | encoding | 0.0003 ms | 0.0007 ms |
 | outbox enqueue | 0.002 ms | 0.005 ms |
 | WebSocket write | 0.010 ms | 0.021 ms |
-| end-to-end broadcast | 2.14 ms | 3.17 ms |
+| end-to-end broadcast | 1.98 ms | 3.2 ms |
 
 The dominant term is no longer dispatch: **broadcast wait** fell from ~4.3 ms
 to ~0.07 ms after event batching, and outbox enqueue fell from ~0.45 ms to
@@ -200,17 +200,17 @@ Measured (1020 clients was the largest completed level):
 
 | Clients | Requests | Req/s | Snapshot p50 | Move p50 | Event lag p50 | CPU avg | RSS | fds | Errors |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20 | 236 | 786 | 1.5 ms | 2.7 ms | 2.7 ms | 6.7% | 520 MiB | 32 | 0 |
-| 40 | 356 | 1,257 | 1.9 ms | 4.5 ms | 5.3 ms | 7.1% | 521 MiB | 52 | 0 |
-| 80 | 596 | 1,787 | 4.8 ms | 6.3 ms | 7.8 ms | 15.0% | 527 MiB | 92 | 0 |
-| 160 | 1,076 | 2,924 | 9.5 ms | 12.0 ms | 14.4 ms | 21.7% | 540 MiB | 172 | 0 |
-| 200 | 1,316 | 3,559 | 9.6 ms | 11.0 ms | 17.0 ms | 27.0% | 546 MiB | 212 | 0 |
-| 320 | 2,036 | 4,403 | 18.5 ms | 16.9 ms | 26.6 ms | 36.8% | 563 MiB | 332 | 0 |
-| 400 | 2,516 | 5,227 | 20.8 ms | 18.0 ms | 28.4 ms | 41.6% | 574 MiB | 412 | 0 |
-| 600 | 3,716 | 5,839 | 36.0 ms | 38.6 ms | 54.0 ms | 53.4% | 608 MiB | 612 | 0 |
-| 640 | 3,956 | 5,669 | 33.8 ms | 33.7 ms | 54.4 ms | 53.0% | 619 MiB | 652 | 0 |
-| 800 | 4,916 | 6,547 | 41.2 ms | 48.9 ms | 69.4 ms | 55.9% | 631 MiB | 812 | 0 |
-| 1,020 | 6,236 | 7,180 | 57.2 ms | 63.2 ms | 80.6 ms | 61.0% | 662 MiB | 1,032 | 0 |
+| 20 | 236 | 791 | 1.6 ms | 3.1 ms | 2.6 ms | 6.7% | 522 MiB | 32 | 0 |
+| 40 | 356 | 1,145 | 2.8 ms | 5.8 ms | 5.6 ms | 6.4% | 525 MiB | 52 | 0 |
+| 80 | 596 | 1,777 | 4.3 ms | 10.1 ms | 9.1 ms | 11.9% | 531 MiB | 92 | 0 |
+| 160 | 1,076 | 2,859 | 8.5 ms | 10.7 ms | 16.3 ms | 18.6% | 542 MiB | 172 | 0 |
+| 200 | 1,316 | 3,487 | 10.2 ms | 12.6 ms | 21.0 ms | 26.5% | 548 MiB | 212 | 0 |
+| 320 | 2,036 | 4,224 | 20.1 ms | 25.2 ms | 29.3 ms | 37.3% | 568 MiB | 332 | 0 |
+| 400 | 2,516 | 4,610 | 25.1 ms | 21.4 ms | 29.1 ms | 40.3% | 579 MiB | 412 | 0 |
+| 600 | 3,716 | 5,549 | 33.1 ms | 38.1 ms | 51.1 ms | 50.8% | 615 MiB | 612 | 0 |
+| 640 | 3,956 | 5,629 | 34.3 ms | 28.8 ms | 55.1 ms | 52.6% | 620 MiB | 652 | 0 |
+| 800 | 4,916 | 6,166 | 44.5 ms | 55.3 ms | 66.6 ms | 57.7% | 639 MiB | 812 | 0 |
+| 1,020 | 6,236 | 6,976 | 55.4 ms | 62.2 ms | 85.5 ms | 60.4% | 666 MiB | 1,032 | 0 |
 
 Every level delivered every event exactly once, with zero missing, duplicate,
 extra, wrong-board, wrong-revision, wrong-change or wrong-request-ID events.
@@ -239,9 +239,9 @@ Results on the same machine:
 
 | Overlap | Recipients / move | Move p50 | Move p95 | Event lag p50 | Missing | Extra |
 |---|---:|---:|---:|---:|---:|---:|
-| High (all clients share one region) | 80.0 | 5.1 ms | 17.0 ms | 8.4 ms | 0 | 0 |
-| Low (clients spread across the world) | 1.0 | 1.9 ms | 2.9 ms | 2.7 ms | 0 | 0 |
-| Partial (clusters around several regions) | 20.0 | 3.3 ms | 4.1 ms | 3.2 ms | 0 | 0 |
+| High (all clients share one region) | 80.0 | 7.6 ms | 17.4 ms | 9.0 ms | 0 | 0 |
+| Low (clients spread across the world) | 1.0 | 1.6 ms | 2.7 ms | 1.8 ms | 0 | 0 |
+| Partial (clusters around several regions) | 20.0 | 3.6 ms | 7.4 ms | 3.4 ms | 0 | 0 |
 
 Each client still owns 625 subscriptions, so the total subscription count is
 comparable. Low overlap proves unrelated clients are not involved; high overlap
@@ -259,10 +259,10 @@ node bench/slow_client_test.js
 
 | Scenario | Slow behavior | Normal lag p50 / p95 | Max outbox | Dropped events | Send failures | Recovery |
 |---|---|---:|---:|---:|---:|---|
-| `baseline` | no slow client | 0.79 / 2.10 ms | 1 / 8 | 0 | 0 | n/a |
-| `paused-short` | stops reading, resumes after the burst | 0.78 / 1.98 ms | 8 / 8 | 9,135 | 0 | same connection, rev 1500 |
-| `paused-long` | stops reading past the 2 s send timeout | 0.80 / 2.03 ms | 8 / 8 | 9,125 | 31 | reconnected, rev 1500 |
-| `slow-read` | reads one chunk every 200 ms | 0.80 / 2.08 ms | 8 / 8 | 8,807 | 0 | same connection, rev 1500 |
+| `baseline` | no slow client | 0.81 / 2.18 ms | 1 / 8 | 0 | 0 | n/a |
+| `paused-short` | stops reading, resumes after the burst | 0.79 / 2.05 ms | 8 / 8 | 11,746 | 0 | same connection, rev 1500 |
+| `paused-long` | stops reading past the 2 s send timeout | 0.79 / 2.05 ms | 8 / 8 | 11,099 | 27 | reconnected, rev 1500 |
+| `slow-read` | reads one chunk every 200 ms | 0.79 / 2.08 ms | 8 / 8 | 12,430 | 0 | same connection, rev 1500 |
 
 This is the key reliability result: one non-reading client does **not** block
 the broadcaster, and normal-client lag is effectively identical to the
@@ -271,6 +271,25 @@ frames (keeping response promises intact), so the queue is bounded. A client
 that resumes can detect the revision gap and recover with a fresh snapshot.
 A client that stays blocked past the 2 s sender timeout is unregistered; a new
 connection recovers with a snapshot.
+
+## Snapshot consistency
+
+The snapshot handoff is tested at two levels:
+
+- `test/test_connection_manager.ml` deterministically checks that a pending
+  snapshot buffers events, discards records represented by the snapshot
+  revision, releases newer records in revision order, splits a cross-board
+  move when one board is pending, and ignores a superseded snapshot token.
+- `test/snapshot_consistency_test.js` races a snapshot request against a move
+  on 20 fresh boards, then races five snapshot clients against one move. Each
+  client must end with the moved pawn regardless of whether the move landed
+  before or after the snapshot. The latest run recorded 20/20
+  buffered-after-snapshot races and 25 concurrent snapshot clients.
+
+The server-side sequence is: register subscription → submit snapshot to the
+worker → capture board + int64 revision → mark snapshot complete and filter
+buffered events → enqueue snapshot → release newer events. No WebSocket write
+ever runs inside the worker.
 
 ## Adding a benchmark
 
