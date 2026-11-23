@@ -732,6 +732,14 @@ boards, not a single board:
   stale and retries. The response carries the `int64` revision at copy time.
 - The client sends one subscription-window message whenever its rounded cache
   centre changes. The server window is exactly the retained 25 x 25 set.
+- Snapshot loading is single-flight. A watchdog reconciles
+  `pending_snapshots` against the board table every 250 ms, drops orphan
+  request IDs, and retries a pending board after 2.5 s. The centre board is
+  queued first during a window rebuild. This addresses a cache-eviction stall
+  observed in the browser test, where a lost/orphaned request kept the
+  single-flight pump at its limit. The browser eviction test is still
+  timing-sensitive under headless Chromium; deterministic connection-manager
+  and snapshot/move race tests cover the consistency properties directly.
 - The client tracks an `int64` revision per cached board. An event at the next
   revision applies; an equal or older revision is ignored as duplicate/stale;
   a skipped revision marks the board stale and unavailable for local moves, and
