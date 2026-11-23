@@ -22,6 +22,7 @@ type metrics = {
 type request =
   | Move of Move_request.t
   | Snapshot of { board_x : int; board_y : int }
+  | Snapshot_world
 
 type snapshot = {
   board : Piece.t array;
@@ -45,6 +46,7 @@ type committed = {
 type response =
   | Move_result of Move_engine.result
   | Snapshot_result of snapshot
+  | World_snapshot_result
 
 type item = {
   request : request;
@@ -72,6 +74,8 @@ type t = {
   finished_u : unit Lwt.u;
   mutable finished_done : bool;
   on_commit : committed -> unit;
+  precommit : Game_state.t -> Move_engine.commit -> unit;
+  on_snapshot : Game_state.t -> unit;
 }
 
 let default_config = { queue_capacity = 4096 }
@@ -151,7 +155,11 @@ let process_one t item =
    | None -> ());
   match item.request with
   | Move request ->
-    let result = Move_engine.process t.state request in
+    let result =
+      Move_engine.process
+        ~precommit:(fun commit -> t.precommit t.state commit)
+        t.state request
+    in
     let finished_ns = now_ns () in
     (match item.timing with
      | Some timing -> Metrics.mark_committed timing finished_ns
@@ -159,13 +167,23 @@ let process_one t item =
     update_metrics t ~started_ns ~finished_ns item;
     (match result with
      | Move_engine.Accepted accepted ->
-       (try t.on_commit (committed_of_accepted t accepted item.timing) with
+       let committed = committed_of_accepted t accepted item.timing in
+       (try t.on_commit committed with
         | exn ->
           Printf.eprintf "state worker on_commit failed: %s\n%!"
             (Printexc.to_string exn))
      | Move_engine.Rejected _ ->
        t.requests_rejected <- Int64.succ t.requests_rejected);
     Lwt.wakeup_later item.promise (Ok (Move_result result));
+    true
+  | Snapshot_world ->
+    (try t.on_snapshot t.state with
+     | exn ->
+       Printf.eprintf "state worker on_snapshot failed: %s\n%!"
+         (Printexc.to_string exn));
+    let finished_ns = now_ns () in
+    update_metrics t ~started_ns ~finished_ns item;
+    Lwt.wakeup_later item.promise (Ok World_snapshot_result);
     true
   | Snapshot { board_x; board_y } ->
     let snapshot =
@@ -198,7 +216,9 @@ let rec loop t budget =
     if process_one t item then loop t (budget - 1) else Lwt.return_unit
   end
 
-let start ?(on_commit = fun _ -> ()) ~(config : config) state =
+let start ?(on_commit = fun _ -> ())
+    ?(precommit = fun _ _ -> ())
+    ?(on_snapshot = fun _ -> ()) ~(config : config) state =
   if config.queue_capacity <= 0 then
     invalid_arg "State_worker.start: queue_capacity must be positive";
   let finished, finished_u = Lwt.wait () in
@@ -222,6 +242,8 @@ let start ?(on_commit = fun _ -> ()) ~(config : config) state =
       finished_u;
       finished_done = false;
       on_commit;
+      precommit;
+      on_snapshot;
     }
   in
   Lwt.async (fun () -> loop worker batch_size);
@@ -261,7 +283,7 @@ let submit ?timing t request =
   Lwt.map
     (function
       | Ok (Move_result result) -> Ok result
-      | Ok (Snapshot_result _) -> assert false
+      | Ok (Snapshot_result _) | Ok World_snapshot_result -> assert false
       | Error error -> Error error)
     (enqueue t ?timing (Move request))
 
@@ -273,9 +295,17 @@ let submit_snapshot ?timing t ~board_x ~board_y =
     Lwt.map
       (function
         | Ok (Snapshot_result snapshot) -> Ok snapshot
-        | Ok (Move_result _) -> assert false
+        | Ok (Move_result _) | Ok World_snapshot_result -> assert false
         | Error error -> Error error)
       (enqueue t ?timing (Snapshot { board_x; board_y }))
+
+let request_snapshot t =
+  Lwt.map
+    (function
+      | Ok World_snapshot_result -> Ok ()
+      | Ok (Move_result _) | Ok (Snapshot_result _) -> assert false
+      | Error error -> Error error)
+    (enqueue t Snapshot_world)
 
 let stop t =
   if t.accepting then begin

@@ -48,7 +48,7 @@ let connection_metrics_json (m : Connection_manager.metrics) =
       ("event_batching", `Bool m.event_batching);
     ]
 
-let metrics_body manager worker =
+let metrics_body manager worker persistence =
   let worker_metrics = State_worker.metrics worker in
   let connection_metrics = Connection_manager.metrics manager in
   Yojson.Safe.to_string
@@ -57,6 +57,7 @@ let metrics_body manager worker =
          [
            ("worker", worker_metrics_json worker_metrics);
            ("connections", connection_metrics_json connection_metrics);
+           ("persistence", Persistence.metrics_json persistence);
          ]
        ())
 
@@ -321,15 +322,40 @@ let () =
   let allocation_started = now_ns () in
   let state = Game_state.create () in
   log_phase "game state allocation" allocation_started;
-  let init_started = now_ns () in
-  Game_state.initialise state;
-  log_phase "world initialisation" init_started;
+  let data_dir =
+    match Sys.getenv_opt "SIM_MAP_DATA_DIR" with
+    | Some dir -> dir
+    | None -> "data"
+  in
+  let persistence_config : Persistence.config =
+    {
+      data_dir;
+      sync = int_env "SIM_MAP_WAL_SYNC" 1 <> 0;
+      snapshot_every_moves = int_env "SIM_MAP_SNAPSHOT_MOVES" 100_000;
+      snapshot_every_seconds = float_env "SIM_MAP_SNAPSHOT_SECONDS" 600.;
+    }
+  in
+  let recovery_started = now_ns () in
+  let persistence, recovery =
+    match Persistence.recover persistence_config state with
+    | Ok result -> result
+    | Error message -> failwith ("persistence recovery failed: " ^ message)
+  in
+  log_phase "persistence recovery" recovery_started;
+  at_exit (fun () -> Persistence.close persistence);
   let verify_started = now_ns () in
   let occupied = Game_state.occupied_count state in
-  Printf.printf "initialisation verification: %d occupied squares\n%!" occupied;
-  if occupied <> 32_000_000 then
+  Printf.printf
+    "recovery: sequence=%Ld snapshot=%s replayed=%d torn_tail=%b initialised=%b occupied=%d data_dir=%s\n%!"
+    (Game_state.sequence state)
+    (match recovery.snapshot_sequence with
+     | None -> "none"
+     | Some sequence -> Printf.sprintf "%Ld" sequence)
+    recovery.replayed_transitions recovery.truncated_wal
+    recovery.initialised_world occupied data_dir;
+  if Int64.equal (Game_state.sequence state) 0L && occupied <> 32_000_000 then
     failwith "initial world does not contain 32,000,000 pieces";
-  log_phase "initialisation verification" verify_started;
+  log_phase "recovery verification" verify_started;
   let worker_started = now_ns () in
   let outbox_capacity = max 1 (int_env "CONNECTION_OUTBOX_CAPACITY" 256) in
   let event_batching = int_env "EVENT_BATCHING" 1 <> 0 in
@@ -340,11 +366,40 @@ let () =
     Connection_manager.create ~max_outbox:outbox_capacity ~event_batching
       ~batch_window_s ()
   in
+  let worker_ref = ref None in
+  let request_snapshot () =
+    match !worker_ref with
+    | None -> ()
+    | Some worker ->
+      Persistence.request_started persistence;
+      Lwt.async (fun () ->
+          State_worker.request_snapshot worker >|= function
+          | Ok () -> ()
+          | Error _ -> Persistence.request_failed persistence)
+  in
+  let snapshot_due () =
+    Persistence.move_snapshot_due persistence
+    || Persistence.time_snapshot_due persistence
+  in
+  let on_commit committed =
+    Connection_manager.enqueue_move manager committed;
+    Persistence.note_commit persistence;
+    if snapshot_due () then request_snapshot ()
+  in
   let worker =
-    State_worker.start
-      ~on_commit:(Connection_manager.enqueue_move manager)
+    State_worker.start ~on_commit
+      ~precommit:(Persistence.before_commit persistence)
+      ~on_snapshot:(Persistence.capture persistence)
       ~config:State_worker.default_config state
   in
+  worker_ref := Some worker;
+  Lwt.async (fun () ->
+      let rec timer () =
+        Lwt_unix.sleep 1.0 >>= fun () ->
+        if Persistence.time_snapshot_due persistence then request_snapshot ();
+        timer ()
+      in
+      timer ());
   log_phase "state worker startup" worker_started;
   log_phase "total startup" total_started;
 
@@ -357,7 +412,13 @@ let () =
        Dream.get "/metrics" (fun _req ->
          Dream.respond
            ~headers:[ ("Content-Type", "application/json") ]
-           (metrics_body manager worker));
+           (metrics_body manager worker persistence));
+       Dream.get "/state-hash" (fun _req ->
+         let digest = Persistence.state_digest state in
+         Dream.respond
+           ~headers:[ ("Content-Type", "application/json") ]
+           (Printf.sprintf "{\"sequence\":\"%Ld\",\"digest\":\"%s\"}"
+              (Game_state.sequence state) digest));
        Dream.scope "/static" [] [
          Dream.get "/**" (Dream.static "_build/default/client");
        ];

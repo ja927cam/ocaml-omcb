@@ -49,12 +49,25 @@ val default_config : config
 (** [queue_capacity = 4096]. *)
 
 val start :
-  ?on_commit:(committed -> unit) -> config:config -> Game_state.t -> t
+  ?on_commit:(committed -> unit) ->
+  ?precommit:(Game_state.t -> Move_engine.commit -> unit) ->
+  ?on_snapshot:(Game_state.t -> unit) ->
+  config:config ->
+  Game_state.t ->
+  t
 (** Transfer ownership of [state] to the worker and start the processing
     task. [on_commit] runs synchronously after a successful move commit and
     must only enqueue work (no I/O or yielding). It receives the committed
     sequence, request ID, affected boards, their new revisions and changed
-    squares. @raise Invalid_argument if [queue_capacity] is not positive. *)
+    squares.
+
+    [precommit] runs synchronously inside a move after validation and before
+    the first board write. It must append the transition to durable storage;
+    raising aborts the move and stops the worker. [on_snapshot] runs
+    synchronously when a world-snapshot request reaches the front of the
+    queue. It may copy the world but must not perform lengthy disk I/O.
+
+    @raise Invalid_argument if [queue_capacity] is not positive. *)
 
 val submit :
   ?timing:Metrics.move_timing ->
@@ -74,6 +87,10 @@ val submit_snapshot :
 (** Snapshot a board through the same FIFO queue. Returns a 64-element copy in
     row-major order plus the board revision. Invalid coordinates return
     [Invalid_request]. *)
+
+val request_snapshot : t -> (unit, submit_error) result Lwt.t
+(** Queue a consistent world-snapshot boundary. Resolves after [on_snapshot]
+    has run (or after the request is refused). *)
 
 val stop : t -> unit Lwt.t
 (** Stop accepting new requests, finish queued requests, then resolve. *)
