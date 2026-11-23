@@ -767,16 +767,13 @@ boards, not a single board:
   event; kind 4 is a batch of 1–255 compact event records. The client
   dispatches on the kind and parses move responses, snapshots, single events or
   batches.
-- The route uses `Dream.websocket ~close:false` to avoid Dream
-  1.0.0~alpha8’s busy-looping close path on abrupt peer teardown. The close
-  path serialises a four-byte close frame into the WebSocket writer. If the
-  peer has already reset the connection, `writev` returns `EPIPE`; Dream’s
-  writer is closed without discarding the still-pending close frame, so
-  `Faraday.operation` keeps returning the same write and the Gluten write loop
-  spins. `close:false` avoids scheduling that frame. The trade-off is that a
-  clean client `WebSocket.close()` does not receive a server close frame; the
-  connection is released when the client’s TCP stack closes, which the load
-  harness confirms happens when the client process exits.
+- The server uses Dream’s normal WebSocket close path with a pinned
+  `httpun-ws` patch. Dream 1.0.0~alpha8 previously spun when a close frame or
+  data write failed: the failed frame stayed pending in Faraday and the Gluten
+  write loop retried it forever. The patch marks the writer failed, discards
+  pending bytes, makes `next` report `Close`, and makes the read loop return
+  `Close` when the writer is closed. A failed socket therefore tears down
+  cleanly instead of monopolising a CPU; see `vendor/httpun-ws-wsd.patch`.
 - Sends have a two-second timeout, the receive loop catches connection errors,
   and pending worker work remains bounded by the queue.
 - Each connection has a FIFO outbox and its own sender fiber. If the outbox
@@ -1113,6 +1110,9 @@ It covers:
 - a WebSocket teardown regression test that repeatedly SIGKILLs Chromium,
   checks server CPU returns to idle, checks file descriptors do not grow, and
   confirms a fresh snapshot request still works;
+- a deliberate write-failure test that pauses a raw client, generates a large
+  event burst, resets the socket, and checks idle CPU, failed-send accounting,
+  unregister cleanup and a surviving client;
 - a live load harness that runs 40–80 concurrent clients, exercises
   subscriptions, snapshots and moves, and checks latency, throughput, every
   event frame, cross-window isolation and server CPU/RSS/fds.

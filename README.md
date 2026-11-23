@@ -8,6 +8,9 @@ binary WebSocket protocol.
 ## Build and run
 
 ```bash
+# once per opam switch: apply the pinned httpun-ws failed-write patch
+scripts/pin-httpun-ws.sh
+
 dune build
 dune runtest
 _build/default/server/server.exe
@@ -32,6 +35,7 @@ browser and verifies the server returns to idle:
 
 ```bash
 node test/ws_teardown_test.js
+node test/ws_write_failure_test.js  # deliberate socket reset + failed writes
 ```
 
 It checks that the nine centre boards are visible, that dragging empty space

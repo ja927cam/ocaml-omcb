@@ -261,6 +261,17 @@ class RawClient {
       this.socket = null;
     }
   }
+
+  reset() {
+    if (this.socket) {
+      try {
+        this.socket.resetAndDestroy();
+      } catch (_) {
+        this.socket.destroy();
+      }
+      this.socket = null;
+    }
+  }
 }
 
 module.exports = { RawClient };

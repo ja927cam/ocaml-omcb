@@ -1183,22 +1183,23 @@ never rolled back.
   one 4 KiB frame can carry many compact event records.
 - The client sends snapshots strictly sequentially (one outstanding) to avoid
   a lost write-acknowledgement path in Dream’s stream pipe.
-- The route uses `Dream.websocket ~close:false`. Dream 1.0.0~alpha8’s close
-  path can busy-loop when a peer disappears without a clean close handshake.
-  The close path serialises a four-byte close frame; if the peer has reset the
-  connection, the write fails and Dream closes the writer without discarding
-  the pending frame, so the write loop retries it forever. With `close:false`,
-  the handler returns and Dream closes the underlying HTTP connection without
-  scheduling that close frame.
+- The server uses Dream’s normal WebSocket close path with a pinned
+  `httpun-ws` patch (`vendor/httpun-ws-wsd.patch`). A failed write marks the
+  writer failed, discards pending bytes, makes the write loop report `Close`,
+  and makes the read loop close when the writer is closed. A dead client can
+  therefore never leave a frame retrying forever.
+- The receive loop races `Dream.receive` against the connection-manager close
+  signal, so a send failure unblocks the handler and allows the HTTP connection
+  and its file descriptor to be reclaimed.
 - The receive loop is wrapped in `Lwt.catch`, so EOF/connection errors and
   send timeouts end only that handler. Pending worker items are bounded by the
   normal worker queue capacity.
-- The client still closes the WebSocket on `beforeunload`; the server simply
-  does not send a WebSocket close frame in response. A cleanly closed client
-  socket is released when the client’s TCP stack closes, not when
-  `WebSocket.close()` is called.
 - `test/ws_teardown_test.js` kills Chromium repeatedly and checks idle CPU,
   stable file descriptors and a working snapshot request afterwards.
+- `test/ws_write_failure_test.js` deliberately pauses a raw client, generates
+  a large event burst, resets its socket, and verifies the server remains
+  responsive with idle CPU, no write-failure spin, unregister cleanup and a
+  surviving client.
 
 ---
 
@@ -1544,6 +1545,17 @@ These are deliberate and are not conventional chess:
 - Asserts server CPU returns to idle, file descriptors do not grow, and a
   fresh WebSocket snapshot request still gets a valid response.
 
+### `ws_write_failure_test.js` (Linux, server running)
+
+- Pauses a raw WebSocket client and generates 37,500 moves so its outbox and
+  send path are backpressured.
+- Resets the raw TCP socket, forcing a failed server write.
+- Asserts the server stays responsive, records failed sends, returns to 0 idle
+  ticks/s, discards the connection from subscriptions, and still serves a
+  surviving client.
+- Exercises the pinned `httpun-ws` Wsd cleanup; `test/test_wsd.ml` checks the
+  same failed-write transition directly.
+
 ### `load_test.js` (Linux, server running)
 
 - Runs the `default` profile (40 active + 4 silent clients, 400 snapshots,
@@ -1600,10 +1612,6 @@ These are deliberate and are not conventional chess:
   WebSocket buffering, so small acknowledgements use more bandwidth than their
   logical 26-byte payload. Live events are batched into kind-4 frames, which
   amortises the padding over many events; `EVENT_BATCHING=0` disables it.
-- A clean WebSocket close does not receive a server close frame (see the
-  `close:false` workaround), so the server releases the connection when the
-  client’s TCP stack closes it. Abrupt teardown is still cleaned up and leaves
-  the server idle.
 - Client promotion is not re-glyphed locally before commit; the live event or
   response supplies the promoted byte immediately after acceptance.
 - No persistence.

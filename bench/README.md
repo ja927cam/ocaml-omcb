@@ -59,9 +59,7 @@ The harness writes:
 
 A detached helper (`bench/load_after.js`) waits for the load process to exit,
 then appends the server's final fd count, RSS and idle CPU to the JSON and
-Markdown. This is necessary because the server intentionally does not schedule
-Dream's WebSocket close frame (see below); client sockets are released when the
-client process exits.
+Markdown. `ws_write_failure_test.js` covers the deliberate dead-socket path.
 
 ### What is measured
 
@@ -97,10 +95,9 @@ client process exits.
   bottleneck: it parses every event and drives the move stream. Server CPU
   stays below 62% at 1,020 clients, so the top-end latency is not purely server
   saturation. The server-side stage timings separate the two.
-- The server uses `Dream.websocket ~close:false`. Dream 1.0.0~alpha8's close
-  frame can spin the write loop after a peer reset, so the server does not
-  schedule it. Clean client closes are therefore released by the client's TCP
-  teardown rather than by a server close frame.
+- The server uses Dream's normal WebSocket close path with the pinned
+  `httpun-ws` patch described in `vendor/README.md`. A failed write discards
+  pending bytes and closes both loops, so a dead client cannot spin the server.
 - The 4,096-byte wire frame is deliberate: Dream buffers until 4 KiB. Event
   frames are batched by default: one kind-4 frame carries up to ~150 compact
   event records, so a burst of 4,000 recipient events can use ~300 writes
@@ -271,6 +268,25 @@ frames (keeping response promises intact), so the queue is bounded. A client
 that resumes can detect the revision gap and recover with a fresh snapshot.
 A client that stays blocked past the 2 s sender timeout is unregistered; a new
 connection recovers with a snapshot.
+
+## Write-failure reliability
+
+Apply the pinned `httpun-ws` patch once per opam switch:
+
+```bash
+scripts/pin-httpun-ws.sh
+```
+
+Then, with a server running:
+
+```bash
+node test/ws_write_failure_test.js
+```
+
+The test pauses a raw client, generates 37,500 moves, resets its TCP socket,
+and checks that the server remains responsive with 0 idle CPU ticks/s, records
+failed sends, unregisters the connection, and still serves a surviving client.
+`test/test_wsd.ml` tests the failed-write transition directly.
 
 ## Snapshot consistency
 

@@ -20,6 +20,7 @@ type board_state = {
   mutable loaded : bool;
   mutable stale : bool;
   mutable pending_request : int32 option;
+  mutable pending_since : float;
 }
 
 type drag = {
@@ -271,6 +272,7 @@ let main () =
   let ws = ref None in
   let next_request_id = ref (random_request_id ()) in
   let last_subscription = ref None in
+  let retry_snapshot_hook = ref (fun () -> ()) in
 
   let centre_of_view () =
     ( clamp_int
@@ -347,6 +349,7 @@ let main () =
           loaded = false;
           stale = false;
           pending_request = None;
+          pending_since = 0.;
         }
       in
       Hashtbl.add boards key state;
@@ -358,13 +361,15 @@ let main () =
     | None -> ()
     | Some request_id ->
       Hashtbl.remove pending_snapshots request_id;
-      state.pending_request <- None
+      state.pending_request <- None;
+      state.pending_since <- 0.
   in
 
   let send_snapshot_request state =
     if (not state.loaded) && state.pending_request = None then begin
       let request_id = alloc_request_id () in
       state.pending_request <- Some request_id;
+      state.pending_since <- Performance.now_ms G.performance;
       Hashtbl.replace pending_snapshots request_id
         (board_key state.bx state.by);
       let request : Protocol.Types.snapshot_request =
@@ -459,11 +464,57 @@ let main () =
     let load_x1 = min x1 (visible_x1 + 1) in
     let load_y0 = max y0 (visible_y0 - 1) in
     let load_y1 = min y1 (visible_y1 + 1) in
+    (* The centre board is the one most likely to be observed or moved on;
+       request it first so a large window rebuild cannot starve it. *)
+    enqueue center_x center_y;
     for by = load_y0 to load_y1 do
-      for bx = load_x0 to load_x1 do enqueue bx by done
+      for bx = load_x0 to load_x1 do
+        if bx <> center_x || by <> center_y then enqueue bx by
+      done
     done;
-    pump_snapshots ()
+    pump_snapshots ();
   in
+  retry_snapshot_hook := ensure_window;
+  ignore
+    (G.set_interval ~ms:250 (fun () ->
+         let now = Performance.now_ms G.performance in
+         (* Reconcile the request-id map with the board table. Eviction or a
+            stale response can otherwise leave an orphan request id that keeps
+            the single-flight snapshot pump permanently at its limit. *)
+         let orphan_ids =
+           Hashtbl.fold
+             (fun id key acc ->
+               match Hashtbl.find_opt boards key with
+               | Some state when state.pending_request = Some id -> acc
+               | _ -> id :: acc)
+             pending_snapshots []
+         in
+         List.iter (fun id -> Hashtbl.remove pending_snapshots id) orphan_ids;
+         Hashtbl.iter
+           (fun _ state ->
+             match state.pending_request with
+             | Some id when not (Hashtbl.mem pending_snapshots id) ->
+               state.pending_request <- None;
+               state.pending_since <- 0.
+             | _ -> ())
+           boards;
+         let stale = ref [] in
+         Hashtbl.iter
+           (fun _ state ->
+             match state.pending_request with
+             | Some _ when now -. state.pending_since > 2500. ->
+               stale := state :: !stale
+             | _ -> ())
+           boards;
+         if !stale <> [] then begin
+           List.iter
+             (fun state ->
+               match state.pending_request with
+               | Some _ -> forget_pending state
+               | None -> ())
+             !stale
+         end;
+         if orphan_ids <> [] || !stale <> [] then !retry_snapshot_hook ()));
 
   let board_at_canvas x y =
     let wx = !view_left +. (x /. board_px) in

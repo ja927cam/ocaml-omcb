@@ -1,0 +1,83 @@
+--- a/lib/wsd.ml
++++ b/lib/wsd.ml
+@@ -93,20 +93,24 @@
+ let flushed t f = Faraday.flush t.faraday f
+ 
+ let close ?code t =
+-  begin match code with
+-  | Some code ->
+-    let payload = Bytes.create 2 in
+-    Bytes.set_uint16_be payload 0 (Websocket.Close_code.to_int code);
+-    Serialize.serialize_bytes t.faraday
+-      ~mode:t.mode
+-      ~is_fin:true
+-      ~opcode:`Connection_close
+-      ~src_off:0
+-      ~payload ~off:0 ~len:2;
+-  | None -> ()
+-  end;
+-  Faraday.close t.faraday;
+-  wakeup t
++  (* Avoid serialising another frame after a failed write. Once the writer is
++     closed, Faraday would reject the write and the close frame would stay
++     pending forever. *)
++  if not (Faraday.is_closed t.faraday) then begin
++    (match code with
++     | Some code ->
++       let payload = Bytes.create 2 in
++       Bytes.set_uint16_be payload 0 (Websocket.Close_code.to_int code);
++       Serialize.serialize_bytes t.faraday
++         ~mode:t.mode
++         ~is_fin:true
++         ~opcode:`Connection_close
++         ~src_off:0
++         ~payload ~off:0 ~len:2
++     | None -> ());
++    Faraday.close t.faraday;
++    wakeup t
++  end
+ 
+ let error_code t =
+   match t.error_code with
+@@ -123,12 +127,24 @@
+     close ~code:`Abnormal_closure t
+ 
+ let next t =
+-  match Faraday.operation t.faraday with
+-  | `Close         -> `Close 0 (* XXX(andreas): should track unwritten bytes *)
+-  | `Yield         -> `Yield
+-  | `Writev iovecs -> `Write iovecs
++  match t.error_code with
++  | `Exn _ -> `Close 0
++  | `Ok ->
++    (match Faraday.operation t.faraday with
++     | `Close         -> `Close 0 (* XXX(andreas): should track unwritten bytes *)
++     | `Yield         -> `Yield
++     | `Writev iovecs -> `Write iovecs)
+ 
+ let report_result t result =
+   match result with
+-  | `Closed -> close t
++  | `Closed ->
++    (* A failed write leaves the failed frame in Faraday. Mark the write side
++       dead and discard pending bytes so [next] cannot hand back the same
++       write forever. *)
++    (match t.error_code with
++     | `Ok -> t.error_code <- `Exn (Failure "websocket write failed")
++     | `Exn _ -> ());
++    Faraday.close t.faraday;
++    let pending = Faraday.pending_bytes t.faraday in
++    if pending > 0 then Faraday.shift t.faraday pending
+   | `Ok len -> Faraday.shift t.faraday len
+--- a/lib/websocket_connection.ml
++++ b/lib/websocket_connection.ml
+@@ -123,7 +123,8 @@
+   end
+ 
+ let next_read_operation t =
+-  match _next_read_operation t with
++  if Wsd.is_closed t.wsd then `Close
++  else match _next_read_operation t with
+   | `Error (`Parse (_, message)) ->
+     set_error_and_handle t (`Exn (Failure message));
+     `Close

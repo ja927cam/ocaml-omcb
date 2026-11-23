@@ -1,3 +1,4 @@
+open Lwt.Infix
 let cross_origin_isolation inner request =
   let%lwt response = inner request in
   Dream.set_header response "Cross-Origin-Opener-Policy" "same-origin";
@@ -181,11 +182,19 @@ type socket_response =
 let handle_socket manager worker socket =
   let conn =
     Connection_manager.register manager ~send_raw:(send_bytes socket)
+      ~close_raw:(fun () -> Dream.close_websocket socket)
   in
   let rec loop () =
-    match%lwt Dream.receive socket with
-    | None -> Lwt.return_unit
-    | Some data ->
+    match%lwt
+      Lwt.pick
+        [
+          (Dream.receive socket >|= fun data -> `Data data);
+          (Connection_manager.wait_closed conn >|= fun () -> `Closed);
+        ]
+    with
+    | `Closed -> Lwt.return_unit
+    | `Data None -> Lwt.return_unit
+    | `Data (Some data) ->
       let bytes = Bytes.of_string data in
       let response_lwt : socket_response option Lwt.t =
         match String.length data with
@@ -353,9 +362,8 @@ let () =
          Dream.get "/**" (Dream.static "_build/default/client");
        ];
        Dream.get "/ws" (fun _req ->
-         (* Dream 1.0.0~alpha8's WebSocket close path can busy-loop when the
-            peer disconnects abruptly. Let the HTTP connection close when the
-            handler returns instead of scheduling Dream's close frame. *)
-         Dream.websocket ~close:false (fun socket ->
+         (* The pinned httpun-ws patch makes a failed write discard its pending
+            frame and close the read loop, so Dream's normal close path is safe. *)
+         Dream.websocket (fun socket ->
            handle_socket manager worker socket));
      ]

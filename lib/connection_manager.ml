@@ -24,6 +24,7 @@ type conn = {
   id : int;
   manager : t;
   send_raw : send;
+  close_raw : unit -> unit Lwt.t;
   mutable outbox : outbox_item Queue.t;
   mutable event_buffer : Buffer.t;
   mutable event_callbacks : (write_result -> unit) list;
@@ -33,6 +34,8 @@ type conn = {
   mutable next_snapshot_token : int;
   subscriptions : (int, unit) Hashtbl.t;
   mutable closed : bool;
+  closed_signal : unit Lwt.t;
+  closed_wakener : unit Lwt.u;
   mutable sending : bool;
 }
 
@@ -131,8 +134,11 @@ let unregister t conn =
     conn.closed <- true;
     clear_subscriptions conn;
     Hashtbl.remove t.clients conn.id;
+    Lwt.wakeup_later conn.closed_wakener ();
     fail_event_buffer conn;
-    fail_queued conn (Failure "websocket connection closed")
+    fail_queued conn (Failure "websocket connection closed");
+    Lwt.async (fun () ->
+        Lwt.catch conn.close_raw (fun _ -> Lwt.return_unit))
   end
 
 let rec drain conn =
@@ -143,9 +149,18 @@ let rec drain conn =
   end
   else
     let item = Queue.take conn.outbox in
+    let debug =
+      Sys.getenv_opt "DRAIN_DEBUG" = Some "1"
+      && Bytes.length item.bytes >= 5
+      && Char.code (Bytes.get item.bytes 0) = 2
+    in
+    if debug then
+      Printf.eprintf "SEND2 conn=%d id=%ld\n%!" conn.id
+        (Int32.of_int (Char.code (Bytes.get item.bytes 2) lor (Char.code (Bytes.get item.bytes 3) lsl 8) lor (Char.code (Bytes.get item.bytes 4) lsl 16)));
     Lwt.catch
       (fun () ->
         conn.send_raw item.bytes >>= fun () ->
+        if debug then Printf.eprintf "DONE2 conn=%d\n%!" conn.id;
         (match item.resolver with
          | Some resolver -> Lwt.wakeup_later resolver ()
          | None -> ());
@@ -309,14 +324,16 @@ let append_event conn payload callback =
     end
   end
 
-let register t ~send_raw =
+let register ?(close_raw = fun () -> Lwt.return_unit) t ~send_raw =
   let id = t.next_id in
   t.next_id <- id + 1;
+  let closed_signal, closed_wakener = Lwt.wait () in
   let conn =
     {
       id;
       manager = t;
       send_raw;
+      close_raw;
       outbox = Queue.create ();
       event_buffer = Buffer.create 4096;
       event_callbacks = [];
@@ -326,6 +343,8 @@ let register t ~send_raw =
       next_snapshot_token = 0;
       subscriptions = Hashtbl.create 1024;
       closed = false;
+      closed_signal;
+      closed_wakener;
       sending = false;
     }
   in
@@ -356,6 +375,8 @@ let set_window conn ~center_x ~center_y ~radius =
       done
     done
   end
+
+let wait_closed conn = conn.closed_signal
 
 let client_count t = Hashtbl.length t.clients
 
