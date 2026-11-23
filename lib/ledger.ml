@@ -50,9 +50,13 @@ let max_flags = 0x3FFF
 let create_ledger ?(next_seq = 0L) capacity =
   if capacity <= 0 || (capacity land (capacity - 1)) <> 0 then
     invalid_arg "Ledger.create_ledger: capacity must be a positive power of two";
+  let moves = Array1.create int64 c_layout capacity in
+  let metadata = Array1.create int64 c_layout capacity in
+  Array1.fill moves 0L;
+  Array1.fill metadata 0L;
   {
-    moves = Array1.create int64 c_layout capacity;
-    metadata = Array1.create int64 c_layout capacity;
+    moves;
+    metadata;
     capacity;
     mask = capacity - 1;
     head_seq = next_seq;
@@ -61,6 +65,24 @@ let create_ledger ?(next_seq = 0L) capacity =
 
 let create capacity = create_ledger capacity
 let capacity t = t.capacity
+
+let reset t ~next_seq =
+  Array1.fill t.moves 0L;
+  Array1.fill t.metadata 0L;
+  t.head_seq <- next_seq;
+  t.oldest_seq <- next_seq
+
+let set_bounds t ~head ~oldest =
+  if Int64.compare head 0L <= 0 then
+    invalid_arg "Ledger.set_bounds: head must be positive";
+  if Int64.compare oldest head > 0 then
+    invalid_arg "Ledger.set_bounds: oldest is after head";
+  t.head_seq <- head;
+  t.oldest_seq <- oldest
+
+let raw_moves t = t.moves
+let raw_metadata t = t.metadata
+
 let next_seq t = t.head_seq
 let latest_seq t = Int64.pred t.head_seq
 let oldest_seq t = t.oldest_seq

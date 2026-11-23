@@ -113,6 +113,10 @@ let clear_board t bp =
     Array1.unsafe_set t.squares (base + i) Piece.empty
   done
 
+let clear_all t = Array1.fill t.squares Piece.empty
+
+let raw_words t = t.squares
+
 let iter_board t bp f =
   let base = board_id bp * squares_per_board in
   for y = 0 to 7 do

@@ -7,6 +7,9 @@
   board
   int16
   ledger
+  checksum
+  wal_format
+  snapshot_format
   move
   move_validator
   move_processor

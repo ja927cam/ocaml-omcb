@@ -77,6 +77,18 @@ val clear_board : t -> board_pos -> unit
 (** [clear_board t p] empties all 64 squares of board [p].
     @raise Invalid_argument if [p] is out of range. *)
 
+val clear_all : t -> unit
+(** Empty the entire world. *)
+
+val raw_words :
+  t -> (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t
+(** [raw_words t] is the backing array of 64-bit pieces.
+
+    This is an escape hatch for persistence: callers must only read it, or
+    overwrite it while reconstructing a recovered world. Mutating it behind
+    {!Board}'s back otherwise breaks the abstraction and the occupied-count
+    guarantees. *)
+
 val iter_board : t -> board_pos -> (square_pos -> Piece.t -> unit) -> unit
 (** [iter_board t p f] visits all 64 squares of board [p] in row-major order.
     Empty squares are included. @raise Invalid_argument if [p] is out of

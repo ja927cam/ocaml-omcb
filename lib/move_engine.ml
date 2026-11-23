@@ -10,6 +10,16 @@ type accepted = {
   changes : (Board.position * Piece.t) list;
 }
 
+type commit = {
+  sequence : int64;
+  request_id : int32;
+  changes : (Board.position * Piece.t) list;
+  ledger_move : int64;
+  ledger_moved_id : int32;
+  ledger_captured_id : int32;
+  ledger_flags : int;
+}
+
 type result =
   | Accepted of accepted
   | Rejected of {
@@ -32,7 +42,7 @@ let is_promotion (info : Move_validator.move_info) =
      || ((not (Piece.is_white info.moving_piece))
         && Board.world_y info.dst = 7999))
 
-let process state (request : Move_request.t) =
+let process ?(precommit = fun _ -> ()) state (request : Move_request.t) =
   Game_state.with_state state
     (fun ~board ~ledger ~sequence ->
       let source = Board.get board request.move.src in
@@ -88,6 +98,16 @@ let process state (request : Move_request.t) =
           Ledger.validate_event move moved_id captured_id flags;
           let plan = Move_processor.prepare board info in
           let changes = Move_processor.changes plan in
+          precommit
+            {
+              sequence = next;
+              request_id = request.request_id;
+              changes;
+              ledger_move = move;
+              ledger_moved_id = moved_id;
+              ledger_captured_id = captured_id;
+              ledger_flags = flags;
+            };
           Move_processor.apply_plan board plan;
           let recorded = Ledger.append ledger move moved_id captured_id flags in
           if not (Int64.equal recorded next) then

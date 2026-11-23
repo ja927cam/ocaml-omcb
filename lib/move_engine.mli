@@ -14,6 +14,19 @@ type accepted = {
   changes : (Board.position * Piece.t) list;
 }
 
+type commit = {
+  sequence : int64;
+  request_id : int32;
+  changes : (Board.position * Piece.t) list;
+  ledger_move : int64;
+  ledger_moved_id : int32;
+  ledger_captured_id : int32;
+  ledger_flags : int;
+}
+(** Everything a durable log needs to record an accepted transition. The
+    callback runs after validation and plan construction, before the first
+    board write. If it raises, the move is not applied. *)
+
 type result =
   | Accepted of accepted
   | Rejected of {
@@ -26,6 +39,12 @@ val flag_en_passant : int
 val flag_promotion : int
 (** Ledger metadata flag bits used by this engine. *)
 
-val process : Game_state.t -> Move_request.t -> result
+val process :
+  ?precommit:(commit -> unit) ->
+  Game_state.t ->
+  Move_request.t ->
+  result
 (** Validate and, if accepted, apply the move and append one ledger event.
-    Rejected moves change neither the board, ledger nor sequence. *)
+    Rejected moves change neither the board, ledger nor sequence. When
+    [precommit] is supplied it must make the transition durable before
+    returning; raising aborts the move before any board mutation. *)

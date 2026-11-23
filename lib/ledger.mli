@@ -20,6 +20,23 @@ val create_ledger : ?next_seq:int64 -> int -> t
 
 val create : int -> t
 val capacity : t -> int
+
+val reset : t -> next_seq:int64 -> unit
+(** Empty the ledger and make [next_seq] the next sequence to append. Used
+    when reconstructing a world from a snapshot or a fresh initialisation. *)
+
+val set_bounds : t -> head:int64 -> oldest:int64 -> unit
+(** Replace the sequence window without touching the backing arrays. Used
+    after loading the ledger arrays from a snapshot. *)
+
+val raw_moves :
+  t -> (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t
+(** Persistence-only backing array of packed moves. *)
+
+val raw_metadata :
+  t -> (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t
+(** Persistence-only backing array of packed metadata. *)
+
 val latest_seq : t -> int64
 (** The most recently committed sequence number, or [next_seq - 1] when the
     ledger is empty. *)
