@@ -12,6 +12,10 @@
  * directions, the cache bound, move persistence across pans and a cache
  * eviction, that cross-board quiet moves are accepted, and that cross-board
  * captures of unmoved pieces are blocked locally.
+ *
+ * Moves persist on the long-running server, so the test first probes a
+ * pristine 5x5 block (revision 0, standard starting position) and uses its
+ * centre. This keeps repeated runs independent of earlier moves.
  */
 
 const { spawn } = require("child_process");
@@ -21,20 +25,108 @@ const path = require("path");
 
 const CDP_PORT = 9223 + Math.floor(Math.random() * 500);
 const SERVER = "http://localhost:8080/";
+const WS_URL = "ws://localhost:8080/ws";
+const WIRE_FRAME = 4096;
 const BOARD_SCALE = 216;
 const CELL = BOARD_SCALE / 8;
-// Pick a fresh board each run: moves are authoritative and persist on the
-// long-running test server.
-const BOARD = {
-  x: 400 + Math.floor(Math.random() * 200),
-  y: 400 + Math.floor(Math.random() * 200),
-};
+
+// Moves are authoritative and persist on the long-running test server, so a
+// random board may already have been modified by an earlier run. Query the
+// server until a pristine 5x5 block is found: revision 0 means no move has
+// ever been committed to that board.
+let BOARD;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function fail(message) {
   console.error("FAIL:", message);
   process.exitCode = 1;
   throw new Error(message);
+}
+
+// Safety net: a lost CDP response or a stalled browser must fail the test
+// with a message instead of hanging the harness.
+setTimeout(() => {
+  console.error("FAIL: client snapshot test exceeded its overall deadline");
+  process.exit(1);
+}, 180_000);
+
+async function pickFreshBlock() {
+  const socket = new WebSocket(WS_URL);
+  socket.binaryType = "arraybuffer";
+  await new Promise((resolve, reject) => {
+    socket.onopen = resolve;
+    socket.onerror = () => reject(new Error("snapshot probe could not connect"));
+    socket.onclose = () =>
+      reject(new Error("snapshot probe closed before it connected"));
+  });
+
+  let nextId = 2_000_000_000;
+  const pending = new Map();
+  socket.onmessage = (message) => {
+    const bytes = Buffer.from(message.data);
+    if (bytes.length !== WIRE_FRAME || bytes[0] !== 2) return;
+    const id = bytes.readInt32LE(2);
+    const resolve = pending.get(id);
+    if (!resolve) return;
+    pending.delete(id);
+    resolve({
+      status: bytes[1],
+      revision: Number(bytes.readBigInt64LE(10)),
+      board: bytes.subarray(18, 82),
+    });
+  };
+
+  const snapshot = (x, y) =>
+    new Promise((resolve, reject) => {
+      const id = nextId++;
+      const request = Buffer.alloc(9);
+      request[0] = 2;
+      request.writeInt32LE(id, 1);
+      request.writeUInt16LE(x, 5);
+      request.writeUInt16LE(y, 7);
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`snapshot probe timed out for (${x}, ${y})`));
+      }, 1500);
+      pending.set(id, (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      });
+      socket.send(request);
+    });
+
+  try {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const centreX = 20 + Math.floor(Math.random() * 960);
+      const centreY = 20 + Math.floor(Math.random() * 960);
+      let fresh = true;
+      for (let dy = -2; dy <= 2 && fresh; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const result = await snapshot(centreX + dx, centreY + dy);
+          if (
+            result.status !== 1 ||
+            result.revision !== 0 ||
+            // The test assumes the standard starting position: e2 pawn,
+            // e4 empty.
+            result.board[52] !== 19 ||
+            result.board[36] !== 0
+          ) {
+            fresh = false;
+            break;
+          }
+        }
+      }
+      if (fresh) return { x: centreX, y: centreY };
+    }
+  } finally {
+    await new Promise((resolve) => {
+      socket.onclose = resolve;
+      socket.onerror = resolve;
+      try { socket.close(); } catch (_) { resolve(); }
+      setTimeout(resolve, 500);
+    });
+  }
+  throw new Error("could not find a pristine 5x5 block of boards");
 }
 
 async function waitForEndpoint(url, retries = 40) {
@@ -56,6 +148,8 @@ async function main() {
     console.error(`Server is not available at ${SERVER}. Start it first.`);
     throw error;
   }
+
+  BOARD = await pickFreshBlock();
 
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "omc-client-test-"));
   const chrome = spawn(
@@ -422,7 +516,10 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main().then(
+  () => process.exit(0),
+  (error) => {
+    console.error(error);
+    process.exit(1);
+  }
+);

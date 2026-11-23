@@ -732,14 +732,35 @@ boards, not a single board:
   stale and retries. The response carries the `int64` revision at copy time.
 - The client sends one subscription-window message whenever its rounded cache
   centre changes. The server window is exactly the retained 25 x 25 set.
-- Snapshot loading is single-flight. A watchdog reconciles
-  `pending_snapshots` against the board table every 250 ms, drops orphan
-  request IDs, and retries a pending board after 2.5 s. The centre board is
-  queued first during a window rebuild. This addresses a cache-eviction stall
-  observed in the browser test, where a lost/orphaned request kept the
-  single-flight pump at its limit. The browser eviction test is still
-  timing-sensitive under headless Chromium; deterministic connection-manager
-  and snapshot/move race tests cover the consistency properties directly.
+- Snapshot loading is single-flight. The centre board is queued first during a
+  window rebuild. A 250 ms watchdog reconciles `pending_snapshots` against the
+  board table, drops orphan request IDs, and retries a pending board after a
+  per-board backoff: 500 ms for the first retry, doubling to 4 s. A successful
+  snapshot resets the backoff.
+- A retry does not discard a delayed response. A snapshot response is applied
+  when it matches the current request, or when it is an older request for a
+  board that is still unloaded and not resyncing. Revisions are ordered per
+  board, so the older snapshot cannot roll back newer data; the
+  current-request rule still protects loaded boards and resyncs.
+- Why the older-response rule matters: in headless Chromium a WebSocket
+  message is occasionally not dispatched to the page for two to three seconds,
+  until the page sends another frame. Raw Node clients and the server do not
+  show this delay, and the page's timers and animation frames keep running.
+  Without the rule, the watchdog retry supersedes the stalled response, the
+  stalled response is then ignored, and the board stays unloaded forever.
+  This was the intermittent cache-eviction failure.
+- Moves use the same liveness idea. Receiving the client's own broadcast event
+  is authoritative (the server broadcasts only accepted moves), so it clears
+  the optimistic lock immediately, even if the direct move response is
+  delayed. While a move is pending, a probe snapshot request for the centre
+  board is sent every 250 ms; this releases a deferred message. If neither the
+  response nor the event arrives within 2 s, the optimistic move is rolled
+  back so the board does not stay locked.
+- The browser integration test selects a pristine 5 x 5 block by querying
+  snapshots directly. Every board must have revision 0, a white pawn on e2 and
+  an empty e4, so persisted moves from earlier test runs cannot invalidate the
+  assumptions. An overall deadline turns a stalled CDP/browser session into a
+  failure instead of a hang.
 - The client tracks an `int64` revision per cached board. An event at the next
   revision applies; an equal or older revision is ignored as duplicate/stale;
   a skipped revision marks the board stale and unavailable for local moves, and

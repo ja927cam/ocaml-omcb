@@ -149,18 +149,9 @@ let rec drain conn =
   end
   else
     let item = Queue.take conn.outbox in
-    let debug =
-      Sys.getenv_opt "DRAIN_DEBUG" = Some "1"
-      && Bytes.length item.bytes >= 5
-      && Char.code (Bytes.get item.bytes 0) = 2
-    in
-    if debug then
-      Printf.eprintf "SEND2 conn=%d id=%ld\n%!" conn.id
-        (Int32.of_int (Char.code (Bytes.get item.bytes 2) lor (Char.code (Bytes.get item.bytes 3) lsl 8) lor (Char.code (Bytes.get item.bytes 4) lsl 16)));
     Lwt.catch
       (fun () ->
         conn.send_raw item.bytes >>= fun () ->
-        if debug then Printf.eprintf "DONE2 conn=%d\n%!" conn.id;
         (match item.resolver with
          | Some resolver -> Lwt.wakeup_later resolver ()
          | None -> ());

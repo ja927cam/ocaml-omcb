@@ -21,6 +21,9 @@ type board_state = {
   mutable stale : bool;
   mutable pending_request : int32 option;
   mutable pending_since : float;
+  (* Retry delay for this board, doubled on each timeout so a slow server is
+     probed quickly once but is not flooded with duplicate requests. *)
+  mutable snapshot_backoff : float;
 }
 
 type drag = {
@@ -83,6 +86,8 @@ type pending = {
   request_id : int32;
   action : pending_action;
   mutable event_applied : bool;
+  sent_at : float;
+  mutable last_probe : float;
 }
 
 let board_key bx by = (by * 1000) + bx
@@ -273,6 +278,7 @@ let main () =
   let next_request_id = ref (random_request_id ()) in
   let last_subscription = ref None in
   let retry_snapshot_hook = ref (fun () -> ()) in
+  let expire_move_hook = ref (fun () -> ()) in
 
   let centre_of_view () =
     ( clamp_int
@@ -350,6 +356,7 @@ let main () =
           stale = false;
           pending_request = None;
           pending_since = 0.;
+          snapshot_backoff = 500.;
         }
       in
       Hashtbl.add boards key state;
@@ -387,6 +394,19 @@ let main () =
       end
     end
     else false
+  in
+
+  (* Some Chromium builds defer dispatching a WebSocket message until the page
+     sends again. A move leaves the client with no other traffic, so use a
+     harmless snapshot request as a liveness probe: request id 0 is reserved
+     for probes, and refreshing the centre board is useful even when the probe
+     is not needed for liveness. *)
+  let send_probe () =
+    let board_x, board_y = centre_of_view () in
+    let request : Protocol.Types.snapshot_request =
+      { request_id = 0l; board_x; board_y }
+    in
+    ignore (send_binary (Protocol.Types.snapshot_request_to_bytes request))
   in
 
   let rec pump_snapshots () =
@@ -502,7 +522,8 @@ let main () =
          Hashtbl.iter
            (fun _ state ->
              match state.pending_request with
-             | Some _ when now -. state.pending_since > 2500. ->
+             | Some _
+               when now -. state.pending_since > state.snapshot_backoff ->
                stale := state :: !stale
              | _ -> ())
            boards;
@@ -510,10 +531,22 @@ let main () =
            List.iter
              (fun state ->
                match state.pending_request with
-               | Some _ -> forget_pending state
+               | Some _ ->
+                 forget_pending state;
+                 state.snapshot_backoff <-
+                   min 4_000. (state.snapshot_backoff *. 2.)
                | None -> ())
              !stale
          end;
+         (match !pending with
+          | Some p when now -. p.sent_at > 2000. -> !expire_move_hook ()
+          | Some p when now -. p.last_probe > 250. ->
+            (* Probe a pending move so a browser that defers message dispatch
+               releases the response/event instead of holding it until the
+               next unrelated send. *)
+            p.last_probe <- now;
+            send_probe ()
+          | _ -> ());
          if orphan_ids <> [] || !stale <> [] then !retry_snapshot_hook ()));
 
   let board_at_canvas x y =
@@ -676,13 +709,9 @@ let main () =
         | Some state when state.loaded && not state.stale ->
           let revision = board.revision in
           let cmp = Int64.compare revision state.revision in
-          if cmp <= 0 then begin
+          if cmp <= 0 then
             (* Duplicate or older than the current cache. *)
-            (match !pending with
-             | Some p when p.request_id = event.request_id ->
-               p.event_applied <- true
-             | _ -> ())
-          end
+            ()
           else if Int64.equal revision (Int64.succ state.revision) then begin
             List.iter
               (fun (change : Protocol.Types.event_change) ->
@@ -694,11 +723,7 @@ let main () =
                     (Char.chr change.piece))
               board.changes;
             state.revision <- revision;
-            changed := true;
-            (match !pending with
-             | Some p when p.request_id = event.request_id ->
-               p.event_applied <- true
-             | _ -> ())
+            changed := true
           end
           else begin
             (* A revision was skipped: discard the cache and re-snapshot. *)
@@ -709,6 +734,15 @@ let main () =
           end
         | _ -> ())
       event.boards;
+    (match !pending with
+     | Some p when p.request_id = event.request_id ->
+       (* The server broadcasts events only for accepted moves, so our own
+          event is authoritative. Release the optimistic lock even if the
+          direct move response is delayed in the browser. *)
+       p.event_applied <- true;
+       pending := None;
+       set_move_pending false
+     | _ -> ());
     if !changed then request_draw ();
     if !resync then ensure_window ()
   in
@@ -745,6 +779,22 @@ let main () =
     Bytes.unsafe_set u.src_state.pieces u.src u.src_piece;
     Bytes.unsafe_set u.dst_state.pieces u.dst u.dst_piece
   in
+
+  (* If neither the move response nor the move event arrives (a stalled
+     connection, or a browser that delays message dispatch), roll the
+     optimistic move back so the board does not stay locked. *)
+  expire_move_hook :=
+    (fun () ->
+      match !pending with
+      | Some p when Performance.now_ms G.performance -. p.sent_at > 2000. ->
+        pending := None;
+        set_move_pending false;
+        if not p.event_applied then
+          (match p.action with
+           | Normal undo -> restore_normal undo
+           | Special _ -> ());
+        request_draw ()
+      | _ -> ());
 
   let apply_castle (c : castle_info) =
     Bytes.unsafe_set c.king_src_state.pieces c.king_src empty;
@@ -993,8 +1043,16 @@ let main () =
                 match action with
                 | None -> ()
                 | Some action ->
+                  let sent_at = Performance.now_ms G.performance in
                   pending :=
-                   Some { request_id; action; event_applied = false };
+                   Some
+                     {
+                       request_id;
+                       action;
+                       event_applied = false;
+                       sent_at;
+                       last_probe = sent_at;
+                     };
                   set_move_pending true;
                   if
                     not
@@ -1063,29 +1121,47 @@ let main () =
                let key = board_key response.board_x response.board_y in
                Hashtbl.remove pending_snapshots response.request_id;
                (match Hashtbl.find_opt boards key with
-                | Some state
-                  when state.pending_request = Some response.request_id ->
-                  state.pending_request <- None;
-                  if response.status = Protocol.Types.Snapshot_ok then begin
-                    if
-                      Int64.compare response.revision state.revision >= 0
-                    then begin
-                      state.pieces <- response.board;
-                      state.revision <- response.revision;
-                      state.loaded <- true;
-                      state.stale <- false
+                | Some state ->
+                  let current =
+                    state.pending_request = Some response.request_id
+                  in
+                  (* A watchdog retry can supersede a request whose response
+                     was delayed by the browser. The older response still
+                     describes this board, and revisions are ordered, so it
+                     can safely satisfy a cache that has no data for the board
+                     at all. Resyncs and loaded boards still require the
+                     current request, so newer data is never rolled back. *)
+                  let usable =
+                    current
+                    || ((not state.loaded)
+                       && (not state.stale)
+                       && response.status = Protocol.Types.Snapshot_ok)
+                  in
+                  if usable then begin
+                    (* Any retry still in flight is now redundant. *)
+                    forget_pending state;
+                    if response.status = Protocol.Types.Snapshot_ok then begin
+                      if
+                        Int64.compare response.revision state.revision >= 0
+                      then begin
+                        state.pieces <- response.board;
+                        state.revision <- response.revision;
+                        state.loaded <- true;
+                        state.stale <- false;
+                        state.snapshot_backoff <- 500.
+                      end
+                      else if current && not state.loaded then
+                        (* A resync snapshot was superseded by an event. *)
+                        ensure_window ()
                     end
-                    else if not state.loaded then
-                      (* A resync snapshot was superseded by an event. *)
+                    else if current then begin
+                      state.loaded <- false;
+                      state.stale <- true;
                       ensure_window ()
+                    end;
+                    request_draw ()
                   end
-                  else begin
-                    state.loaded <- false;
-                    state.stale <- true;
-                    ensure_window ()
-                  end;
-                  request_draw ()
-                | _ -> ());
+                | None -> ());
                pump_snapshots ()
              | Some (Protocol.Types.Wire_event event) ->
                apply_move_event event

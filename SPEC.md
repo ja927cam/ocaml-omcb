@@ -1025,10 +1025,9 @@ and validate these frames. Each send crosses the 4096-byte threshold, so Dream
 flushes it immediately. The 81-byte snapshot payload and 26-byte move payload
 remain unchanged for codec tests and benchmarks.
 
-The client keeps at most **one** snapshot request in flight. Dream's stream
-pipe can lose a write acknowledgement when many responses are queued, which
-stalls a connection; strictly sequential snapshots avoid that path while still
-loading a 25 x 25 cache quickly over a loopback connection.
+The client keeps at most **one** snapshot request in flight. This bounds
+memory and makes retry/backoff simple while still loading a 25 x 25 cache
+quickly over a loopback connection.
 
 The legacy JSON `client_msg` type has been removed; the protocol library no
 longer depends on `ppx_deriving_yojson`.
@@ -1250,11 +1249,20 @@ never rolled back.
   one-board margin, then the rest of the retained window lazily. The request
   queue is rebuilt from the current camera, so stale queued boards are not
   requested.
-- At most one snapshot request is outstanding at a time. Responses are matched
-  by request ID and board key; stale or evicted responses are ignored.
+- At most one snapshot request is outstanding at a time. A response is applied
+  when it matches the current request, or when it belongs to an older request
+  for a board that is still unloaded and not resyncing. Revisions are ordered,
+  so an older response cannot overwrite newer data; loaded and resyncing
+  boards still require the current request.
 - A failed snapshot leaves the board unloaded and does not install an empty
   board. An older snapshot that arrives after a newer event is ignored; a
   resync snapshot is requested instead.
+- A 250 ms watchdog drops orphan request IDs and retries a pending board after
+  a per-board backoff: 500 ms for the first retry, doubling to 4 s. A
+  successful snapshot resets the backoff. The retry is also a liveness probe:
+  headless Chromium can defer WebSocket message dispatch until the page sends
+  again, so a stalled response is released by the retry and then applied by
+  the older-response rule.
 - The client sends a single subscription-window message (centre, radius 12)
   whenever the rounded cache centre changes. This exactly matches its retained
   25 x 25 window, so the server never broadcasts boards the client has
@@ -1284,9 +1292,16 @@ never rolled back.
   below the cached revision is a duplicate/stale event and is ignored. The next
   revision applies the changed squares. A revision gap invalidates that board
   and queues a fresh snapshot.
-- The event matching the pending request marks it as already applied before the
-  move response arrives. The response then only clears pending state, so
-  castling, en passant and promotion are not applied twice.
+- The event matching the pending request marks it as already applied and
+  clears the optimistic lock immediately. The response then finds no pending
+  move, so castling, en passant and promotion are not applied twice. The
+  server broadcasts events only for accepted moves, which makes the event
+  authoritative.
+- While a move is pending, the client sends a probe snapshot request for the
+  centre board every 250 ms. This is a no-op for board state when the board is
+  already loaded, but it gives deferred WebSocket message dispatch a chance to
+  run. If neither the response nor the event arrives within 2 s, the
+  optimistic move is rolled back and the input lock is released.
 - At most one move is in flight. While it is pending, panning and new drags
   are ignored; `data-move-pending` on `<body>` reflects the state.
 

@@ -22,7 +22,8 @@ dune build
 dune runtest
 ```
 
-The script downloads `httpun-ws.0.2.0` into a temporary directory, applies the
-patch, pins it, and reinstalls it. `test/test_wsd.ml` checks the failed-write
-cleanup directly; `test/ws_write_failure_test.js` forces a real socket reset
-while the server has a large outbox/send backlog.
+The script unpins `httpun-ws` if necessary, downloads `httpun-ws.0.2.0` into a
+temporary directory, applies the patch, pins it, and reinstalls it. It is safe
+to re-run. `test/test_wsd.ml` checks the failed-write cleanup directly;
+`test/ws_write_failure_test.js` forces a real socket reset while the server has
+a large outbox/send backlog.

@@ -42,9 +42,9 @@ It checks that the nine centre boards are visible, that dragging empty space
 pans by one board, that the client stays within a 25 × 25 cache window, that
 cross-board quiet moves work, that off-board and off-home captures are
 blocked, and that moves persist across board switches and a
-cache eviction/re-fetch. It
-picks a random central board on each run because moves are authoritative and
-remain on the running server.
+cache eviction/re-fetch. On each run it probes a pristine 5 × 5 block
+(revision 0 and the standard starting position) because moves are
+authoritative and remain on the running server.
 
 The server initialises the complete world at startup and listens on
 `http://localhost:8080`.
