@@ -38,6 +38,13 @@ node test/ws_teardown_test.js
 node test/ws_write_failure_test.js  # deliberate socket reset + failed writes
 ```
 
+Crash recovery is tested end to end by spawning real server processes against
+isolated data directories and killing them at WAL and snapshot boundaries:
+
+```bash
+node test/crash_recovery_test.js
+```
+
 It checks that the nine centre boards are visible, that dragging empty space
 pans by one board, that the client stays within a 25 × 25 cache window, that
 cross-board quiet moves work, that off-board and off-home captures are
@@ -46,8 +53,39 @@ cache eviction/re-fetch. On each run it probes a pristine 5 × 5 block
 (revision 0 and the standard starting position) because moves are
 authoritative and remain on the running server.
 
-The server initialises the complete world at startup and listens on
-`http://localhost:8080`.
+The server listens on `http://localhost:8080`. On first startup it creates the
+complete world and an empty write-ahead log. On later startups it restores the
+newest valid snapshot and replays committed WAL records before accepting any
+connection.
+
+## Persistence
+
+The authoritative world is durable by default:
+
+- `data/` (or `SIM_MAP_DATA_DIR`) holds `wal-<first-sequence>.log` segments and
+  `snapshot-<sequence>.snap` files.
+- Every accepted move is appended to the WAL and fsynced before it is applied
+  to memory or acknowledged to the client.
+- A full-world snapshot is taken after `SIM_MAP_SNAPSHOT_MOVES` commits
+  (default 100,000) or `SIM_MAP_SNAPSHOT_SECONDS` seconds (default 600),
+  whichever comes first.
+- Snapshots are written to a temporary file, fsynced, renamed into place and
+  the directory fsynced. Two snapshot generations are retained; WAL segments
+  covered by the older retained snapshot are removed only after the newer
+  snapshot is durable.
+
+Environment variables:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SIM_MAP_DATA_DIR` | `data` | Directory for the WAL and snapshots |
+| `SIM_MAP_WAL_SYNC` | `1` | fsync every WAL record (`0` for development only) |
+| `SIM_MAP_SNAPSHOT_MOVES` | `100000` | Commit count between snapshots (`0` disables) |
+| `SIM_MAP_SNAPSHOT_SECONDS` | `600` | Seconds between snapshots (`0` disables) |
+
+`GET /state-hash` returns the current global sequence and a digest of the
+board, revisions and bounded ledger. It is intended for recovery tests and
+diagnostics; computing it reads the whole world and takes about a second.
 
 ## Controls
 

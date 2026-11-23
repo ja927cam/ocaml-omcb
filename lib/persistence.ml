@@ -267,6 +267,7 @@ let write_snapshot_file path (copy : world_copy) =
         (Bytes.length header_bytes)
     in
     write_all fd header_bytes 0 (Bytes.length header_bytes);
+    crash_point "snapshot-partial-temp";
     let hash = write_words fd hash copy.revisions 0 Game_state.board_count in
     let hash =
       write_words fd hash copy.ledger_moves 0 Game_state.ledger_capacity
@@ -276,7 +277,6 @@ let write_snapshot_file path (copy : world_copy) =
     in
     let board_words = Game_state.board_count * 64 in
     let hash = write_words fd hash (Board.raw_words copy.board) 0 board_words in
-    crash_point "snapshot-partial-temp";
     let footer = Bytes.make Snapshot_format.footer_bytes '\000' in
     Bytes.blit_string Snapshot_format.end_magic 0 footer 0 4;
     Bytes.set_int64_be footer 4 hash;
@@ -651,7 +651,11 @@ let recover (config : config) (state : Game_state.t) =
         dir = config.data_dir;
         fd;
         active;
-        segments = segments @ [ active ];
+        segments =
+          List.filter
+            (fun (segment : segment) -> segment.path <> active.path)
+            segments
+          @ [ active ];
         last_sequence;
         snapshots = valid_snapshots;
         commits_since_snapshot = 0;
@@ -774,15 +778,19 @@ let rotate_wal (t : t) ~sequence =
     in
     t.fd <- fd;
     t.active <- segment;
-    t.segments <- t.segments @ [ segment ]
+    t.segments <-
+      List.filter
+        (fun (existing : segment) -> existing.path <> segment.path)
+        t.segments
+      @ [ segment ]
   end
 
 let delete_wal_segments (t : t) ~before =
   let kept = ref [] in
   List.iter
-    (fun segment ->
+    (fun (segment : segment) ->
       if
-        segment != t.active
+        segment.path <> t.active.path
         && Int64.compare segment.last_sequence before <= 0
       then
         (try

@@ -1,14 +1,14 @@
 window.WRITE_FAILURE_RESULTS = {
-  "generated": "2026-11-23T13:32:11.830Z",
+  "generated": "2026-11-23T22:46:19.714Z",
   "moves": 37500,
-  "duration_ms": 11357.496557,
-  "fds_without_slow": 12,
-  "fds_before": 13,
-  "fds_after": 13,
+  "duration_ms": 11466.794434,
+  "fds_without_slow": 26,
+  "fds_before": 27,
+  "fds_after": 27,
   "idle_ticks_per_second": 0,
-  "drops_after_reset": 11117,
-  "send_failures": 37,
-  "clients_after": 5,
+  "drops_after_reset": 11427,
+  "send_failures": 13,
+  "clients_after": 8,
   "responsive": true,
   "surviving_client": true
 };

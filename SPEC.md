@@ -1034,20 +1034,210 @@ longer depends on `ppx_deriving_yojson`.
 
 ---
 
+## 13.8 Persistence and crash recovery
+
+### Persistent and transient state
+
+Persistent state is exactly what recovery needs to reconstruct the
+authoritative world:
+
+- all 64,000,000 board squares (packed `Piece.t` values, including IDs and
+  metadata);
+- all 1,000,000 per-board `int64` revisions;
+- the global committed event sequence;
+- the bounded ledger's two backing arrays and its sequence window
+  (`head`, `oldest`).
+
+WebSocket connections, subscriptions, outboxes, snapshot request tokens and
+client caches are transient and are rebuilt after a restart.
+
+The deterministic initial world is also a recovery point: if no snapshot is
+usable, the server initialises the standard position and replays every WAL
+record from sequence 1.
+
+### WAL ordering invariant
+
+For every accepted move the state worker performs:
+
+1. validate the request and construct the complete state transition;
+2. serialise the transition into a WAL record;
+3. append the record and `fsync` the WAL;
+4. apply the transition to the in-memory board, revisions, ledger and
+   sequence;
+5. publish the move response and broadcast the event.
+
+A move is never acknowledged before it is recoverable. If the durability step
+raises, the transition is not applied, the worker stops accepting moves and the
+connection receives an error. The process fail-stops rather than continuing
+with state it cannot recover.
+
+A crash after the fsync but before the response is delivered can leave a
+recovered world that includes a transition whose acknowledgement was lost.
+This is the standard durable-before-publish trade-off: the server cannot know
+whether the last packet reached the client. Clients treat a missing response as
+unknown and resynchronise from the event stream or a fresh snapshot.
+
+### WAL format
+
+Segments are named `wal-<first-sequence>.log` (20 decimal digits). Every
+segment begins with a 16-byte header: magic `SMWG`, one-byte format version,
+three reserved bytes, and the first sequence as a big-endian `int64`.
+
+Each record is a complete committed transition, not a move command:
+
+```
+magic "SMWL"        4 bytes
+version             1 byte
+reserved            3 bytes
+payload length      4 bytes (big-endian)
+payload             ...
+checksum            8 bytes (FNV-1a 64 over header + payload)
+```
+
+Payload fields:
+
+- sequence (`int64`), request ID (`int32`);
+- board count (`uint16`), then for each board: `board_x`, `board_y`
+  (`uint16`), resulting revision (`int64`), change count (`uint16`), and each
+  change as square (`uint8`) plus final piece value (`int64`, zero for a
+  cleared square);
+- the ledger event: packed move (`int64`), moved piece ID (`int32`), captured
+  piece ID (`int32`), flags (`uint16`).
+
+Recording final square values means recovery never depends on the chess rules
+or on future changes to validation or move generation. Revisions are recorded
+explicitly, so recovery restores them exactly rather than inferring them.
+
+A segment grows until the next snapshot boundary. A segment is rotated as part
+of taking a snapshot, so a segment's records are exactly the transitions after
+the previous snapshot up to the snapshot sequence. Older segments are removed
+only after their records are covered by two durable snapshot generations (see
+below).
+
+### Snapshot format
+
+A snapshot is a single 536,777,268-byte file for the standard world:
+
+```
+magic "SMSN"        4 bytes
+version             1 byte
+reserved            3 bytes
+sequence            int64
+ledger head         int64
+ledger oldest       int64
+board count         uint32  (1,000,000)
+ledger capacity     uint32  (1,048,576)
+board revisions     1,000,000 * 8 bytes
+ledger moves        1,048,576 * 8 bytes
+ledger metadata     1,048,576 * 8 bytes
+board squares       64,000,000 * 8 bytes
+magic "SMND"        4 bytes
+checksum            int64 (FNV-1a 64 over everything before the footer)
+```
+
+All array values are big-endian 64-bit words. The header's ledger head must be
+`sequence + 1`; the loader rejects a header that violates this or whose counts
+or file length do not match the running server.
+
+### Consistent snapshot boundary
+
+A `Snapshot_world` request is a normal item in the state worker's FIFO. When it
+reaches the front, no move is in progress. The worker:
+
+1. records the current sequence `S`;
+2. rotates the WAL so records after `S` go to a new segment;
+3. copies the board, revisions and ledger arrays;
+4. hands the immutable copy to a preemptive thread that writes the snapshot.
+
+Copying the 512 MiB board pauses the worker for roughly 0.1-0.3 s on the
+reference machine, but the worker never waits for the snapshot's disk I/O.
+Moves continue against the new WAL segment while the copy is written.
+
+The file is written to `snapshot-<S>.snap.tmp.<pid>`, fsynced, renamed to
+`snapshot-<S>.snap`, and the containing directory is fsynced. A crash at any
+point before the rename leaves the previous snapshot and WAL untouched. A
+crash after the rename but before cleanup leaves both the new snapshot and the
+old WAL; recovery skips records at or below `S`, so no transition is applied
+twice.
+
+### Snapshot and WAL cleanup
+
+Two snapshot generations are retained. After a new snapshot `S_new` is durable
+and its rename is complete, the previous retained snapshot is `S_prev`.
+Segments whose last sequence is at most `S_prev` are removed. Snapshots older
+than `S_prev` are removed. This leaves:
+
+- `S_new` and `S_prev`;
+- WAL records after `S_prev`.
+
+Recovery from `S_new` needs only records after `S_new`; recovery from `S_prev`
+needs records after `S_prev`, which are still present. A single corrupt newest
+snapshot therefore falls back to `S_prev` plus the retained WAL. At startup,
+only the snapshot that actually loads is retained; corrupt newer files and
+unvalidated older files are removed before they can influence cleanup.
+
+### Recovery algorithm
+
+Startup runs before Dream starts listening:
+
+1. create and reset the world;
+2. list snapshots newest-first, validating header, length and checksum;
+3. load the first valid snapshot, or initialise the deterministic world and
+   reset the ledger to sequence 1;
+4. list WAL segments ascending and validate their headers;
+5. replay records in order, skipping records at or below the snapshot
+   sequence, and require each subsequent record to be exactly the next
+   sequence;
+6. apply each record's final square values, revisions and ledger event;
+7. verify that the ledger's head is `sequence + 1`;
+8. start a fresh WAL segment at `sequence + 1` and begin serving.
+
+A short WAL record at the end of the last segment is a torn write: it is
+ignored, and the segment is truncated to the last complete record. A complete
+record with a bad checksum, a malformed record, a sequence gap, or a truncated
+record before the last segment is a fatal recovery error; the server exits
+instead of serving a state that might be missing acknowledged moves.
+
+Corrupt snapshots are skipped. If a snapshot is rejected, the next older one is
+tried; if none loads, the deterministic world plus WAL from sequence 1 is the
+fallback. A WAL that begins after sequence 1 without a usable snapshot is a
+fatal gap.
+
+### Diagnostics
+
+`GET /state-hash` returns the global sequence and an FNV-1a 64 digest over the
+sequence, revisions, ledger bounds and arrays, and all board squares. The
+digest is used by recovery tests to compare a pre-shutdown world with the
+recovered world without enumerating individual boards. It reads the whole
+world and is not intended for frequent polling.
+
+`GET /metrics` includes a `persistence` object with the data directory, WAL
+segment count and bytes, snapshot count, last snapshot sequence, whether a
+snapshot is pending, and the last snapshot write duration.
+
+---
+
 ## 14. Server
 
 ### Startup sequence
 
 1. `Game_state.create`.
-2. `Game_state.initialise`.
-3. Verify `occupied_count = 32,000,000`.
+2. `Persistence.recover`: load the newest valid snapshot and replay WAL records,
+   or initialise the deterministic world when no snapshot is usable.
+3. Verify `occupied_count = 32,000,000` only when the recovered sequence is
+   zero; a recovered world may contain captures.
 4. `Connection_manager.create`.
-5. `State_worker.start` with `on_commit = Connection_manager.enqueue_move`.
-6. Build the Dream router.
-7. `Dream.run` on port 8080.
+5. `State_worker.start` with `on_commit = Connection_manager.enqueue_move`,
+   `precommit = Persistence.before_commit` and
+   `on_snapshot = Persistence.capture`.
+6. Start the one-second snapshot timer and the first WAL segment.
+7. Build the Dream router (`/`, `/metrics`, `/state-hash`, `/static`, `/ws`).
+8. `Dream.run` on port 8080.
 
-Startup timings are logged for allocation, world initialisation, verification,
-worker startup, and total startup.
+Startup timings are logged for allocation, persistence recovery, verification,
+worker startup, and total startup. Recovery logs the restored sequence, the
+snapshot sequence (if any), the number of replayed transitions, whether a torn
+WAL tail was truncated, and whether the world was initialised from scratch.
 
 Measured on the implementation machine:
 
@@ -1522,6 +1712,22 @@ These are deliberate and are not conventional chess:
 - Queue-full rejection with capacity one.
 - Shutdown processes an already accepted pending request.
 
+### `test_persistence`
+
+- WAL and snapshot format round trips, checksums, segment headers and
+  malformed/torn frames.
+- Empty-world recovery reproduces the deterministic initial digest.
+- Several moves, a cross-board rook move, castling, en passant and promotion
+  survive a restart; a snapshot boundary is used for directly prepared special
+  positions.
+- Torn trailing WAL records are ignored and the segment is truncated while all
+  complete records remain.
+- A snapshot restores the same digest as WAL replay.
+- A corrupt newest snapshot falls back to the previous snapshot plus the
+  retained WAL.
+- Two hundred synchronously durable moves replay to the exact pre-shutdown
+  digest.
+
 ### `live_update_test.js`
 
 - Real two-client WebSocket fan-out for a shared board.
@@ -1552,6 +1758,22 @@ These are deliberate and are not conventional chess:
   every cached board to converge.
 - Complements `test_connection_manager`'s deterministic buffer/release and
   superseded-token tests.
+
+### `crash_recovery_test.js` (Linux, server binary)
+
+Spawns real servers against isolated data directories, kills them with
+SIGKILL (including deliberate fault-injection points) and restarts them:
+
+- Empty-world restart and several-move restart preserve the exact digest.
+- Cross-board rook state and castling/en-passant state survive a restart.
+- `wal-partial-write` leaves a torn trailing record; recovery restores the
+  pre-move digest and sequence.
+- `snapshot-partial-temp` crashes during the temporary snapshot write; the
+  acknowledged move is recovered from the WAL.
+- `snapshot-renamed` crashes after the snapshot rename but before WAL cleanup;
+  recovery applies no transition twice.
+- Corrupting the newest snapshot falls back to the previous snapshot plus WAL.
+- A 200-move WAL replays to the exact digest and sequence.
 
 ### `ws_teardown_test.js` (Linux)
 

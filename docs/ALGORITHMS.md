@@ -693,6 +693,135 @@ in one 4 KiB frame.
 
 ---
 
+## 9.6 Persistence and crash recovery
+
+### What must survive a restart
+
+The authoritative state is the dense board (64,000,000 packed pieces), the
+1,000,000 per-board revisions, the global sequence and the bounded ledger's
+two arrays plus its sequence window. Connections, subscriptions, outboxes and
+snapshot request tokens are transient. The deterministic initial world is also
+a valid recovery point, so the server can always rebuild from sequence zero if
+no snapshot is usable.
+
+### Write-ahead log
+
+Every accepted move records its **committed transition**, not the move command:
+
+- global sequence and request ID;
+- for each affected board: coordinates, resulting revision, and the final
+  value of every changed square (including cleared squares);
+- the ledger event: packed move, moved/captured piece IDs and flags.
+
+The worker calls `Move_engine.process ~precommit` after validation and plan
+construction but before the first board write. The precommit serialises the
+transition, appends the frame, and fsyncs the WAL. Only then does
+`Move_processor.apply_plan` run, followed by the ledger append, sequence
+update, move response and broadcast. A precommit failure aborts the move and
+stops the worker: the server never acknowledges a move it cannot recover.
+
+Replaying final square values and recorded revisions means recovery is
+independent of chess-rule code. A future validator change, a promotion rule
+fix or a new special move cannot reinterpret the log.
+
+A crash after the fsync but before the response leaves a durable transition
+whose acknowledgement was lost. Recovery therefore guarantees that every
+acknowledged move is present, but may include the last durable move as well.
+This is the standard durable-before-publish boundary; clients treat a missing
+response as unknown and rely on events or a fresh snapshot.
+
+A record is framed with a fixed magic/version/length header and an FNV-1a 64
+checksum. Segments start with a 16-byte header naming their first sequence.
+A torn record at the tail is truncated; a malformed complete record, checksum
+failure, sequence gap or torn non-tail segment is fatal because serving such a
+state could silently drop an acknowledged move.
+
+### Snapshot capture without blocking on disk
+
+A snapshot request is a normal FIFO item in the state worker. At the boundary
+sequence `S` no move is in progress. The worker:
+
+1. rotates the WAL so future records go to `wal-<S+1>.log`;
+2. copies the board, revisions and both ledger arrays;
+3. starts a preemptive thread that writes the copy.
+
+The copy is a 512 MiB `memcpy`-style `Bigarray` blit (roughly 0.1-0.3 s), but
+the worker never waits for the 536 MiB file write. Moves continue against the
+new WAL segment. The writer computes the checksum while encoding, so the file
+is not reread.
+
+The file is written as `snapshot-<S>.snap.tmp.<pid>`, fsynced, renamed into
+place, and the directory is fsynced. A crash before the rename leaves the
+previous snapshot and WAL valid. A crash after the rename but before cleanup
+leaves both the new snapshot and the old WAL; recovery skips records at or
+below `S`, so no transition is applied twice.
+
+### Retention and cleanup
+
+Two snapshot generations are kept. After `S_new` is durable, the previous
+retained snapshot is `S_prev`; WAL segments whose last record is at most
+`S_prev` are deleted, as are snapshots older than `S_prev`. The retained WAL
+therefore starts at `S_prev+1`, which is enough to recover from either
+`S_prev` or `S_new`. Startup keeps only the snapshot that actually loaded, so
+a corrupt newer file cannot influence WAL cleanup.
+
+The default snapshot policy is 100,000 commits or 600 seconds, whichever comes
+first. With the measured fsync cost this bounds the WAL and keeps snapshot I/O
+in the low megabytes per second for normal play.
+
+### Recovery
+
+Recovery runs before the HTTP listener starts:
+
+1. list snapshots newest-first, validate header, exact length and checksum;
+2. load the first valid one, or initialise the deterministic world and reset
+   the ledger to sequence 1;
+3. list WAL segments ascending and validate their headers;
+4. decode every record, skip sequences at or below the snapshot, and require
+   each subsequent record to be exactly the next sequence;
+5. apply final square values, recorded revisions and the ledger event;
+6. verify that the ledger head is `sequence + 1`;
+7. open a fresh WAL segment at `sequence + 1`.
+
+A short trailing record is ignored and its segment truncated to the last
+complete record. A corrupt snapshot is skipped and the next older one is
+tried; if none loads, the deterministic world plus WAL from sequence 1 is
+used. If the WAL starts above the required sequence, recovery refuses to run.
+
+### Integrity and verification
+
+FNV-1a 64 is used for WAL records and the snapshot footer. The state digest
+covers the sequence, revisions, ledger bounds and arrays, and every board
+square. The end-to-end crash suite compares this digest before and after a
+kill, rather than checking a few representative squares, and also checks
+specific cross-board and special-move squares.
+
+Measured on the reference machine:
+
+- 536,777,268-byte snapshot write (including checksum and fsync): ~1.3 s;
+- snapshot load and recovery: ~0.9-1.9 s;
+- 37,538-record WAL replay: ~0.4 s;
+- 200 synchronously durable moves: ~0.3 s replay.
+
+Synchronous fsync per move is the default. If disk latency becomes the
+bottleneck, the next step is group commit: prepare a batch, append all records,
+fsync once, then apply and publish the batch. That preserves the
+durable-before-ack invariant while amortising fsync; it is deliberately not
+enabled until measured need.
+
+### Fault injection and tests
+
+`SIM_MAP_CRASH_POINT` injects a SIGKILL at a named point: `wal-before-write`,
+`wal-partial-write`, `wal-after-fsync`, `snapshot-partial-temp`,
+`snapshot-temp-fsynced`, `snapshot-renamed` or `snapshot-cleaned`. The crash
+suite spawns real servers against isolated directories and covers empty and
+non-empty restarts, cross-board moves, castling/en passant, torn WAL tails,
+partial snapshots, crash-after-rename, corrupt snapshots and a 200-move WAL.
+Promotion is covered by the in-process persistence test, which snapshots a
+directly prepared promotion position.
+
+---
+
 ## 10. Client grid, rendering and local state
 
 The client is a WASM/Brr canvas application. It renders a 1000 x 1000 world of

@@ -307,6 +307,23 @@ worker → capture board + int64 revision → mark snapshot complete and filter
 buffered events → enqueue snapshot → release newer events. No WebSocket write
 ever runs inside the worker.
 
+## Crash recovery
+
+`test/crash_recovery_test.js` spawns real servers against isolated data
+directories and kills them with SIGKILL, including deliberate WAL and snapshot
+fault points. It compares `/state-hash` before and after restart and also
+checks cross-board and special-move squares. Results are written to
+`bench/crash_recovery_results.json` and `.js`.
+
+Reference run: 9/9 cases passed in about 47 seconds. Recovery of 37,538
+replayed WAL records took about 0.4 s; a 536,777,268-byte snapshot write took
+about 1.3 s including checksum and fsync; loading a snapshot took about
+0.9-1.9 s.
+
+The in-process `test/test_persistence.ml` additionally covers WAL/snapshot
+format round trips, torn records, corrupt snapshots, promotion and a 200-move
+synchronous WAL replay.
+
 ## Adding a benchmark
 
 Use `run_bench` in `bench/bench.ml`:
