@@ -10,6 +10,7 @@
   checksum
   wal_format
   snapshot_format
+  persistence
   move
   move_validator
   move_processor
