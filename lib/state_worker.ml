@@ -76,6 +76,8 @@ type t = {
   on_commit : committed -> unit;
   precommit : Game_state.t -> Move_engine.commit -> unit;
   on_snapshot : Game_state.t -> unit;
+  commit_batch : int;
+  commit_group : int -> unit;
 }
 
 let default_config = { queue_capacity = 4096 }
@@ -148,34 +150,82 @@ let committed_of_accepted t (accepted : Move_engine.accepted) timing =
     timing;
   }
 
+let process_move t item request =
+  let started_ns = now_ns () in
+  (match item.timing with
+   | Some timing -> Metrics.mark_worker_start timing started_ns
+   | None -> ());
+  let result =
+    Move_engine.process
+      ~precommit:(fun commit -> t.precommit t.state commit)
+      t.state request
+  in
+  let finished_ns = now_ns () in
+  (match item.timing with
+   | Some timing -> Metrics.mark_committed timing finished_ns
+   | None -> ());
+  update_metrics t ~started_ns ~finished_ns item;
+  match result with
+  | Move_engine.Accepted accepted ->
+    (result, Some (committed_of_accepted t accepted item.timing))
+  | Move_engine.Rejected _ ->
+    t.requests_rejected <- Int64.succ t.requests_rejected;
+    (result, None)
+
+let publish_move t item result committed =
+  (match committed with
+   | Some committed ->
+     (try t.on_commit committed with
+      | exn ->
+        Printf.eprintf "state worker on_commit failed: %s\n%!"
+          (Printexc.to_string exn))
+   | None -> ());
+  Lwt.wakeup_later item.promise (Ok (Move_result result))
+
+let process_move_group t =
+  let rec take acc remaining =
+    if remaining = 0 || Queue.is_empty t.queue then List.rev acc
+    else
+      match (Queue.peek t.queue).request with
+      | Move _ ->
+        let item = Queue.take t.queue in
+        t.depth <- t.depth - 1;
+        take (item :: acc) (remaining - 1)
+      | Snapshot _ | Snapshot_world -> List.rev acc
+  in
+  let items = take [] t.commit_batch in
+  let processed = ref [] in
+  (try
+     List.iter
+       (fun item ->
+         match item.request with
+         | Move request ->
+           let result, committed = process_move t item request in
+           processed := (item, result, committed) :: !processed
+         | Snapshot _ | Snapshot_world -> assert false)
+       items;
+     t.commit_group (List.length items);
+     List.iter
+       (fun (item, result, committed) -> publish_move t item result committed)
+       (List.rev !processed);
+     true
+   with exn ->
+     Printf.eprintf "state worker commit group failed: %s\n%!"
+       (Printexc.to_string exn);
+     List.iter
+       (fun item ->
+         Lwt.wakeup_later item.promise (Error Worker_failed))
+       items;
+     fail_queue t exn;
+     false)
+
 let process_one t item =
   let started_ns = now_ns () in
   (match item.timing with
    | Some timing -> Metrics.mark_worker_start timing started_ns
    | None -> ());
   match item.request with
-  | Move request ->
-    let result =
-      Move_engine.process
-        ~precommit:(fun commit -> t.precommit t.state commit)
-        t.state request
-    in
-    let finished_ns = now_ns () in
-    (match item.timing with
-     | Some timing -> Metrics.mark_committed timing finished_ns
-     | None -> ());
-    update_metrics t ~started_ns ~finished_ns item;
-    (match result with
-     | Move_engine.Accepted accepted ->
-       let committed = committed_of_accepted t accepted item.timing in
-       (try t.on_commit committed with
-        | exn ->
-          Printf.eprintf "state worker on_commit failed: %s\n%!"
-            (Printexc.to_string exn))
-     | Move_engine.Rejected _ ->
-       t.requests_rejected <- Int64.succ t.requests_rejected);
-    Lwt.wakeup_later item.promise (Ok (Move_result result));
-    true
+  | Move _ -> assert false
   | Snapshot_world ->
     (try t.on_snapshot t.state with
      | exn ->
@@ -210,17 +260,27 @@ let rec loop t budget =
     (* Yield after a bounded batch so a continuously full queue cannot starve
        the Lwt scheduler. *)
     Lwt.pause () >>= fun () -> loop t batch_size
-  else begin
-    let item = Queue.take t.queue in
-    t.depth <- t.depth - 1;
-    if process_one t item then loop t (budget - 1) else Lwt.return_unit
-  end
+  else
+    match (Queue.peek t.queue).request with
+    | Move _ ->
+      if process_move_group t then
+        loop t (max 0 (budget - t.commit_batch))
+      else Lwt.return_unit
+    | Snapshot _ | Snapshot_world ->
+      let item = Queue.take t.queue in
+      t.depth <- t.depth - 1;
+      if process_one t item then loop t (budget - 1) else Lwt.return_unit
 
 let start ?(on_commit = fun _ -> ())
     ?(precommit = fun _ _ -> ())
-    ?(on_snapshot = fun _ -> ()) ~(config : config) state =
+    ?(on_snapshot = fun _ -> ())
+    ?(commit_batch = 1)
+    ?(commit_group = fun _ -> ())
+    ~(config : config) state =
   if config.queue_capacity <= 0 then
     invalid_arg "State_worker.start: queue_capacity must be positive";
+  if commit_batch < 1 then
+    invalid_arg "State_worker.start: commit_batch must be positive";
   let finished, finished_u = Lwt.wait () in
   let worker =
     {
@@ -244,6 +304,8 @@ let start ?(on_commit = fun _ -> ())
       on_commit;
       precommit;
       on_snapshot;
+      commit_batch;
+      commit_group;
     }
   in
   Lwt.async (fun () -> loop worker batch_size);

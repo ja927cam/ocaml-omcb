@@ -26,6 +26,7 @@ let config dir =
   {
     Persistence.data_dir = dir;
     sync = false;
+    group_size = 1;
     snapshot_every_moves = 0;
     snapshot_every_seconds = 0.;
   }
@@ -60,6 +61,7 @@ let commit state persistence ~request_id src dst =
              ~board_y:board.board_y))
       boards;
     Persistence.note_commit persistence;
+    Persistence.sync persistence ~moves:1;
     accepted
   | Move_engine.Rejected _ -> failwith "expected an accepted move"
 

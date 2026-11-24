@@ -52,6 +52,8 @@ val start :
   ?on_commit:(committed -> unit) ->
   ?precommit:(Game_state.t -> Move_engine.commit -> unit) ->
   ?on_snapshot:(Game_state.t -> unit) ->
+  ?commit_batch:int ->
+  ?commit_group:(int -> unit) ->
   config:config ->
   Game_state.t ->
   t
@@ -62,12 +64,16 @@ val start :
     squares.
 
     [precommit] runs synchronously inside a move after validation and before
-    the first board write. It must append the transition to durable storage;
-    raising aborts the move and stops the worker. [on_snapshot] runs
+    the first board write. It appends the transition to the WAL; raising
+    aborts the move and stops the worker. [commit_group] runs after a batch of
+    up to [commit_batch] consecutive moves has been applied; it must make
+    those transitions durable before returning. The worker publishes the
+    responses and broadcasts only after it returns. [on_snapshot] runs
     synchronously when a world-snapshot request reaches the front of the
     queue. It may copy the world but must not perform lengthy disk I/O.
 
-    @raise Invalid_argument if [queue_capacity] is not positive. *)
+    @raise Invalid_argument if [queue_capacity] or [commit_batch] is not
+    positive. *)
 
 val submit :
   ?timing:Metrics.move_timing ->

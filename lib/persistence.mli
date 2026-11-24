@@ -14,7 +14,11 @@
 type config = {
   data_dir : string;
   sync : bool;
-  (** [sync] fsyncs the WAL after every accepted transition. *)
+  (** [sync] enables WAL fsync. The commit policy decides how often
+      {!sync} is called. *)
+  group_size : int;
+  (** Maximum number of consecutive moves in one commit group. [1] is the
+      strict per-move mode. *)
   snapshot_every_moves : int;
   (** Request a snapshot after this many commits. [0] disables the move
       trigger. *)
@@ -40,9 +44,16 @@ val recover : config -> Game_state.t -> (t * recovery, string) result
     On failure the caller must not serve the state. *)
 
 val before_commit : t -> Game_state.t -> Move_engine.commit -> unit
-(** Append and make the transition durable. Must be called from the worker
-    before applying the move. A raised exception means the move was not
-    applied and the worker must stop. *)
+(** Append the transition to the WAL. This does not fsync; the worker calls
+    {!sync} after a commit group and publishes only afterwards. Must be
+    called from the worker before applying the move. A raised exception
+    means the transition could not be appended and the worker must stop. *)
+
+val sync : t -> moves:int -> unit
+(** Make the WAL durable after a group of [moves] accepted transitions.
+    No-op when [config.sync] is false or nothing was appended since the last
+    sync. A raised exception means durability failed; the worker must stop
+    without publishing the group. *)
 
 val note_commit : t -> unit
 (** Record one committed move for the snapshot policy. *)

@@ -331,6 +331,7 @@ let () =
     {
       data_dir;
       sync = int_env "SIM_MAP_WAL_SYNC" 1 <> 0;
+      group_size = max 1 (int_env "SIM_MAP_WAL_GROUP" 64);
       snapshot_every_moves = int_env "SIM_MAP_SNAPSHOT_MOVES" 100_000;
       snapshot_every_seconds = float_env "SIM_MAP_SNAPSHOT_SECONDS" 600.;
     }
@@ -390,6 +391,8 @@ let () =
     State_worker.start ~on_commit
       ~precommit:(Persistence.before_commit persistence)
       ~on_snapshot:(Persistence.capture persistence)
+      ~commit_batch:persistence_config.group_size
+      ~commit_group:(fun moves -> Persistence.sync persistence ~moves)
       ~config:State_worker.default_config state
   in
   worker_ref := Some worker;

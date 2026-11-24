@@ -3,6 +3,7 @@ open Lwt.Infix
 type config = {
   data_dir : string;
   sync : bool;
+  group_size : int;
   snapshot_every_moves : int;
   snapshot_every_seconds : float;
 }
@@ -11,6 +12,7 @@ let default_config ~data_dir =
   {
     data_dir;
     sync = true;
+    group_size = 1;
     snapshot_every_moves = 100_000;
     snapshot_every_seconds = 600.;
   }
@@ -49,6 +51,12 @@ type t = {
   mutable snapshot_write_ms : float;
   truncated_wal : bool;
   mutable closed : bool;
+  mutable dirty : bool;
+  mutable sync_count : int;
+  mutable group_count : int;
+  mutable batched_moves : int;
+  mutable last_group_size : int;
+  mutable last_sync_ms : float;
 }
 
 let now_ms () = Unix.gettimeofday () *. 1000.
@@ -666,6 +674,12 @@ let recover (config : config) (state : Game_state.t) =
         snapshot_write_ms = 0.;
         truncated_wal = !truncated;
         closed = false;
+        dirty = false;
+        sync_count = 0;
+        group_count = 0;
+        batched_moves = 0;
+        last_group_size = 1;
+        last_sync_ms = 0.;
       }
     in
     let duration_ms = now_ms () -. started in
@@ -700,8 +714,30 @@ let recover (config : config) (state : Game_state.t) =
 
 let append_bytes (t : t) bytes =
   write_all t.fd bytes 0 (Bytes.length bytes);
-  if t.config.sync then Unix.fsync t.fd;
+  t.dirty <- true;
   t.active.bytes <- Int64.add t.active.bytes (Int64.of_int (Bytes.length bytes))
+
+let sync (t : t) ~moves =
+  if t.config.sync then begin
+    if t.dirty then begin
+      let started = now_ms () in
+      Unix.fsync t.fd;
+      t.dirty <- false;
+      t.sync_count <- t.sync_count + 1;
+      if moves > 0 then begin
+        t.group_count <- t.group_count + 1;
+        t.batched_moves <- t.batched_moves + moves;
+        t.last_group_size <- moves
+      end;
+      t.last_sync_ms <- now_ms () -. started;
+      crash_point "wal-after-fsync"
+    end
+  end
+  else if moves > 0 then begin
+    t.group_count <- t.group_count + 1;
+    t.batched_moves <- t.batched_moves + moves;
+    t.last_group_size <- moves
+  end
 
 let before_commit (t : t) (state : Game_state.t) (commit : Move_engine.commit) =
   let groups : (int, int * int * (int * Piece.t) list ref) Hashtbl.t =
@@ -755,7 +791,20 @@ let before_commit (t : t) (state : Game_state.t) (commit : Move_engine.commit) =
      crash_point "wal-partial-write"
    | _ -> ());
   append_bytes t frame;
-  crash_point "wal-after-fsync";
+  if t.config.sync && t.config.group_size <= 1 then begin
+    (* Strict mode keeps the original ordering: durable before the engine
+       applies the transition. Group mode defers this to [sync] after the
+       batch, so later moves in the batch can validate against earlier ones. *)
+    let started = now_ms () in
+    Unix.fsync t.fd;
+    t.dirty <- false;
+    t.sync_count <- t.sync_count + 1;
+    t.group_count <- t.group_count + 1;
+    t.batched_moves <- t.batched_moves + 1;
+    t.last_group_size <- 1;
+    t.last_sync_ms <- now_ms () -. started;
+    crash_point "wal-after-fsync"
+  end;
   t.last_sequence <- commit.sequence;
   t.active.last_sequence <- commit.sequence
 
@@ -764,6 +813,7 @@ let rotate_wal (t : t) ~sequence =
     failwith "Persistence.rotate_wal: snapshot boundary is not current";
   if Int64.compare t.active.last_sequence t.active.first_sequence >= 0 then begin
     (try Unix.fsync t.fd with Unix.Unix_error _ -> ());
+    t.dirty <- false;
     (try Unix.close t.fd with Unix.Unix_error _ -> ());
     let next = Int64.succ sequence in
     let path = Filename.concat t.dir (wal_name next) in
@@ -947,6 +997,17 @@ let metrics_json (t : t) =
       ("snapshot_write_ms", `Float t.snapshot_write_ms);
       ("commits_since_snapshot", `Int t.commits_since_snapshot);
       ("sync", `Bool t.config.sync);
+      ("group_size", `Int (max 1 t.config.group_size));
+      ("sync_count", `Int t.sync_count);
+      ("group_count", `Int t.group_count);
+      ("batched_moves", `Int t.batched_moves);
+      ("last_group_size", `Int t.last_group_size);
+      ("average_group_size",
+       `Float
+         (if t.group_count = 0 then 0.
+          else float_of_int t.batched_moves /. float_of_int t.group_count));
+      ("last_sync_ms", `Float t.last_sync_ms);
+      ("dirty", `Bool t.dirty);
       ("truncated_wal", `Bool t.truncated_wal);
     ]
 
@@ -954,5 +1015,6 @@ let close (t : t) =
   if not t.closed then begin
     t.closed <- true;
     (try Unix.fsync t.fd with Unix.Unix_error _ -> ());
+    t.dirty <- false;
     (try Unix.close t.fd with Unix.Unix_error _ -> ())
   end
