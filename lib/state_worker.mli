@@ -62,6 +62,7 @@ val start :
   ?on_snapshot:(Game_state.t -> unit) ->
   ?commit_policy:(unit -> commit_policy) ->
   ?commit_group:(int -> unit) ->
+  ?on_fatal:(exn -> unit) ->
   config:config ->
   Game_state.t ->
   t

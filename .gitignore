@@ -7,3 +7,7 @@ _opam/
 /data/
 *.snap
 wal-*.log
+
+# Audit/soak data
+/soak-data/
+/failure-audit-data/

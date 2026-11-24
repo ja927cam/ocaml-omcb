@@ -101,6 +101,22 @@ let () =
   close empty_persistence;
   ignore (check_recovered empty_dir empty_digest);
 
+  (* An interrupted snapshot leaves a temporary file. Recovery must remove it
+     instead of accumulating hundreds of megabytes per failure. *)
+  let stale_dir = temp_dir () in
+  let stale =
+    Filename.concat stale_dir
+      "snapshot-00000000000000000001.snap.tmp.12345"
+  in
+  let fd = Unix.openfile stale [ Unix.O_WRONLY; Unix.O_CREAT ] 0o600 in
+  ignore (Unix.write fd (Bytes.make 16 'x') 0 16);
+  Unix.close fd;
+  let stale_state = Game_state.create () in
+  let stale_persistence = recover stale_dir stale_state in
+  close stale_persistence;
+  check "stale snapshot temp removed" (not (Sys.file_exists stale));
+  ignore (check_recovered stale_dir empty_digest);
+
   (* Several moves, a cross-board move, castling, en passant and promotion. *)
   let dir = temp_dir () in
   let state = Game_state.create () in

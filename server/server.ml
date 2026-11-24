@@ -78,6 +78,7 @@ let adaptive_json controller ~fixed_group ~fixed_delay_us =
         ("fsync_p95_us", `Float state.fsync_p95_us);
         ("broadcast_backlog", `Float state.broadcast_backlog);
         ("event_lag_p95_ms", `Float state.event_lag_p95_ms);
+        ("recipients_per_event", `Float state.recipients_per_event);
         ("snapshot_active", `Bool state.snapshot_active);
       ]
 
@@ -463,6 +464,15 @@ let () =
             max_delay_s = float policy.max_batch_delay_us /. 1_000_000.;
           })
       ~commit_group:(fun moves -> Persistence.sync persistence ~moves)
+      ~on_fatal:(fun exn ->
+        Printf.eprintf "fatal state worker failure: %s\n%!"
+          (Printexc.to_string exn);
+        flush stderr;
+        flush stdout;
+        (* There is no safe way to keep serving: the batch has been applied
+           tentatively but its fsync failed. Restart recovers whatever reached
+           the WAL; a crash here must not publish the failed group. *)
+        Unix._exit 70)
       ~config:State_worker.default_config state
   in
   worker_ref := Some worker;
@@ -471,6 +481,9 @@ let () =
    | Some controller ->
      let last_moves = ref (State_worker.metrics worker).moves_submitted in
      let last_time = ref (Unix.gettimeofday ()) in
+     let last_recipients, last_events = Metrics.recipients_and_events () in
+     let last_recipients = ref last_recipients in
+     let last_events = ref last_events in
      Lwt.async (fun () ->
          let rec loop () =
            Lwt_unix.sleep 0.1 >>= fun () ->
@@ -487,6 +500,17 @@ let () =
            let event_lag =
              Metrics.recent_p95_ms Metrics.End_to_end_broadcast ~window:256
            in
+           let recipients, events = Metrics.recipients_and_events () in
+           let new_recipients = Int64.sub recipients !last_recipients in
+           let new_events = Int64.sub events !last_events in
+           last_recipients := recipients;
+           last_events := events;
+           let recipients_per_event =
+             if Int64.compare new_events 0L <= 0 then 0.
+             else
+               Int64.to_float new_recipients
+               /. Int64.to_float new_events
+           in
            ignore
              (Adaptive_commit.sample controller
                 {
@@ -497,6 +521,7 @@ let () =
                   broadcast_backlog =
                     connection_metrics.total_outbox_depth;
                   event_lag_p95_ms = event_lag;
+                  recipients_per_event;
                   snapshot_active = Persistence.snapshot_active persistence;
                 });
            loop ()

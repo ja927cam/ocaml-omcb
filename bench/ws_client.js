@@ -46,6 +46,9 @@ class Client {
     this.nextId = 1 + ((index + 1) * 1_000_003) % 2_000_000_000;
     this.events = [];
     this.message_log = [];
+    // Long-running subscribers can disable per-event history; they still
+    // consume and parse frames, but do not retain millions of event objects.
+    this.record_events = true;
     this.eventFirstAt = new Map();
     this.eventCounts = new Map();
     this.snapshotRtts = [];
@@ -82,8 +85,10 @@ class Client {
         };
         if (bytes[0] === EVENT_KIND) {
           const event = parse_event_payload(bytes, 1).event;
-          record(event, performance.now());
-          this.message_log.push({ type: "event", event, at: performance.now() });
+          if (this.record_events) {
+            record(event, performance.now());
+            this.message_log.push({ type: "event", event, at: performance.now() });
+          }
           return;
         }
         if (bytes[0] === EVENT_BATCH_KIND) {
@@ -91,8 +96,10 @@ class Client {
           let offset = 2;
           for (let i = 0; i < bytes[1]; i++) {
             const parsed = parse_event_payload(bytes, offset);
-            record(parsed.event, at);
-            this.message_log.push({ type: "event", event: parsed.event, at });
+            if (this.record_events) {
+              record(parsed.event, at);
+              this.message_log.push({ type: "event", event: parsed.event, at });
+            }
             offset = parsed.next;
           }
           return;
@@ -114,6 +121,7 @@ class Client {
         clearTimeout(entry.timer);
         entry.resolve(bytes);
       };
+      if (this.ws.readyState === 1) resolve();
     });
   }
 

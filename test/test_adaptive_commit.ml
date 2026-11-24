@@ -3,7 +3,8 @@ let check name condition =
 
 let metrics ?(move_rate = 0.) ?(pending_moves = 0) ?(fsync_p50_us = 1_000.)
     ?(fsync_p95_us = 2_000.) ?(broadcast_backlog = 0)
-    ?(event_lag_p95_ms = 5.) ?(snapshot_active = false) () =
+    ?(event_lag_p95_ms = 5.) ?(recipients_per_event = 8.)
+    ?(snapshot_active = false) () =
   Adaptive_commit.
     {
       move_rate;
@@ -12,6 +13,7 @@ let metrics ?(move_rate = 0.) ?(pending_moves = 0) ?(fsync_p50_us = 1_000.)
       fsync_p95_us;
       broadcast_backlog;
       event_lag_p95_ms;
+      recipients_per_event;
       snapshot_active;
     }
 
@@ -21,7 +23,8 @@ let heavy =
     ~fsync_p95_us:8_000. ~broadcast_backlog:2 ~event_lag_p95_ms:12. ()
 let broadcast =
   metrics ~move_rate:1_500. ~pending_moves:32 ~fsync_p50_us:2_000.
-    ~fsync_p95_us:8_000. ~broadcast_backlog:200 ~event_lag_p95_ms:120. ()
+    ~fsync_p95_us:8_000. ~broadcast_backlog:200 ~event_lag_p95_ms:120.
+    ~recipients_per_event:80. ()
 let storage =
   metrics ~move_rate:1_500. ~pending_moves:40 ~fsync_p50_us:18_000.
     ~fsync_p95_us:45_000. ~broadcast_backlog:1 ~event_lag_p95_ms:12. ()
@@ -46,6 +49,18 @@ let () =
   let broadcast_policy = sample_many controller broadcast 14 in
   check "broadcast pressure holds the batch at 16"
     (broadcast_policy.max_batch_size = 16);
+
+  (* A small subscriber set with high delivery latency is load-bound, not
+     fan-out-bound; it must not pin the batch at the broadcast floor. *)
+  let small_fanout =
+    metrics ~move_rate:4_000. ~pending_moves:64 ~fsync_p50_us:2_000.
+      ~fsync_p95_us:8_000. ~event_lag_p95_ms:120.
+      ~recipients_per_event:8. ()
+  in
+  let small = Adaptive_commit.create () in
+  let small_policy = sample_many small small_fanout 30 in
+  check "small-fanout latency does not cap batching"
+    (small_policy.max_batch_size >= 64);
   check "broadcast pressure removes the delay"
     (broadcast_policy.max_batch_delay_us = 0);
 

@@ -53,6 +53,22 @@ cache eviction/re-fetch. On each run it probes a pristine 5 × 5 block
 (revision 0 and the standard starting position) because moves are
 authoritative and remain on the running server.
 
+Operational failure injection covers WAL append/fsync/rotation, snapshot
+write/fsync/rename/directory-fsync failures and shutdown during writes:
+
+```bash
+node test/failure_injection_test.js
+```
+
+Adaptive-mode stability is exercised by a changing-workload soak test:
+
+```bash
+node test/adaptive_soak_test.js                  # 30 minutes
+SOAK_PHASE_SECONDS=10 node test/adaptive_soak_test.js  # smoke
+```
+
+See `docs/FAILURE_AUDIT.md` for the hardening audit, defects and results.
+
 The server listens on `http://localhost:8080`. On first startup it creates the
 complete world and an empty write-ahead log. On later startups it restores the
 newest valid snapshot and replays committed WAL records before accepting any
@@ -120,6 +136,7 @@ The board grid fills the whole window.
 - `docs/ALGORITHMS.md` — algorithm design, complexity, benchmarks, testing and
   formal-verification opportunities.
 - `bench/README.md` — benchmark runner and dashboard.
+- `docs/FAILURE_AUDIT.md` — production-hardening and failure-injection audit.
 
 ## Benchmarks
 

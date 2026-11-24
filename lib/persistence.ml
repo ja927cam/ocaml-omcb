@@ -78,6 +78,51 @@ let crash_point name =
     Unix.kill (Unix.getpid ()) Sys.sigkill
   | _ -> ()
 
+(* Test-only, one-shot I/O fault injection. A normal server never sets these
+   variables. Cache the environment once so the production hot path does not
+   pay for a lookup on every WAL append. *)
+let fault_counter = ref None
+let fault_config =
+  lazy
+    (let name = Sys.getenv_opt "SIM_MAP_FAULT" in
+     let after =
+       match Sys.getenv_opt "SIM_MAP_FAULT_AFTER" with
+       | None -> 0
+       | Some raw -> (try max 0 (int_of_string raw) with _ -> 0)
+     in
+     (name, after))
+
+let take_fault name =
+  let fault, configured_after = Lazy.force fault_config in
+  match fault with
+  | Some fault when fault = name -> (
+    match !fault_counter with
+    | Some remaining when remaining < 0 -> false
+    | Some 0 ->
+      fault_counter := Some (-1);
+      true
+    | Some remaining ->
+      fault_counter := Some (remaining - 1);
+      false
+    | None ->
+      let remaining = configured_after in
+      if remaining = 0 then begin
+        fault_counter := Some (-1);
+        true
+      end
+      else begin
+        fault_counter := Some (remaining - 1);
+        false
+      end)
+  | _ -> false
+
+let inject_fault name =
+  if take_fault name then begin
+    Printf.eprintf "persistence: injected fault %s\n%!" name;
+    flush stderr;
+    raise (Failure ("injected fault: " ^ name))
+  end
+
 let ensure_dir dir =
   match Unix.mkdir dir 0o755 with
   | () -> ()
@@ -179,8 +224,8 @@ let remove_stale_temps dir =
   Array.iter
     (fun name ->
       if
-        String.length name > 5
-        && String.sub name 0 5 = "snapsh"
+        String.length name >= 8
+        && String.sub name 0 8 = "snapshot"
         && contains_substring name ".tmp."
       then
         try Unix.unlink (Filename.concat dir name) with Unix.Unix_error _ -> ())
@@ -282,6 +327,7 @@ let write_snapshot_file path (copy : world_copy) =
         (Bytes.length header_bytes)
     in
     write_all fd header_bytes 0 (Bytes.length header_bytes);
+    inject_fault "snapshot-write";
     crash_point "snapshot-partial-temp";
     let hash = write_words fd hash copy.revisions 0 Game_state.board_count in
     let hash =
@@ -296,6 +342,7 @@ let write_snapshot_file path (copy : world_copy) =
     Bytes.blit_string Snapshot_format.end_magic 0 footer 0 4;
     Bytes.set_int64_be footer 4 hash;
     write_all fd footer 0 (Bytes.length footer);
+    inject_fault "snapshot-fsync";
     Unix.fsync fd;
     Unix.close fd;
     crash_point "snapshot-temp-fsynced"
@@ -374,6 +421,7 @@ let load_snapshot (state : Game_state.t) path ~expected_sequence =
 (* ------------------------------------------------------------------------- *)
 
 let open_wal_segment path first_sequence ~sync =
+  inject_fault "wal-rotate";
   let fd =
     match
       Unix.openfile path
@@ -409,12 +457,19 @@ let open_wal_segment path first_sequence ~sync =
       end
   in
   let size = (Unix.fstat fd).Unix.st_size in
-  if size = 0 then begin
-    let header = Wal_format.encode_segment_header ~first_sequence in
-    write_all fd header 0 (Bytes.length header);
-    if sync then Unix.fsync fd;
-    fsync_dir (Filename.dirname path)
-  end
+  if size = 0 then
+    (try
+       let header = Wal_format.encode_segment_header ~first_sequence in
+       write_all fd header 0 (Bytes.length header);
+       if sync then Unix.fsync fd;
+       fsync_dir (Filename.dirname path)
+     with exn ->
+       (* Do not leave a headerless segment behind: recovery would treat it as
+          the newest segment and reject the WAL. The previous segment stays
+          active when a rotation fails. *)
+       (try Unix.close fd with _ -> ());
+       (try Unix.unlink path with _ -> ());
+       raise exn)
   else Unix.lseek fd 0 Unix.SEEK_END |> ignore;
   fd
 
@@ -765,6 +820,7 @@ let append_bytes (t : t) bytes =
 let sync (t : t) ~moves =
   if t.config.sync then begin
     if t.dirty then begin
+      inject_fault "wal-fsync";
       let started = now_ms () in
       Unix.fsync t.fd;
       t.dirty <- false;
@@ -836,11 +892,20 @@ let before_commit (t : t) (state : Game_state.t) (commit : Move_engine.commit) =
      ignore (Unix.write t.fd frame 0 half);
      crash_point "wal-partial-write"
    | _ -> ());
+  if take_fault "wal-append" then begin
+    (* Simulate a short append followed by an I/O error. *)
+    let half = max 1 (Bytes.length frame / 2) in
+    ignore (Unix.write t.fd frame 0 half);
+    Printf.eprintf "persistence: injected fault wal-append\n%!";
+    flush stderr;
+    raise (Failure "injected fault: wal-append")
+  end;
   append_bytes t frame;
   if t.config.sync && t.config.strict_commit then begin
     (* Strict mode keeps the original ordering: durable before the engine
        applies the transition. Group mode defers this to [sync] after the
        batch, so later moves in the batch can validate against earlier ones. *)
+    inject_fault "wal-fsync";
     let started = now_ms () in
     Unix.fsync t.fd;
     t.dirty <- false;
@@ -861,9 +926,12 @@ let rotate_wal (t : t) ~sequence =
   if Int64.compare t.active.last_sequence t.active.first_sequence >= 0 then begin
     (try Unix.fsync t.fd with Unix.Unix_error _ -> ());
     t.dirty <- false;
-    (try Unix.close t.fd with Unix.Unix_error _ -> ());
+    let old_fd = t.fd in
     let next = Int64.succ sequence in
     let path = Filename.concat t.dir (wal_name next) in
+    (* Open the replacement before closing the old descriptor. If creating or
+       syncing the new segment fails, the old segment remains appendable and a
+       failed snapshot does not take the write path down. *)
     let fd = open_wal_segment path next ~sync:t.config.sync in
     let segment =
       {
@@ -879,7 +947,8 @@ let rotate_wal (t : t) ~sequence =
       List.filter
         (fun (existing : segment) -> existing.path <> segment.path)
         t.segments
-      @ [ segment ]
+      @ [ segment ];
+    (try Unix.close old_fd with Unix.Unix_error _ -> ())
   end
 
 let delete_wal_segments (t : t) ~before =
@@ -951,11 +1020,25 @@ let write_snapshot (t : t) (copy : world_copy) =
     Printf.sprintf "%s.tmp.%d" path (Unix.getpid ())
   in
   let started = now_ms () in
-  write_snapshot_file temp copy;
-  crash_point "snapshot-temp-fsynced";
-  Unix.rename temp path;
-  fsync_dir t.dir;
-  finish_snapshot t copy path (now_ms () -. started)
+  (try
+     write_snapshot_file temp copy;
+     crash_point "snapshot-temp-fsynced";
+     inject_fault "snapshot-rename";
+     Unix.rename temp path;
+     (try
+        inject_fault "snapshot-dir-fsync";
+        fsync_dir t.dir
+      with exn ->
+        (* The rename may not be durable. Remove the untrusted file and keep
+           the previous snapshot plus every WAL segment it needs. *)
+        (try Unix.unlink path with _ -> ());
+        raise exn);
+     finish_snapshot t copy path (now_ms () -. started)
+   with exn ->
+     (* A failed snapshot must not leave a 537 MB temporary file behind for
+        every failure until the next restart. *)
+     (try Unix.unlink temp with _ -> ());
+     raise exn)
 
 let snapshot_failed (t : t) exn =
   t.snapshot_pending <- false;

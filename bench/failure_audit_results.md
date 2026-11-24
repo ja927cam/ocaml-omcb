@@ -1,0 +1,16 @@
+# Failure-injection audit results
+
+Generated: 2026-11-24T21:10:13.668Z
+
+| Test | Injected | Expected | Observed | Result |
+|---|---|---|---|---|
+| wal-fsync-group | wal-fsync after 1 | failed group is not acknowledged or broadcast; worker fail-stops; restart recovers a valid state containing every acknowledged move | 16 accepted, 0 rejected, 16 connection errors; server exit {"code":70,"signal":null}; missing committed events=0; restart sequence 32, torn tail=false, snapshot status 1 | pass |
+| wal-partial-append | wal-append after 20 | failed group is not acknowledged or broadcast; worker fail-stops; restart recovers a valid state containing every acknowledged move | 16 accepted, 0 rejected, 16 connection errors; server exit {"code":70,"signal":null}; missing committed events=0; restart sequence 20, torn tail=true, snapshot status 1 | pass |
+| wal-rotate | wal-rotate on the first snapshot rotation | snapshot rotation failure leaves the old WAL appendable; writes continue; a later snapshot succeeds; no partial segment remains | 40/40 accepted, 0 rejected; live=true; snapshots=1; files=snapshot-00000000000000000024.snap,wal-00000000000000000001.log,wal-00000000000000000025.log; restart sequence 40 | pass |
+| snapshot-write | snapshot-write on the first snapshot after 10 commits | snapshot failure is non-fatal; no temporary snapshot remains; later commits continue; restart recovers the same state | 24/24 accepted; live=true; temps=0; snapshots=1; before=24/6174719dd6888a31, after=24/6174719dd6888a31 | pass |
+| snapshot-fsync | snapshot-fsync on the first snapshot after 10 commits | snapshot failure is non-fatal; no temporary snapshot remains; later commits continue; restart recovers the same state | 24/24 accepted; live=true; temps=0; snapshots=0; before=24/125dd44a21d9b459, after=24/125dd44a21d9b459 | pass |
+| snapshot-rename | snapshot-rename on the first snapshot after 10 commits | snapshot failure is non-fatal; no temporary snapshot remains; later commits continue; restart recovers the same state | 24/24 accepted; live=true; temps=0; snapshots=0; before=24/8b7a3d4ebaf09041, after=24/8b7a3d4ebaf09041 | pass |
+| snapshot-dir-fsync | snapshot-dir-fsync on the first snapshot after 10 commits | snapshot failure is non-fatal; no temporary snapshot remains; later commits continue; restart recovers the same state | 24/24 accepted; live=true; temps=0; snapshots=0; before=24/9fe3cdab40179dcd, after=24/9fe3cdab40179dcd | pass |
+| shutdown-acked | SIGTERM with an empty queue after 48 acknowledged moves | acknowledged moves survive; restart recovers the exact pre-shutdown digest; no temporary snapshot remains | 48 accepted; snapshot pending=false writing=false; restart 48/0db9b6cbb047e5f5; temps before=0, after=0 | pass |
+| shutdown-queued | SIGTERM after 16 acknowledged moves while a further 48-move burst was queued | every acknowledged move survives; unacknowledged requests fail without corrupting recovery | 16 accepted, 0 rejected, 48 errors; restart sequence 16 | pass |
+| shutdown-snapshot | SIGTERM while a snapshot was pending/writing | acknowledged moves survive; restart recovers the exact pre-shutdown digest; no temporary snapshot remains | 48 accepted; snapshot pending=true writing=true; restart 48/3ff8b73dfb89d9a7; temps before=0, after=0 | pass |

@@ -5,6 +5,7 @@ type metrics = {
   fsync_p95_us : float;
   broadcast_backlog : int;
   event_lag_p95_ms : float;
+  recipients_per_event : float;
   snapshot_active : bool;
 }
 
@@ -51,6 +52,7 @@ type t = {
   mutable fsync_p95_us : float;
   mutable broadcast_backlog : float;
   mutable event_lag_p95_ms : float;
+  mutable recipients_per_event : float;
   mutable snapshot_active : bool;
   mutable classification : classification;
   mutable boost_streak : int;
@@ -67,6 +69,7 @@ type state = {
   fsync_p95_us : float;
   broadcast_backlog : float;
   event_lag_p95_ms : float;
+  recipients_per_event : float;
   snapshot_active : bool;
 }
 
@@ -108,6 +111,7 @@ let create ?(config = default_config) () =
     fsync_p95_us = 0.;
     broadcast_backlog = 0.;
     event_lag_p95_ms = 0.;
+    recipients_per_event = 0.;
     snapshot_active = false;
     classification = Quiet;
     boost_streak = 0;
@@ -119,7 +123,9 @@ let ema (t : t) previous value =
 
 let classify (t : t) =
   let broadcast_pressure =
-    t.event_lag_p95_ms >= 50. || t.broadcast_backlog >= 32.
+    t.broadcast_backlog >= 32.
+    || (t.event_lag_p95_ms >= 50. && t.recipients_per_event >= 16.)
+    || t.event_lag_p95_ms >= 250.
   in
   (* A high median fsync latency is a storage bottleneck. Tail outliers alone
      are not: btrfs can stall an occasional commit for 100 ms while the median
@@ -181,6 +187,8 @@ let sample (t : t) (metrics : metrics) =
     ema t t.broadcast_backlog (float_of_int metrics.broadcast_backlog);
   t.event_lag_p95_ms <-
     ema t t.event_lag_p95_ms metrics.event_lag_p95_ms;
+  t.recipients_per_event <-
+    ema t t.recipients_per_event metrics.recipients_per_event;
   t.snapshot_active <- metrics.snapshot_active;
   t.samples <- t.samples + 1;
 
@@ -188,7 +196,9 @@ let sample (t : t) (metrics : metrics) =
   t.classification <- classification;
   let pending = int_of_float (t.ema_pending +. 0.5) in
   let broadcast_pressure =
-    t.event_lag_p95_ms >= 50. || t.broadcast_backlog >= 32.
+    t.broadcast_backlog >= 32.
+    || (t.event_lag_p95_ms >= 50. && t.recipients_per_event >= 16.)
+    || t.event_lag_p95_ms >= 250.
   in
   let delivery_deteriorating =
     metrics.event_lag_p95_ms > lag_before +. 2.
@@ -282,6 +292,7 @@ let state (t : t) =
     fsync_p95_us = t.fsync_p95_us;
     broadcast_backlog = t.broadcast_backlog;
     event_lag_p95_ms = t.event_lag_p95_ms;
+    recipients_per_event = t.recipients_per_event;
     snapshot_active = t.snapshot_active;
   }
 

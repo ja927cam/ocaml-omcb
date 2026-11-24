@@ -715,10 +715,13 @@ Every accepted move records its **committed transition**, not the move command:
 
 The worker calls `Move_engine.process ~precommit` after validation and plan
 construction but before the first board write. The precommit serialises the
-transition, appends the frame, and fsyncs the WAL. Only then does
-`Move_processor.apply_plan` run, followed by the ledger append, sequence
-update, move response and broadcast. A precommit failure aborts the move and
-stops the worker: the server never acknowledges a move it cannot recover.
+transition and appends the frame. In strict mode it also fsyncs here; group and
+adaptive modes defer the fsync to the group commit after all moves in the batch
+have been applied. Only then does `Move_processor.apply_plan` run, followed by
+the ledger append, sequence update, move response and broadcast. A precommit or
+group-commit failure publishes nothing and fail-stops the process: the server
+never acknowledges a move it cannot recover, and never keeps serving tentative
+in-memory state after a durability failure.
 
 Replaying final square values and recorded revisions means recovery is
 independent of chess-rule code. A future validator change, a promotion rule
@@ -756,6 +759,17 @@ previous snapshot and WAL valid. A crash after the rename but before cleanup
 leaves both the new snapshot and the old WAL; recovery skips records at or
 below `S`, so no transition is applied twice.
 
+Snapshot failure is non-fatal. A write, fsync or rename failure removes the
+temporary file. A directory-fsync failure removes the renamed but untrusted
+file, because the rename may not survive a power loss; the old snapshot and
+WAL remain authoritative. Recovery also removes stale
+`snapshot-*.snap.tmp.*` files before listing snapshots.
+
+WAL rotation opens the replacement segment before closing the old descriptor.
+If creation, header write, fsync or directory fsync of the new segment fails,
+the partial file is removed and the old segment remains appendable. A failed
+snapshot rotation therefore cannot take the write path down with `EBADF`.
+
 ### Retention and cleanup
 
 Two snapshot generations are kept. After `S_new` is durable, the previous
@@ -787,6 +801,23 @@ A short trailing record is ignored and its segment truncated to the last
 complete record. A corrupt snapshot is skipped and the next older one is
 tried; if none loads, the deterministic world plus WAL from sequence 1 is
 used. If the WAL starts above the required sequence, recovery refuses to run.
+
+### Failure injection
+
+`SIM_MAP_FAULT` and `SIM_MAP_FAULT_AFTER` are test-only one-shot I/O fault
+hooks in `lib/persistence.ml`. They cover WAL append/partial append, WAL fsync,
+WAL rotation, snapshot write, snapshot fsync, snapshot rename and snapshot
+directory fsync. They raise ordinary exceptions so the worker follows its
+normal failure path; `SIM_MAP_CRASH_POINT` remains the separate hard-kill path.
+The hooks are inert unless configured and the environment is cached at first
+use.
+
+`test/failure_injection_test.js` runs these cases against real servers and
+checks acknowledgement, event visibility, fail-stop behaviour, stale-file
+cleanup and restart digests. The findings and fixes are recorded in
+`docs/FAILURE_AUDIT.md`. A 30-minute adaptive soak
+(`test/adaptive_soak_test.js`) records RSS, fds, queue/outbox depth, group
+sizes, fsync latency, event lag and policy changes.
 
 ### Integrity and verification
 
@@ -832,6 +863,7 @@ Every 100 ms the server feeds the controller:
   remembered for the whole run);
 - total queued client outbox frames;
 - recent server end-to-end broadcast p95;
+- recent recipients per broadcast event;
 - whether a snapshot capture is in progress.
 
 Committed events that have not yet been fanned out are deliberately excluded
@@ -847,8 +879,9 @@ decreases need two. Absolute bounds come from the environment.
 | Classification | Trigger (smoothed) | Batch | Delay |
 |---|---|---:|---:|
 | Snapshot active | snapshot capture in progress | ≤32 | 0 |
-| Broadcast-bound | event lag p95 ≥50 ms or outbox ≥32 | 16 | 0 |
+| Broadcast-bound | lag ≥50 ms with ≥16 recipients, or outbox ≥32 | 16 | 0 |
 | Broadcast-bound, outbox filling | outbox ≥512 | 8 | 0 |
+| Broadcast-bound, severe lag | lag ≥250 ms regardless of recipients | 8–16 | 0 |
 | Storage-bound | fsync p50 ≥8 ms | 32 or 64 | 0 |
 | Heavy | ≥8 queued moves, or ≥1,000/s | 64–256 | 0 |
 | Moderate | 30–1,000 moves/s | 8–32 | 250 µs |
@@ -862,11 +895,13 @@ several ramp samples; the default 100-move load improved from 1.9 to 7.7 moves
 per fsync and from 18.7 ms to 6.5 ms move p50 after this change.
 
 For heavy arrivals the target can be raised to twice the smoothed queue depth,
-but only after two consecutive samples. A lagging event stream holds batching
-at 16 rather than growing it; it does not shrink the batch further unless
-client outboxes are actually filling, because extra fsyncs do not fix a
-delivery bottleneck. The initial policy is batch 16 with a 1 ms delay, clamped
-to the configured bounds.
+but only after two consecutive samples. A lagging event stream with real
+fan-out (at least 16 recipients per event) holds batching at the 16 floor; it
+does not shrink further unless client outboxes are actually filling, because
+extra fsyncs do not fix a delivery bottleneck. With only a handful of
+recipients, high lag is treated as general load rather than fan-out pressure,
+so a small observer does not pin a heavy write workload at 16. The initial
+policy is batch 16 with a 1 ms delay, clamped to the configured bounds.
 
 The transition experiment (`bench/adaptive_commit_test.js`,
 `bench/adaptive_commit_report.html`) runs the same sequence against fixed 16,
@@ -903,6 +938,16 @@ sustained more snapshot-phase throughput (404 versus 339 moves/s) at a 1.8 ms
 higher p50. The quiet-after-heavy p50 is dominated by draining the tail of the
 previous group queue, so it varies with the machine and is not a steady-state
 regression.
+
+A 30-minute changing-workload soak (`test/adaptive_soak_test.js`) found that
+treating *any* event lag as broadcast pressure pinned the heavy phase at batch
+16: eight sentinel subscribers with 50–200 ms lag were enough, even though the
+client outbox was empty. Adding recipients-per-event fixed the classification;
+the heavy phase then settled at batch 128 and 8,821 moves/s instead of 1,792.
+The same soak showed RSS rising from ~560 MiB to ~1.25 GiB and peaking near
+1.7 GiB during 512 MiB snapshot copies, while fds, worker queue, outbox, event
+delivery and recovery stayed bounded. See `docs/FAILURE_AUDIT.md` for the full
+record.
 
 Measured on the reference machine (16 cores, btrfs home with
 `compress=zstd:3`; tmpfs noted for comparison):

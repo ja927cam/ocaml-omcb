@@ -1074,7 +1074,8 @@ the default; fixed group commit with a 64-move maximum is the fallback.
   current group to be flushed first, so no client can read uncommitted state.
 - **Adaptive** (default, `SIM_MAP_ADAPTIVE=1`): a bounded controller samples move
   arrivals, queued moves, recent fsync p50/p95, queued client outbox frames,
-  broadcast lag p95 and snapshot capture state every 100 ms. It chooses a
+  broadcast lag p95, recipients per broadcast event and snapshot capture state
+  every 100 ms. It chooses a
   maximum batch in `[SIM_MAP_ADAPTIVE_MIN, SIM_MAP_ADAPTIVE_MAX]` and a
   group-formation delay in the configured delay bounds, and steps gradually
   with hysteresis. Classification is rule-based: quiet/moderate/heavy,
@@ -1090,8 +1091,11 @@ the default; fixed group commit with a 64-move maximum is the fallback.
 
 A move is never acknowledged before its group's WAL records are durable. If
 the durability step raises, the pending group is not published, the worker
-stops accepting moves and the connections receive errors. The process
-fail-stops rather than continuing with state it cannot recover.
+stops accepting moves and the process fail-stops with exit status 70 rather
+than continuing to serve in-memory state that may not be durable. Snapshot
+write failures are recoverable and do not stop the worker: the partial file is
+removed, the old snapshot and WAL remain authoritative, and a later commit
+retries.
 
 A crash after the group fsync but before the responses are delivered can leave
 a recovered world that includes a transition whose acknowledgement was lost.
@@ -1364,6 +1368,11 @@ This enables a higher-resolution browser timer for RTT metrics.
   past the two-second send timeout is unregistered.
 - `CONNECTION_OUTBOX_CAPACITY` sets the per-client capacity (default 256). The
   slow-client test uses 8 to force the overflow path.
+- A snapshot rotation opens the replacement WAL segment before closing the old
+  descriptor. If creating or syncing the new segment fails, the old segment
+  stays appendable; the snapshot is marked failed and retried later.
+- Failed or interrupted snapshots unlink their temporary file. Recovery also
+  removes any stale `snapshot-*.snap.tmp.*` files before listing snapshots.
 - Aggregate counters for enqueues, drops, send failures, full-outbox
   unregisters and maximum depth are exposed through `/metrics`.
 - `State_worker.on_commit` runs after the commit but only appends the event to

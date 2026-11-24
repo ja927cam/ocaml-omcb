@@ -258,3 +258,41 @@ let () =
      | None -> false);
 
   Printf.printf "All State_worker tests passed.\n"
+
+(* A durability failure must reject the whole group, publish nothing and
+   invoke the fatal callback instead of leaving the worker silently alive. *)
+let () =
+  let state = Game_state.create () in
+  let board =
+    Game_state.with_state state (fun ~board ~ledger:_ ~sequence ->
+        (sequence, board))
+  in
+  let pawn = piece Piece.Pawn true in
+  place board 0 0 4 6 pawn;
+  let committed = ref 0 in
+  let fatal = ref None in
+  let worker =
+    State_worker.start
+      ~on_commit:(fun _ -> incr committed)
+      ~commit_group:(fun _ -> failwith "injected commit failure")
+      ~on_fatal:(fun exn -> fatal := Some exn)
+      ~config:{ queue_capacity = 8 } state
+  in
+  let result =
+    Lwt_main.run
+      (State_worker.submit worker
+         (request 31l (pos 0 0 4 6) (pos 0 0 4 4) (Piece.id pawn)))
+  in
+  check "failed group is rejected"
+    (match result with Error State_worker.Worker_failed -> true | _ -> false);
+  check "failed group publishes no event" (!committed = 0);
+  check "fatal callback runs" (match !fatal with Some _ -> true | None -> false);
+  let again =
+    Lwt_main.run
+      (State_worker.submit worker
+         (request 32l (pos 0 0 4 6) (pos 0 0 4 4) (Piece.id pawn)))
+  in
+  check "worker stays failed"
+    (match again with Error State_worker.Worker_failed -> true | _ -> false)
+
+let () = Printf.printf "All worker tests passed.\n%!"

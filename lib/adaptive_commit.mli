@@ -17,6 +17,9 @@ type metrics = {
       their fan-out are excluded on purpose: a write-only workload can fill
       that queue briefly without any client delivery falling behind. *)
   event_lag_p95_ms : float;
+  recipients_per_event : float;
+  (** Recent average number of clients receiving each broadcast event. A
+      high lag with only a few recipients is load, not fan-out pressure. *)
   snapshot_active : bool;
 }
 
@@ -69,6 +72,7 @@ type state = {
   fsync_p95_us : float;
   broadcast_backlog : float;
   event_lag_p95_ms : float;
+  recipients_per_event : float;
   snapshot_active : bool;
 }
 

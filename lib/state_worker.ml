@@ -86,6 +86,7 @@ type t = {
   on_snapshot : Game_state.t -> unit;
   commit_policy : unit -> commit_policy;
   commit_group : int -> unit;
+  on_fatal : exn -> unit;
 }
 
 let default_config = { queue_capacity = 4096 }
@@ -98,7 +99,7 @@ let finish t =
     Lwt.wakeup_later t.finished_u ()
   end
 
-let fail_queue t exn =
+let fail_queue t ?(fatal = true) exn =
   t.failed <- true;
   t.accepting <- false;
   Printf.eprintf "state worker failed: %s\n%!" (Printexc.to_string exn);
@@ -108,7 +109,8 @@ let fail_queue t exn =
   Queue.clear t.queue;
   t.depth <- 0;
   t.move_depth <- 0;
-  finish t
+  finish t;
+  if fatal then t.on_fatal exn
 
 let update_metrics t ~started_ns ~finished_ns item =
   let processing = Int64.sub finished_ns started_ns in
@@ -276,7 +278,7 @@ let process_one t item =
     Lwt.wakeup_later item.promise (Ok (Snapshot_result snapshot));
     true
   | exception exn ->
-    fail_queue t exn;
+    fail_queue t ~fatal:false exn;
     Lwt.wakeup_later item.promise (Error Worker_failed);
     false
 
@@ -306,6 +308,7 @@ let start ?(on_commit = fun _ -> ())
     ?(on_snapshot = fun _ -> ())
     ?(commit_policy = fun () -> { max_batch = 1; max_delay_s = 0. })
     ?(commit_group = fun _ -> ())
+    ?(on_fatal = fun _ -> ())
     ~(config : config) state =
   if config.queue_capacity <= 0 then
     invalid_arg "State_worker.start: queue_capacity must be positive";
@@ -337,6 +340,7 @@ let start ?(on_commit = fun _ -> ())
       on_snapshot;
       commit_policy;
       commit_group;
+      on_fatal;
     }
   in
   Lwt.async (fun () -> loop worker batch_size);

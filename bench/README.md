@@ -429,6 +429,27 @@ writes. The adaptive quiet-after-heavy p50 can be higher than both fixed modes
 because the first quiet requests drain the tail of the larger heavy group;
 that is a transition cost, not a steady-state regression.
 
+## Failure-injection and soak tests
+
+`test/failure_injection_test.js` injects WAL append/fsync/rotation and snapshot
+write/fsync/rename/directory-fsync failures, then verifies acknowledgement,
+event visibility, process fail-stop, snapshot cleanup and restart digests:
+
+```bash
+node test/failure_injection_test.js
+```
+
+`test/adaptive_soak_test.js` runs quiet, heavy-write, fan-out, mixed,
+snapshot-heavy and quiet phases for 30 minutes by default, sampling RSS, fds,
+queue/outbox depth, group size, fsync latency, event lag and adaptive policy:
+
+```bash
+node test/adaptive_soak_test.js
+SOAK_PHASE_SECONDS=10 node test/adaptive_soak_test.js  # smoke
+```
+
+The results and defect list are in `docs/FAILURE_AUDIT.md`.
+
 ## Crash recovery
 
 `test/crash_recovery_test.js` spawns real servers against isolated data

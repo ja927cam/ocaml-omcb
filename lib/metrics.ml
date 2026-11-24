@@ -41,6 +41,7 @@ type series = {
   samples : int64 array;
   mutable next : int;
   mutable filled : int;
+  mutable last_ns : int64;
 }
 
 let create_series () =
@@ -52,6 +53,7 @@ let create_series () =
     samples = Array.make sample_capacity 0L;
     next = 0;
     filled = 0;
+    last_ns = 0L;
   }
 
 let record_series series value =
@@ -137,7 +139,12 @@ let stage_index = function
   | Websocket_write -> 8
   | End_to_end_broadcast -> 9
 
-let record stage value = record_series global.series.(stage_index stage) value
+let record stage value =
+  let series = global.series.(stage_index stage) in
+  record_series series value;
+  (* Only the adaptive controller's lag input needs a freshness timestamp;
+     avoid a clock call for every other pipeline stage. *)
+  if stage = End_to_end_broadcast then series.last_ns <- now ()
 
 let record_between stage start_ns end_ns =
   if Int64.compare start_ns 0L > 0 && Int64.compare end_ns start_ns >= 0 then
@@ -146,7 +153,12 @@ let record_between stage start_ns end_ns =
 let recent_p95_ms stage ~window =
   let series = global.series.(stage_index stage) in
   let n = min window series.filled in
-  if n = 0 then 0.
+  (* Zero-recipient broadcasts do not record end-to-end samples. Without this
+     freshness check the last high-latency fan-out window would keep the
+     adaptive controller in broadcast-bound mode long after subscribers left. *)
+  if n = 0 || Int64.compare series.last_ns 0L <= 0
+     || Int64.sub (now ()) series.last_ns > 5_000_000_000L
+  then 0.
   else begin
     let samples =
       Array.init n (fun i ->
@@ -282,6 +294,9 @@ let series_json series =
       ("max_ms", `Float (ns_to_ms max_ns));
       ("total_ms", `Float (ns_to_ms series.total_ns));
     ]
+
+let recipients_and_events () =
+  (global.counters.recipients, global.counters.events_broadcast)
 
 let counters_json () =
   let counters = global.counters in
