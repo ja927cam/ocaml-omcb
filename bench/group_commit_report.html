@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>sim-map group commit experiment</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 28px; background: #14171c; color: #e6e9ef;
+         font: 15px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 28px 0 8px; }
+  .sub { color: #aab2c0; margin-bottom: 24px; }
+  .cards { display: flex; flex-wrap: wrap; gap: 14px; margin: 18px 0 8px; }
+  .card { background: #1e222a; border: 1px solid #303746; border-radius: 10px;
+          padding: 14px 18px; min-width: 190px; }
+  .card b { display: block; font-size: 24px; color: #fff; }
+  .card span { color: #aab2c0; font-size: 13px; }
+  .chart { background: #1e222a; border: 1px solid #303746; border-radius: 10px;
+           padding: 10px; margin: 14px 0; }
+  canvas { width: 100%; height: auto; display: block; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+  th, td { padding: 7px 8px; border-bottom: 1px solid #303746; text-align: right; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  th { color: #aab2c0; font-weight: 600; }
+  .ok { color: #98c379; }
+  .note { color: #aab2c0; max-width: 1000px; }
+</style>
+</head>
+<body>
+<h1>sim-map: group commit experiment</h1>
+<div class="sub">37 runs, 170511 ms total · generated 2026-11-24T15:10:39.357Z</div>
+
+<div class="cards">
+  <div class="card"><b>553 → 7499</b><span>256-writer moves/s: sync → group-256</span></div>
+  <div class="card"><b>312 → 20</b><span>256-writer move p50 (ms)</span></div>
+  <div class="card"><b>578 → 260</b><span>1,020-client move p50 (ms)</span></div>
+  <div class="card"><b class="ok">0</b><span>correctness errors across all runs</span></div>
+</div>
+
+<div class="note">
+Every accepted move was verified through client responses, event delivery and final
+per-board snapshots. Group-64 crash recovery also passed: 64 concurrently
+acknowledged moves survived SIGKILL and exact reboot. The remaining gap to
+no-sync is mostly fsync count and arrival jitter; the actual average group at a
+configured maximum of 256 is about 87 because the worker starts before every
+writer has arrived.
+</div>
+
+<div class="chart"><canvas id="write-throughput" width="1000" height="360"></canvas></div>
+<div class="chart"><canvas id="write-latency" width="1000" height="360"></canvas></div>
+<div class="chart"><canvas id="fanout-80" width="1000" height="360"></canvas></div>
+<div class="chart"><canvas id="fanout-256" width="1000" height="360"></canvas></div>
+<div class="chart"><canvas id="fanout-1020" width="1000" height="360"></canvas></div>
+<div class="chart"><canvas id="actual-group" width="1000" height="360"></canvas></div>
+
+<h2>All runs</h2>
+<table><tr><th>Profile</th><th>Mode</th><th>Moves</th><th>Moves/s</th><th>p50</th><th>p95</th><th>p99</th><th>Event lag p50</th><th>Group</th><th>Syncs</th><th>CPU</th><th>Errors</th></tr><tr><td>write-64</td><td>sync</td><td>640</td><td>522</td><td>109.5 ms</td><td>178.7 ms</td><td>183.1 ms</td><td>-</td><td>1.0</td><td>640</td><td>22.0%</td><td>0</td></tr>
+<tr><td>write-64</td><td>8</td><td>640</td><td>2673</td><td>19.9 ms</td><td>26.5 ms</td><td>30.0 ms</td><td>-</td><td>7.0</td><td>91</td><td>37.6%</td><td>0</td></tr>
+<tr><td>write-64</td><td>16</td><td>640</td><td>2884</td><td>12.3 ms</td><td>75.7 ms</td><td>79.5 ms</td><td>-</td><td>12.1</td><td>53</td><td>31.5%</td><td>0</td></tr>
+<tr><td>write-64</td><td>32</td><td>640</td><td>3266</td><td>9.7 ms</td><td>70.4 ms</td><td>73.5 ms</td><td>-</td><td>19.4</td><td>33</td><td>30.6%</td><td>0</td></tr>
+<tr><td>write-64</td><td>64</td><td>640</td><td>3491</td><td>8.1 ms</td><td>69.5 ms</td><td>72.5 ms</td><td>-</td><td>29.1</td><td>22</td><td>32.7%</td><td>0</td></tr>
+<tr><td>write-64</td><td>128</td><td>640</td><td>3753</td><td>7.8 ms</td><td>69.0 ms</td><td>72.5 ms</td><td>-</td><td>29.1</td><td>22</td><td>29.3%</td><td>0</td></tr>
+<tr><td>write-64</td><td>256</td><td>640</td><td>3798</td><td>7.9 ms</td><td>68.7 ms</td><td>71.2 ms</td><td>-</td><td>29.1</td><td>22</td><td>35.6%</td><td>0</td></tr>
+<tr><td>write-64</td><td>no-sync</td><td>640</td><td>11062</td><td>3.1 ms</td><td>5.7 ms</td><td>6.5 ms</td><td>-</td><td>1.0</td><td>0</td><td>51.9%</td><td>0</td></tr>
+<tr><td>write-256</td><td>sync</td><td>5120</td><td>553</td><td>312.1 ms</td><td>470.4 ms</td><td>507.0 ms</td><td>-</td><td>1.0</td><td>5120</td><td>22.1%</td><td>0</td></tr>
+<tr><td>write-256</td><td>8</td><td>5120</td><td>3004</td><td>52.7 ms</td><td>85.7 ms</td><td>137.9 ms</td><td>-</td><td>7.7</td><td>661</td><td>37.5%</td><td>0</td></tr>
+<tr><td>write-256</td><td>16</td><td>5120</td><td>4313</td><td>36.2 ms</td><td>61.0 ms</td><td>64.6 ms</td><td>-</td><td>15.0</td><td>341</td><td>49.7%</td><td>0</td></tr>
+<tr><td>write-256</td><td>32</td><td>5120</td><td>5650</td><td>26.6 ms</td><td>44.1 ms</td><td>48.2 ms</td><td>-</td><td>28.6</td><td>179</td><td>59.6%</td><td>0</td></tr>
+<tr><td>write-256</td><td>64</td><td>5120</td><td>6254</td><td>23.5 ms</td><td>44.4 ms</td><td>69.0 ms</td><td>-</td><td>51.7</td><td>99</td><td>64.7%</td><td>0</td></tr>
+<tr><td>write-256</td><td>128</td><td>5120</td><td>6835</td><td>20.8 ms</td><td>41.4 ms</td><td>61.7 ms</td><td>-</td><td>67.4</td><td>76</td><td>68.1%</td><td>0</td></tr>
+<tr><td>write-256</td><td>256</td><td>5120</td><td>7499</td><td>19.9 ms</td><td>33.2 ms</td><td>36.7 ms</td><td>-</td><td>85.3</td><td>60</td><td>73.2%</td><td>0</td></tr>
+<tr><td>write-256</td><td>no-sync</td><td>5120</td><td>8959</td><td>15.6 ms</td><td>26.7 ms</td><td>31.2 ms</td><td>-</td><td>1.0</td><td>0</td><td>87.5%</td><td>0</td></tr>
+<tr><td>fanout-80</td><td>sync</td><td>200</td><td>254</td><td>139.1 ms</td><td>292.4 ms</td><td>293.4 ms</td><td>146.5 ms</td><td>1.0</td><td>200</td><td>20.3%</td><td>0</td></tr>
+<tr><td>fanout-80</td><td>8</td><td>200</td><td>447</td><td>30.5 ms</td><td>49.4 ms</td><td>50.3 ms</td><td>39.6 ms</td><td>7.1</td><td>28</td><td>22.4%</td><td>0</td></tr>
+<tr><td>fanout-80</td><td>16</td><td>200</td><td>411</td><td>49.3 ms</td><td>98.5 ms</td><td>106.2 ms</td><td>52.3 ms</td><td>12.5</td><td>16</td><td>22.6%</td><td>0</td></tr>
+<tr><td>fanout-80</td><td>32</td><td>200</td><td>395</td><td>60.3 ms</td><td>98.9 ms</td><td>112.8 ms</td><td>59.6 ms</td><td>22.2</td><td>9</td><td>23.7%</td><td>0</td></tr>
+<tr><td>fanout-80</td><td>64</td><td>200</td><td>421</td><td>45.0 ms</td><td>98.9 ms</td><td>110.5 ms</td><td>51.8 ms</td><td>22.2</td><td>9</td><td>21.1%</td><td>0</td></tr>
+<tr><td>fanout-80</td><td>128</td><td>200</td><td>401</td><td>52.4 ms</td><td>97.4 ms</td><td>102.1 ms</td><td>56.6 ms</td><td>25.0</td><td>8</td><td>22.1%</td><td>0</td></tr>
+<tr><td>fanout-80</td><td>256</td><td>200</td><td>426</td><td>62.1 ms</td><td>88.5 ms</td><td>92.6 ms</td><td>56.2 ms</td><td>28.6</td><td>7</td><td>23.4%</td><td>0</td></tr>
+<tr><td>fanout-80</td><td>no-sync</td><td>200</td><td>472</td><td>34.1 ms</td><td>66.6 ms</td><td>81.3 ms</td><td>30.8 ms</td><td>1.0</td><td>0</td><td>30.7%</td><td>0</td></tr>
+<tr><td>fanout-256</td><td>sync</td><td>256</td><td>208</td><td>311.1 ms</td><td>673.4 ms</td><td>676.5 ms</td><td>369.1 ms</td><td>1.0</td><td>256</td><td>30.9%</td><td>0</td></tr>
+<tr><td>fanout-256</td><td>8</td><td>256</td><td>266</td><td>203.3 ms</td><td>441.1 ms</td><td>445.0 ms</td><td>252.2 ms</td><td>7.8</td><td>33</td><td>30.1%</td><td>0</td></tr>
+<tr><td>fanout-256</td><td>16</td><td>256</td><td>286</td><td>136.4 ms</td><td>344.6 ms</td><td>347.2 ms</td><td>192.2 ms</td><td>15.1</td><td>17</td><td>35.8%</td><td>0</td></tr>
+<tr><td>fanout-256</td><td>32</td><td>256</td><td>319</td><td>173.1 ms</td><td>289.0 ms</td><td>291.3 ms</td><td>224.8 ms</td><td>28.4</td><td>9</td><td>36.1%</td><td>0</td></tr>
+<tr><td>fanout-256</td><td>64</td><td>256</td><td>322</td><td>118.8 ms</td><td>269.2 ms</td><td>272.3 ms</td><td>174.7 ms</td><td>51.2</td><td>5</td><td>36.5%</td><td>0</td></tr>
+<tr><td>fanout-256</td><td>128</td><td>256</td><td>362</td><td>59.2 ms</td><td>152.2 ms</td><td>155.7 ms</td><td>129.2 ms</td><td>85.3</td><td>3</td><td>38.2%</td><td>0</td></tr>
+<tr><td>fanout-256</td><td>256</td><td>256</td><td>343</td><td>59.6 ms</td><td>169.1 ms</td><td>220.7 ms</td><td>132.8 ms</td><td>85.3</td><td>3</td><td>42.8%</td><td>0</td></tr>
+<tr><td>fanout-256</td><td>no-sync</td><td>256</td><td>357</td><td>97.9 ms</td><td>208.1 ms</td><td>212.6 ms</td><td>123.1 ms</td><td>1.0</td><td>0</td><td>43.2%</td><td>0</td></tr>
+<tr><td>fanout-1020</td><td>sync</td><td>256</td><td>107</td><td>577.8 ms</td><td>1015.7 ms</td><td>1025.8 ms</td><td>712.0 ms</td><td>1.0</td><td>256</td><td>56.0%</td><td>0</td></tr>
+<tr><td>fanout-1020</td><td>16</td><td>256</td><td>134</td><td>354.4 ms</td><td>680.8 ms</td><td>707.0 ms</td><td>526.6 ms</td><td>15.1</td><td>17</td><td>62.1%</td><td>0</td></tr>
+<tr><td>fanout-1020</td><td>64</td><td>256</td><td>131</td><td>439.0 ms</td><td>735.1 ms</td><td>780.5 ms</td><td>516.3 ms</td><td>51.2</td><td>5</td><td>62.8%</td><td>0</td></tr>
+<tr><td>fanout-1020</td><td>256</td><td>256</td><td>135</td><td>259.7 ms</td><td>671.4 ms</td><td>677.9 ms</td><td>518.7 ms</td><td>128.0</td><td>2</td><td>61.5%</td><td>0</td></tr>
+<tr><td>fanout-1020</td><td>no-sync</td><td>256</td><td>137</td><td>284.5 ms</td><td>610.7 ms</td><td>730.5 ms</td><td>418.1 ms</td><td>1.0</td><td>0</td><td>64.1%</td><td>0</td></tr></table>
+
+<script>
+const CHARTS = [
+  {
+    "id": "write-throughput",
+    "title": "Write-only throughput vs commit batch",
+    "yLabel": "moves / second",
+    "labels": [
+      "sync",
+      "8",
+      "16",
+      "32",
+      "64",
+      "128",
+      "256",
+      "no-sync"
+    ],
+    "series": [
+      {
+        "name": "64 writers",
+        "values": [
+          522.0410545810073,
+          2672.6748173838555,
+          2884.116596235713,
+          3266.190893567873,
+          3490.8078384410055,
+          3753.4327561759933,
+          3797.673463349018,
+          11062.384763224345
+        ]
+      },
+      {
+        "name": "256 writers",
+        "values": [
+          553.4807537356468,
+          3003.905709298347,
+          4312.57697755123,
+          5650.010264258881,
+          6254.223326153444,
+          6835.090587731697,
+          7498.591121641751,
+          8959.022575116567
+        ]
+      }
+    ]
+  },
+  {
+    "id": "write-latency",
+    "title": "Write-only move latency (256 writers)",
+    "yLabel": "milliseconds",
+    "labels": [
+      "sync",
+      "8",
+      "16",
+      "32",
+      "64",
+      "128",
+      "256",
+      "no-sync"
+    ],
+    "series": [
+      {
+        "name": "p50",
+        "values": [
+          312.08847500000047,
+          52.72876300000007,
+          36.2410739999998,
+          26.617204000000015,
+          23.533200999999963,
+          20.809829000000036,
+          19.855338000000074,
+          15.623045999999931
+        ]
+      },
+      {
+        "name": "p95",
+        "values": [
+          470.41067399999974,
+          85.68562799999995,
+          61.0484120000001,
+          44.135628999999994,
+          44.39084199999991,
+          41.38083900000004,
+          33.16121999999996,
+          26.722233000000017
+        ]
+      },
+      {
+        "name": "p99",
+        "values": [
+          507.0405719999999,
+          137.89909799999998,
+          64.64662500000003,
+          48.21670500000005,
+          69.04105199999998,
+          61.70530200000002,
+          36.70449000000002,
+          31.228489999999965
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fanout-80",
+    "title": "Fan-out stress: 80 clients, 200 moves",
+    "yLabel": "move p50 (ms)",
+    "labels": [
+      "sync",
+      "8",
+      "16",
+      "32",
+      "64",
+      "128",
+      "256",
+      "no-sync"
+    ],
+    "series": [
+      {
+        "name": "move p50",
+        "values": [
+          139.08490699999993,
+          30.500205999999935,
+          49.261807999999974,
+          60.25584500000002,
+          45.03572900000006,
+          52.355008,
+          62.076521999999954,
+          34.063672999999994
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fanout-256",
+    "title": "Fan-out stress: 256 clients, 256 moves",
+    "yLabel": "move p50 (ms)",
+    "labels": [
+      "sync",
+      "8",
+      "16",
+      "32",
+      "64",
+      "128",
+      "256",
+      "no-sync"
+    ],
+    "series": [
+      {
+        "name": "move p50",
+        "values": [
+          311.059397,
+          203.284676,
+          136.393775,
+          173.08781399999998,
+          118.84170600000004,
+          59.15892299999996,
+          59.594315999999935,
+          97.89478700000006
+        ]
+      },
+      {
+        "name": "event lag p50",
+        "values": [
+          369.08872899999994,
+          252.17539299999999,
+          192.24960099999987,
+          224.83557500000006,
+          174.74650499999996,
+          129.21534099999997,
+          132.81571799999995,
+          123.128018
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fanout-1020",
+    "title": "Fan-out stress: 1,020 clients, 256 moves",
+    "yLabel": "move p50 (ms)",
+    "labels": [
+      "sync",
+      "8",
+      "16",
+      "32",
+      "64",
+      "128",
+      "256",
+      "no-sync"
+    ],
+    "series": [
+      {
+        "name": "move p50",
+        "values": [
+          577.8089419999997,
+          null,
+          354.3840120000002,
+          null,
+          438.99487799999997,
+          null,
+          259.669629,
+          284.4718359999997
+        ]
+      },
+      {
+        "name": "event lag p50",
+        "values": [
+          712.043881,
+          null,
+          526.586984,
+          null,
+          516.2906229999999,
+          null,
+          518.6792519999999,
+          418.148179
+        ]
+      }
+    ]
+  },
+  {
+    "id": "actual-group",
+    "title": "Actual average group size vs configured maximum",
+    "yLabel": "moves per fsync",
+    "labels": [
+      "sync",
+      "8",
+      "16",
+      "32",
+      "64",
+      "128",
+      "256"
+    ],
+    "series": [
+      {
+        "name": "256 writers",
+        "values": [
+          1,
+          7.745839636913767,
+          15.014662756598241,
+          28.60335195530726,
+          51.717171717171716,
+          67.36842105263158,
+          85.33333333333333
+        ]
+      },
+      {
+        "name": "256 fan-out clients",
+        "values": [
+          1,
+          7.757575757575758,
+          15.058823529411764,
+          28.444444444444443,
+          51.2,
+          85.33333333333333,
+          85.33333333333333
+        ]
+      }
+    ]
+  }
+];
+const COLORS = ["#e06c75","#61afef","#98c379","#e5c07b","#c678dd","#56b6c2","#d19a66","#7f848e"];
+
+function drawChart(canvas, cfg) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const pad = { left: 70, right: 25, top: 48, bottom: 55 };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#1e222a";
+  ctx.fillRect(0, 0, W, H);
+  const values = cfg.series.flatMap((s) => s.values).filter((v) => v !== null);
+  let yMax = cfg.yMax || Math.max(1, ...values) * 1.12;
+  const n = cfg.labels.length;
+  const xAt = (i) => pad.left + (n <= 1 ? plotW / 2 : (i * plotW) / (n - 1));
+  const yAt = (v) => pad.top + plotH - (v / yMax) * plotH;
+
+  ctx.strokeStyle = "#3a4050";
+  ctx.fillStyle = "#aab2c0";
+  ctx.font = "12px sans-serif";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const y = pad.top + (i * plotH) / 5;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+    const value = yMax * (1 - i / 5);
+    ctx.fillText(value >= 100 ? value.toFixed(0) : value.toFixed(1), 8, y + 4);
+  }
+  ctx.fillStyle = "#e6e9ef";
+  ctx.font = "bold 16px sans-serif";
+  ctx.fillText(cfg.title, pad.left, 25);
+  ctx.font = "12px sans-serif";
+  ctx.fillStyle = "#aab2c0";
+  ctx.fillText(cfg.yLabel, pad.left, 42);
+  for (let i = 0; i < n; i++) {
+    const x = xAt(i);
+    ctx.fillText(cfg.labels[i], x - 8, H - 25);
+  }
+  cfg.series.forEach((s, index) => {
+    const color = COLORS[index % COLORS.length];
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    let started = false;
+    s.values.forEach((v, i) => {
+      if (v === null) { started = false; return; }
+      const x = xAt(i), y = yAt(v);
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    s.values.forEach((v, i) => {
+      if (v === null) return;
+      ctx.beginPath();
+      ctx.arc(xAt(i), yAt(v), 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // Legend
+    const legendX = pad.left + index * 210;
+    const legendY = H - 8;
+    ctx.fillRect(legendX, legendY - 8, 12, 3);
+    ctx.fillStyle = "#c9d1d9";
+    ctx.fillText(s.name, legendX + 18, legendY - 3);
+  });
+}
+
+for (const cfg of CHARTS) {
+  const canvas = document.getElementById(cfg.id);
+  if (canvas) drawChart(canvas, cfg);
+}
+</script>
+</body>
+</html>

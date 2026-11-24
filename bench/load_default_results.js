@@ -1,7 +1,7 @@
 window.LOAD_RESULTS = window.LOAD_RESULTS || {};
-window.LOAD_RESULTS["default-disk-sync"] = {
-  "generated": "2026-11-24T10:17:29.823Z",
-  "label": "default-disk-sync",
+window.LOAD_RESULTS["default"] = {
+  "generated": "2026-11-24T15:13:12.591Z",
+  "label": "default",
   "profile": {
     "clients": 40,
     "silent_clients": 4,
@@ -19,39 +19,39 @@ window.LOAD_RESULTS["default-disk-sync"] = {
     "moves": 100,
     "requests": 596
   },
-  "duration_ms": 559.629741,
-  "throughput_requests_per_second": 1064.9898608587353,
+  "duration_ms": 448.96522,
+  "throughput_requests_per_second": 1327.4970386347522,
   "snapshot_rtt": {
     "n": 400,
-    "mean_ms": 3.108145159999999,
-    "p50_ms": 2.5632830000000126,
-    "p95_ms": 9.11761800000005,
-    "p99_ms": 10.045681000000002,
-    "max_ms": 10.298195000000021
+    "mean_ms": 6.097208784999996,
+    "p50_ms": 4.9180149999999685,
+    "p95_ms": 16.765021999999988,
+    "p99_ms": 20.341084000000023,
+    "max_ms": 20.870513000000017
   },
   "silent_snapshot_rtt": {
     "n": 8,
-    "mean_ms": 0.1659041249999902,
-    "p50_ms": 0.20330200000000787,
-    "p95_ms": 0.30047400000000835,
-    "p99_ms": 0.30047400000000835,
-    "max_ms": 0.30047400000000835
+    "mean_ms": 0.5071787499999942,
+    "p50_ms": 0.4913579999999911,
+    "p95_ms": 0.9723149999999805,
+    "p99_ms": 0.9723149999999805,
+    "max_ms": 0.9723149999999805
   },
   "move_rtt": {
     "n": 100,
-    "mean_ms": 48.08986779,
-    "p50_ms": 34.991187000000025,
-    "p95_ms": 128.816707,
-    "p99_ms": 130.257091,
-    "max_ms": 130.257091
+    "mean_ms": 20.40448424,
+    "p50_ms": 9.270322999999962,
+    "p95_ms": 69.57800200000008,
+    "p99_ms": 72.03992000000005,
+    "max_ms": 72.03992000000005
   },
   "event_delivery_lag": {
     "n": 4000,
-    "mean_ms": 54.879000250250186,
-    "p50_ms": 38.87688200000002,
-    "p95_ms": 132.097617,
-    "p99_ms": 133.16724499999998,
-    "max_ms": 142.00415600000002
+    "mean_ms": 23.168681600750034,
+    "p50_ms": 11.601183000000105,
+    "p95_ms": 72.72646699999996,
+    "p99_ms": 73.60546599999998,
+    "max_ms": 74.12931500000002
   },
   "accuracy": {
     "snapshots_ok": 400,
@@ -85,119 +85,119 @@ window.LOAD_RESULTS["default-disk-sync"] = {
     }
   },
   "resources": {
-    "rss_baseline_kb": 546352,
-    "rss_before_kb": 547804,
-    "rss_peak_kb": 555616,
+    "rss_baseline_kb": 546472,
+    "rss_before_kb": 547924,
+    "rss_peak_kb": 556056,
     "fds_baseline": 8,
     "fds_before": 52,
     "fds_peak": 52,
-    "cpu_average_percent": 8.934478698479323,
-    "cpu_peak_percent": 19.6053536417611,
+    "cpu_average_percent": 17.81875219643963,
+    "cpu_peak_percent": 48.41551136927899,
     "cpu_peak_window_ms": 100,
     "fds_after_close_requests": 53,
-    "rss_after_close_requests_kb": 555716,
+    "rss_after_close_requests_kb": 556236,
     "cpu_idle_ticks_per_second": 0,
-    "post_exit_error": "ENOENT: no such file or directory, open '/proc/1841304/stat'"
+    "post_exit_error": "ENOENT: no such file or directory, open '/proc/2156143/stat'"
   },
   "server_metrics": {
-    "started_ns": 346329060957196,
-    "uptime_ms": 2840.659253,
+    "started_ns": 364071218317021,
+    "uptime_ms": 3441.569093,
     "stages": {
       "receive_to_submit": {
         "n": 100,
-        "mean_ms": 0.000502,
-        "p50_ms": 0.000241,
-        "p95_ms": 0.003096,
-        "p99_ms": 0.003647,
-        "max_ms": 0.003647,
-        "total_ms": 0.05022
+        "mean_ms": 0.00093,
+        "p50_ms": 0.000451,
+        "p95_ms": 0.004729,
+        "p99_ms": 0.005891,
+        "max_ms": 0.005891,
+        "total_ms": 0.09302
       },
       "worker_queue_wait": {
         "n": 100,
-        "mean_ms": 24.865615,
-        "p50_ms": 10.307923,
-        "p95_ms": 106.268652,
-        "p99_ms": 111.932426,
-        "max_ms": 111.932426,
-        "total_ms": 2486.561586
+        "mean_ms": 0.318523,
+        "p50_ms": 0.286792,
+        "p95_ms": 0.579985,
+        "p99_ms": 1.670083,
+        "max_ms": 1.670083,
+        "total_ms": 31.852386
       },
       "move_processing": {
         "n": 100,
-        "mean_ms": 2.337443,
-        "p50_ms": 1.392896,
-        "p95_ms": 1.801011,
-        "p99_ms": 82.462876,
-        "max_ms": 82.462876,
-        "total_ms": 233.744352
+        "mean_ms": 0.019439,
+        "p50_ms": 0.012133,
+        "p95_ms": 0.069111,
+        "p99_ms": 0.209766,
+        "max_ms": 0.209766,
+        "total_ms": 1.943972
       },
       "commit_to_broadcast": {
         "n": 100,
-        "mean_ms": 0.00175,
-        "p50_ms": 0.001132,
-        "p95_ms": 0.005079,
-        "p99_ms": 0.008677,
-        "max_ms": 0.008677,
-        "total_ms": 0.175086
+        "mean_ms": 3.010201,
+        "p50_ms": 2.055972,
+        "p95_ms": 4.21592,
+        "p99_ms": 58.994711,
+        "max_ms": 58.994711,
+        "total_ms": 301.02013
       },
       "broadcast_wait": {
         "n": 100,
-        "mean_ms": 9.851615,
-        "p50_ms": 9.419345,
-        "p95_ms": 20.735262,
-        "p99_ms": 30.858177,
-        "max_ms": 30.858177,
-        "total_ms": 985.161573
+        "mean_ms": 0.742175,
+        "p50_ms": 0.483603,
+        "p95_ms": 3.081118,
+        "p99_ms": 3.379891,
+        "max_ms": 3.379891,
+        "total_ms": 74.217507
       },
       "broadcast_dispatch": {
         "n": 100,
-        "mean_ms": 0.004856,
-        "p50_ms": 0.004308,
-        "p95_ms": 0.010039,
-        "p99_ms": 0.011682,
-        "max_ms": 0.011682,
-        "total_ms": 0.485657
+        "mean_ms": 0.007226,
+        "p50_ms": 0.006172,
+        "p95_ms": 0.014567,
+        "p99_ms": 0.050004,
+        "max_ms": 0.050004,
+        "total_ms": 0.722699
       },
       "encoding": {
         "n": 100,
-        "mean_ms": 0.00067,
-        "p50_ms": 0.000441,
-        "p95_ms": 0.002354,
-        "p99_ms": 0.002885,
-        "max_ms": 0.002885,
-        "total_ms": 0.067043
+        "mean_ms": 0.001307,
+        "p50_ms": 0.000942,
+        "p95_ms": 0.004178,
+        "p99_ms": 0.01058,
+        "max_ms": 0.01058,
+        "total_ms": 0.130772
       },
       "outbox_enqueue": {
         "n": 100,
-        "mean_ms": 0.009593,
-        "p50_ms": 0.003206,
-        "p95_ms": 0.0158,
-        "p99_ms": 0.522271,
-        "max_ms": 0.522271,
-        "total_ms": 0.959355
+        "mean_ms": 0.007377,
+        "p50_ms": 0.0053,
+        "p95_ms": 0.025558,
+        "p99_ms": 0.046879,
+        "max_ms": 0.046879,
+        "total_ms": 0.737761
       },
       "websocket_write": {
-        "n": 295,
-        "mean_ms": 0.021875,
-        "p50_ms": 0.01576,
-        "p95_ms": 0.031649,
-        "p99_ms": 0.097463,
-        "max_ms": 0.78779,
-        "total_ms": 6.453261
+        "n": 373,
+        "mean_ms": 0.030043,
+        "p50_ms": 0.022012,
+        "p95_ms": 0.04783,
+        "p99_ms": 0.09502,
+        "max_ms": 1.130143,
+        "total_ms": 11.206154
       },
       "end_to_end_broadcast": {
         "n": 100,
-        "mean_ms": 44.489794,
-        "p50_ms": 23.463935,
-        "p95_ms": 116.002288,
-        "p99_ms": 126.271728,
-        "max_ms": 126.271728,
-        "total_ms": 4448.979464
+        "mean_ms": 7.007878,
+        "p50_ms": 6.183865,
+        "p95_ms": 9.889612,
+        "p99_ms": 67.81849,
+        "max_ms": 67.81849,
+        "total_ms": 700.787857
       }
     },
     "counters": {
       "events_broadcast": 100,
       "recipients": 4000,
-      "outbox_enqueues": 903,
+      "outbox_enqueues": 981,
       "outbox_dropped": 0,
       "send_failures": 0,
       "outbox_full_unregisters": 0,
@@ -205,16 +205,16 @@ window.LOAD_RESULTS["default-disk-sync"] = {
       "max_outbox_depth": 1,
       "max_recipients": 40
     },
-    "end_to_end_p95_ms": 116.002288,
+    "end_to_end_p95_ms": 9.889612,
     "worker": {
       "queue_depth": 0,
       "queue_capacity": 4096,
       "requests_processed": 608,
       "requests_rejected": 0,
-      "avg_queue_wait_ms": 4.215137,
-      "max_queue_wait_ms": 111.932496,
-      "avg_processing_ms": 0.384985,
-      "max_processing_ms": 82.462876
+      "avg_queue_wait_ms": 0.46035,
+      "max_queue_wait_ms": 11.675914,
+      "avg_processing_ms": 0.00426,
+      "max_processing_ms": 0.209766
     },
     "connections": {
       "clients": 44,
@@ -224,7 +224,7 @@ window.LOAD_RESULTS["default-disk-sync"] = {
       "event_batching": true
     },
     "persistence": {
-      "data_dir": "/home/james/Work/sim-map/bench-data",
+      "data_dir": "/home/james/Work/sim-map/bench-data-default-gc",
       "sequence": "100",
       "wal_segments": 1,
       "wal_bytes": "8416",
@@ -234,6 +234,14 @@ window.LOAD_RESULTS["default-disk-sync"] = {
       "snapshot_write_ms": 0,
       "commits_since_snapshot": 100,
       "sync": true,
+      "group_size": 64,
+      "sync_count": 9,
+      "group_count": 9,
+      "batched_moves": 100,
+      "last_group_size": 10,
+      "average_group_size": 11.11111111111111,
+      "last_sync_ms": 2.01611328125,
+      "dirty": false,
       "truncated_wal": false
     }
   },

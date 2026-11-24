@@ -1,52 +1,52 @@
 {
-  "generated": "2026-11-24T10:24:57.644Z",
+  "generated": "2026-11-24T15:26:14.303Z",
   "passed": 9,
   "failed": 0,
   "cases": [
     {
       "name": "empty world restart",
       "ok": true,
-      "duration_ms": 2883
+      "duration_ms": 3195
     },
     {
       "name": "several moves restart",
       "ok": true,
-      "duration_ms": 4811
+      "duration_ms": 5107
     },
     {
       "name": "cross-board move restart",
       "ok": true,
-      "duration_ms": 5347
+      "duration_ms": 4826
     },
     {
       "name": "castling and en passant restart",
       "ok": true,
-      "duration_ms": 4756
+      "duration_ms": 4748
     },
     {
       "name": "torn trailing WAL record",
       "ok": true,
-      "duration_ms": 2997
+      "duration_ms": 3126
     },
     {
       "name": "crash during snapshot temp write",
       "ok": true,
-      "duration_ms": 4330
+      "duration_ms": 4207
     },
     {
       "name": "crash after snapshot rename before WAL cleanup",
       "ok": true,
-      "duration_ms": 5579
+      "duration_ms": 6024
     },
     {
       "name": "corrupt newest snapshot falls back",
       "ok": true,
-      "duration_ms": 12501
+      "duration_ms": 15516
     },
     {
       "name": "large WAL replay",
       "ok": true,
-      "duration_ms": 3348
+      "duration_ms": 3075
     }
   ]
 }

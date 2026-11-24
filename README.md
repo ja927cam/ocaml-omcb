@@ -64,8 +64,10 @@ The authoritative world is durable by default:
 
 - `data/` (or `SIM_MAP_DATA_DIR`) holds `wal-<first-sequence>.log` segments and
   `snapshot-<sequence>.snap` files.
-- Every accepted move is appended to the WAL and fsynced before it is applied
-  to memory or acknowledged to the client.
+- Every accepted move is appended to the WAL. By default up to 64 consecutive
+  moves are committed with one fsync (group commit), and responses/events are
+  published only after that fsync. `SIM_MAP_WAL_GROUP=1` gives strict per-move
+  fsync; `SIM_MAP_WAL_SYNC=0` disables fsync for development.
 - A full-world snapshot is taken after `SIM_MAP_SNAPSHOT_MOVES` commits
   (default 100,000) or `SIM_MAP_SNAPSHOT_SECONDS` seconds (default 600),
   whichever comes first.
@@ -79,7 +81,8 @@ Environment variables:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SIM_MAP_DATA_DIR` | `data` | Directory for the WAL and snapshots |
-| `SIM_MAP_WAL_SYNC` | `1` | fsync every WAL record (`0` for development only) |
+| `SIM_MAP_WAL_GROUP` | `64` | Max consecutive moves per commit fsync (`1` = strict per-move) |
+| `SIM_MAP_WAL_SYNC` | `1` | Enable WAL fsync (`0` for development only) |
 | `SIM_MAP_SNAPSHOT_MOVES` | `100000` | Commit count between snapshots (`0` disables) |
 | `SIM_MAP_SNAPSHOT_SECONDS` | `600` | Seconds between snapshots (`0` disables) |
 
@@ -116,6 +119,14 @@ dune exec bench/bench.exe
 Then open `bench/dashboard.html`. The suite measures board indexing and reads,
 packed pieces, protocol codecs, move validation/application, ledger operations,
 the full move engine, the Lwt worker, board snapshots, and startup phases.
+
+The group-commit experiment sweeps batch sizes under write-only and fan-out
+stress, checks client-visible correctness, and writes plots:
+
+```bash
+node bench/group_commit_experiment.js
+# open bench/group_commit_report.html
+```
 
 ## Live load test
 

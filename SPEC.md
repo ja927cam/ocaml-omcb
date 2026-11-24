@@ -1055,27 +1055,45 @@ The deterministic initial world is also a recovery point: if no snapshot is
 usable, the server initialises the standard position and replays every WAL
 record from sequence 1.
 
-### WAL ordering invariant
+### Commit policy and ordering
 
-For every accepted move the state worker performs:
+The worker supports three commit policies, selected by
+`SIM_MAP_WAL_GROUP` and `SIM_MAP_WAL_SYNC`:
 
-1. validate the request and construct the complete state transition;
-2. serialise the transition into a WAL record;
-3. append the record and `fsync` the WAL;
-4. apply the transition to the in-memory board, revisions, ledger and
-   sequence;
-5. publish the move response and broadcast the event.
+- **Strict** (`SIM_MAP_WAL_GROUP=1`, `SIM_MAP_WAL_SYNC=1`): validate → append →
+  fsync → apply → publish. This is the original ordering and is available
+  explicitly.
+- **Group commit** (default, `SIM_MAP_WAL_GROUP=64`, `SIM_MAP_WAL_SYNC=1`):
+  take up to 64 consecutive moves, validate/append/apply each in order (so
+  later moves observe earlier ones), `fsync` the WAL once, then publish every
+  response and event. The in-memory apply is tentative until the group fsync;
+  if the fsync raises, the worker fail-stops without publishing any response
+  from that group. A snapshot request is a non-move item and forces the
+  current group to be flushed first, so no client can read uncommitted state.
+- **No fsync** (`SIM_MAP_WAL_SYNC=0`): append and publish without `fsync`;
+  development only. Process kills survive via the kernel page cache, power
+  loss can lose recent acknowledged moves.
 
-A move is never acknowledged before it is recoverable. If the durability step
-raises, the transition is not applied, the worker stops accepting moves and the
-connection receives an error. The process fail-stops rather than continuing
-with state it cannot recover.
+A move is never acknowledged before its group's WAL records are durable. If
+the durability step raises, the pending group is not published, the worker
+stops accepting moves and the connections receive errors. The process
+fail-stops rather than continuing with state it cannot recover.
 
-A crash after the fsync but before the response is delivered can leave a
-recovered world that includes a transition whose acknowledgement was lost.
+A crash after the group fsync but before the responses are delivered can leave
+a recovered world that includes a transition whose acknowledgement was lost.
 This is the standard durable-before-publish trade-off: the server cannot know
 whether the last packet reached the client. Clients treat a missing response as
 unknown and resynchronise from the event stream or a fresh snapshot.
+
+The default durability settings are:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SIM_MAP_DATA_DIR` | `data` | WAL and snapshot directory |
+| `SIM_MAP_WAL_GROUP` | `64` | Maximum consecutive moves per commit fsync |
+| `SIM_MAP_WAL_SYNC` | `1` | Enable WAL `fsync` |
+| `SIM_MAP_SNAPSHOT_MOVES` | `100000` | Commit count between snapshots (`0` disables) |
+| `SIM_MAP_SNAPSHOT_SECONDS` | `600` | Seconds between snapshots (`0` disables) |
 
 ### WAL format
 
@@ -1776,6 +1794,19 @@ SIGKILL (including deliberate fault-injection points) and restarts them:
   recovery applies no transition twice.
 - Corrupting the newest snapshot falls back to the previous snapshot plus WAL.
 - A 200-move WAL replays to the exact digest and sequence.
+
+### `bench/group_commit_experiment.js`
+
+- Sweeps strict per-move fsync, group sizes 8/16/32/64/128/256 and no-fsync
+  across write-only and fan-out stress profiles.
+- Write-only workloads use 64 and 256 concurrent writers with no subscriptions,
+  alternating a knight on distinct boards, and verify every final board.
+- Fan-out workloads use 80, 256 and 1,020 clients with 200/256 moves and
+  verify every event, snapshot and final board.
+- Includes a group-64 crash/restart case for 64 concurrently acknowledged
+  moves.
+- `plot_group_commit.js` writes `bench/group_commit_report.html` with latency,
+  throughput and actual-group-size charts plus `group_commit_results.md`.
 
 ### `ws_teardown_test.js` (Linux)
 

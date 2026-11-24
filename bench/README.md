@@ -108,25 +108,25 @@ Markdown. `ws_write_failure_test.js` covers the deliberate dead-socket path.
 
 ### Recorded results
 
-Current default: synchronous WAL fsync, data directory on `/home` (btrfs,
-`compress=zstd:3`), event batching enabled.
+Current default: group commit (`SIM_MAP_WAL_GROUP=64`), data directory on
+`/home` (btrfs, `compress=zstd:3`), event batching enabled.
 
 | Profile | Requests | Throughput | Snapshot p50 | Move p50 | Event lag p50 | CPU avg / peak | RSS peak | fds peak |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `default` | 596 | 1,065/s | 2.6 ms | 35.0 ms | 38.9 ms | 8.9% / 19.6% | 543 MiB | 52 |
-| `stress` | 1,176 | 1,546/s | 3.1 ms | 57.2 ms | 63.9 ms | 15.8% / 29.7% | 552 MiB | 92 |
+| `default` | 596 | 1,327/s | 4.9 ms | 9.3 ms | 11.6 ms | 17.8% / 48.4% | 543 MiB | 52 |
+| `stress` | 1,176 | 2,285/s | 8.0 ms | 21.0 ms | 23.6 ms | 33.0% / 96.9% | 553 MiB | 92 |
 
-Both runs had 100% move acceptance, 100% valid snapshots, exactly one event per
-move per active client, no duplicates or misses, no events leaked to silent
-clients, and no unexpected closes.
+The default run used 9 fsyncs for 100 moves (average group 11.1); stress used
+15 fsyncs for 200 moves (average group 13.3). Both had 100% move acceptance,
+100% valid snapshots, exactly one event per move per active client, no
+duplicates or misses, no events leaked to silent clients, and no unexpected
+closes.
 
-The same profiles with the WAL on tmpfs, or with `SIM_MAP_WAL_SYNC=0`, are much
-faster: `default` ~1,822-2,006 requests/s with move p50 2.6 ms; `stress`
-~3,112 requests/s with move p50 9.0 ms. On the real filesystem, fsync adds
-about 1.4 ms at p50 and 30-80 ms at p99, which is the dominant move-latency
-term. A 37,500-move acknowledged stream took 73.6 s (about 510 moves/s) with
-synchronous fsync on btrfs, versus about 11.6 s on tmpfs. This is the explicit
-durable-before-publish trade-off; group commit is the next optimisation.
+Strict per-move fsync (`SIM_MAP_WAL_GROUP=1`) measured 1,065 requests/s and
+move p50 35.0 ms for `default`, and 1,546 requests/s and 57.2 ms for `stress`.
+With the WAL on tmpfs, or with `SIM_MAP_WAL_SYNC=0`, the default profile reaches
+about 1,822-2,006 requests/s with move p50 2.6 ms. On btrfs, group commit is
+the difference between disk-latency-bound and fan-out-bound operation.
 
 Event frames are batched: the default run used 334 WebSocket writes for 4,000
 recipient events, and the stress run used 1,306 writes for 16,000.
@@ -202,29 +202,28 @@ measurement, then stops only that child. It writes `scale_results.json` and
 `scale_results.js` after every level. If a level is unstable the runner stops
 by default (`SCALE_STOP_ON_FAIL=0` continues).
 
-### Current default: synchronous persistence on btrfs
+### Current default: group commit (max 64) on btrfs
 
 `SCALE_CLIENTS=0,20,40,80,160,320,640,800,1020`, 100 moves and 4 snapshots per
 client, data directory on `/home`:
 
 | Clients | Requests | Req/s | Snapshot p50 | Move p50 | Event lag p50 | CPU avg | RSS | fds | Errors |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20 | 236 | 441 | 1.4 ms | 30.2 ms | 31.8 ms | 7.5% | 538 MiB | 32 | 0 |
-| 40 | 356 | 744 | 1.9 ms | 72.9 ms | 75.5 ms | 8.4% | 541 MiB | 52 | 0 |
-| 80 | 596 | 1,149 | 6.2 ms | 96.3 ms | 99.1 ms | 13.5% | 546 MiB | 92 | 0 |
-| 160 | 1,076 | 1,828 | 9.3 ms | 55.9 ms | 66.0 ms | 17.0% | 558 MiB | 172 | 0 |
-| 320 | 2,036 | 2,840 | 19.9 ms | 102.4 ms | 115.6 ms | 25.1% | 581 MiB | 332 | 0 |
-| 640 | 3,956 | 3,203 | 37.7 ms | 209.9 ms | 248.3 ms | 31.6% | 636 MiB | 652 | 0 |
-| 800 | 4,916 | 4,075 | 52.1 ms | 197.6 ms | 219.4 ms | 39.0% | 655 MiB | 812 | 0 |
-| 1,020 | 6,236 | 4,540 | 60.8 ms | 202.3 ms | 236.3 ms | 41.5% | 687 MiB | 1,033 | 0 |
+| 20 | 236 | 602 | 3.7 ms | 9.1 ms | 10.6 ms | 10.2% | 538 MiB | 33 | 0 |
+| 40 | 356 | 919 | 5.3 ms | 18.4 ms | 23.2 ms | 12.9% | 541 MiB | 53 | 0 |
+| 80 | 596 | 1,484 | 13.3 ms | 20.4 ms | 27.8 ms | 27.4% | 547 MiB | 93 | 0 |
+| 160 | 1,076 | 2,138 | 20.6 ms | 26.7 ms | 35.5 ms | 35.8% | 560 MiB | 173 | 0 |
+| 320 | 2,036 | 2,687 | 33.6 ms | 63.1 ms | 104.4 ms | 47.5% | 583 MiB | 333 | 0 |
+| 640 | 3,956 | 3,357 | 62.9 ms | 84.6 ms | 138.5 ms | 59.4% | 636 MiB | 653 | 0 |
+| 800 | 4,916 | 3,922 | 84.7 ms | 128.3 ms | 151.5 ms | 63.0% | 655 MiB | 813 | 0 |
+| 1,020 | 6,236 | 3,986 | 105.8 ms | 109.9 ms | 177.9 ms | 69.7% | 694 MiB | 1,033 | 0 |
 
-Every level delivered every event exactly once, with zero errors. Move latency
-is dominated by fsync: the worker serialises commits, and individual btrfs
-fsyncs occasionally spike to tens of milliseconds (visible in the non-monotonic
-40/80/160 ms and the 1,020-client p95 of 241 ms). CPU average falls at the top
-end because the worker is blocked on durability, not because the fan-out became
-cheap. Group commit is the next optimisation if sustained move throughput
-matters.
+Every level delivered every event exactly once, with zero errors. Strict mode
+at 1,020 clients was 4,540 requests/s with move p50 202.3 ms and event lag p50
+236.3 ms; group commit halves the latency while the single Node harness keeps
+the top-end request rate similar. At 1,020 clients the worker made only 4-5
+fsyncs for 100 moves (average group ~20-25), so the remaining cost is fan-out
+and client processing.
 
 ### Earlier baseline: no synchronous fsync / tmpfs
 
@@ -248,7 +247,8 @@ This baseline is partly client-harness limited at the top end: the single Node
 process parses and applies 102,000 events while driving 100 moves. At 1,020
 clients, recipient lookup p50 is ~0.13 ms and outbox enqueue p50 is ~0.11 ms;
 the end-to-end time is dominated by the batch window and client processing.
-The persistence run above is instead dominated by per-move fsync.
+The strict per-move run was instead dominated by per-move fsync; the current
+default group commit removes most of that cost.
 
 ## Subscription distributions
 
@@ -336,6 +336,36 @@ worker → capture board + int64 revision → mark snapshot complete and filter
 buffered events → enqueue snapshot → release newer events. No WebSocket write
 ever runs inside the worker.
 
+## Group commit experiment
+
+`bench/group_commit_experiment.js` sweeps `sync`, `group-8/16/32/64/128/256`
+and `no-sync` across write-only and fan-out stress, checks every response,
+event and final board state, and includes a group-64 crash/restart case.
+The runner invokes `bench/plot_group_commit.js`, which writes
+`bench/group_commit_report.html`, `bench/group_commit_results.md`, and the
+JSON/JS result files.
+
+Write-only 256 writers (no subscriptions, knight alternation on distinct
+boards):
+
+| Commit mode | Moves/s | Move p50 | Move p95 | Avg group | Fsyncs |
+|---|---:|---:|---:|---:|---:|
+| sync | 553 | 312.1 ms | 450.6 ms | 1.0 | 5,120 |
+| group-8 | 3,004 | 52.7 ms | 86.9 ms | 7.7 | 661 |
+| group-16 | 4,313 | 36.2 ms | 68.6 ms | 15.0 | 341 |
+| group-32 | 5,650 | 26.6 ms | 52.6 ms | 28.6 | 180 |
+| group-64 | 6,254 | 23.5 ms | 49.2 ms | 51.7 | 101 |
+| group-128 | 6,835 | 20.8 ms | 38.4 ms | 67.4 | 77 |
+| group-256 | 7,499 | 19.9 ms | 33.0 ms | 85.3 | 59 |
+| no-sync | 8,959 | 15.6 ms | 22.0 ms | - | 0 |
+
+All 37 experiment runs had zero rejected moves, zero snapshot errors and zero
+missing/duplicate/extra/wrong events. Group-64 crash recovery passed for 64
+concurrently acknowledged moves. Fan-out at 1,020 clients reduced move p50
+from 577.8 ms (sync) to 259.7 ms (group-256). The actual average group at a
+configured 256 is ~85 because the worker starts before all writers arrive; the
+current default of 64 is a latency/throughput balance.
+
 ## Crash recovery
 
 `test/crash_recovery_test.js` spawns real servers against isolated data
@@ -344,10 +374,10 @@ fault points. It compares `/state-hash` before and after restart and also
 checks cross-board and special-move squares. Results are written to
 `bench/crash_recovery_results.json` and `.js`.
 
-Reference run: 9/9 cases passed in about 47 seconds. Recovery of 37,538
+Reference run: 9/9 cases passed in about 50 seconds. Recovery of 37,538
 replayed WAL records took about 0.4 s; a 536,777,268-byte snapshot write took
-about 1.3 s including checksum and fsync; loading a snapshot took about
-0.9-1.9 s.
+about 2.6 s on btrfs (1.3 s on tmpfs) including checksum and fsync; loading a
+snapshot took about 1.2 s.
 
 The in-process `test/test_persistence.ml` additionally covers WAL/snapshot
 format round trips, torn records, corrupt snapshots, promotion and a 200-move

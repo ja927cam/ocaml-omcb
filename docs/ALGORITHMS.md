@@ -796,30 +796,50 @@ square. The end-to-end crash suite compares this digest before and after a
 kill, rather than checking a few representative squares, and also checks
 specific cross-board and special-move squares.
 
+Commit policies:
+
+- **Strict** (`SIM_MAP_WAL_GROUP=1`): append → fsync → apply → publish.
+- **Group** (default, 64): take up to 64 consecutive moves, validate, append
+  and apply them in order, fsync once, then publish the whole group. The
+  in-memory apply is tentative until the fsync; a failure fail-stops without
+  publishing. Snapshot requests are non-move items and force a flush first, so
+  no client read can observe an uncommitted group.
+- **No fsync** (`SIM_MAP_WAL_SYNC=0`): append and publish without fsync;
+  process crashes survive in the page cache, power loss can lose recent acks.
+
+The group experiment (`bench/group_commit_experiment.js`,
+`bench/group_commit_report.html`) sweeps 1/8/16/32/64/128/256/no-sync across
+write-only and fan-out stress and verifies every move response, event and final
+board state.
+
 Measured on the reference machine (16 cores, btrfs home with
 `compress=zstd:3`; tmpfs noted for comparison):
 
-- 536,777,268-byte snapshot write (including checksum and fsync): ~2.6 s on
-  btrfs, ~1.3 s on tmpfs;
+- 536,777,268-byte snapshot write: ~2.6 s on btrfs, ~1.3 s on tmpfs;
 - snapshot load and recovery: ~1.2 s on btrfs, ~0.9-1.9 s in the unit tests;
 - 37,538-record WAL replay: ~0.4 s;
-- 200 synchronously durable moves: ~0.3 s replay;
-- 37,500 acknowledged moves with synchronous fsync: 73.6 s (~510 moves/s) on
-  btrfs, ~11.6 s on tmpfs;
-- default load (40 clients, 100 moves): 1,065 requests/s and move p50 35.0 ms
-  with fsync, versus 1,855 requests/s and 2.4 ms with `SIM_MAP_WAL_SYNC=0`;
-- stress load (80 clients, 200 moves): 1,546 requests/s, move p50 57.2 ms,
-  event lag p50 63.9 ms, zero errors;
-- 1,020-client scaling: 4,540 requests/s, move p50 202.3 ms, event lag p50
-  236.3 ms, CPU 41.5% average (the worker is often blocked on fsync), 687 MiB
-  RSS, 1,033 fds, zero errors.
+- 37,500 acknowledged moves with 5 drivers: 73.6 s strict (~510/s), 37.3 s
+  with group-64 (~1,006/s); tmpfs strict ~11.6 s;
+- write-only 256 writers: strict 553 moves/s and p50 312 ms; group-8 3,004/53;
+  group-16 4,313/36; group-32 5,650/27; group-64 6,254/24; group-128
+  6,835/21; group-256 7,499/20; no-sync 8,959/16. Zero errors at every point;
+- default load (40 clients): group-64 1,327 requests/s, move p50 9.3 ms,
+  lag p50 11.6 ms; strict 1,065/s, 35.0 ms, 38.9 ms;
+- stress load (80 clients): group-64 2,285/s, move p50 21.0 ms, lag 23.6 ms;
+  strict 1,546/s, 57.2 ms, 63.9 ms;
+- 1,020-client scaling: group-64 3,986 requests/s, move p50 109.9 ms, lag p50
+  177.9 ms, CPU 69.7% average; strict 4,540/s, 202.3 ms, 236.3 ms, CPU 41.5%.
+  The top-end throughput is client-harness limited; group commit halves move
+  latency;
+- fan-out 1,020 clients: move p50 577.8 ms strict, 259.7 ms group-256;
+- group-64 crash recovery: 64 concurrently acknowledged moves survived
+  SIGKILL and recovered to the exact digest.
 
-Synchronous fsync per move is the default. These measurements make group
-commit the next practical optimisation: prepare a batch, append all records,
-fsync once, then apply and publish the batch. That preserves the
-durable-before-ack invariant while amortising the ~1.4 ms btrfs commit and its
-tens-of-milliseconds tail spikes. It is deliberately not enabled yet; the
-current implementation is correct and fail-stop, just disk-latency bound.
+Group commit closes most of the strict-to-no-sync gap while preserving
+durable-before-ack. The actual average group at a configured maximum of 256 is
+about 85 because the worker starts before every concurrent writer arrives; a
+small group-formation window would raise that further, but the current
+default of 64 is a good latency/throughput balance.
 
 ### Fault injection and tests
 
@@ -830,7 +850,9 @@ suite spawns real servers against isolated directories and covers empty and
 non-empty restarts, cross-board moves, castling/en passant, torn WAL tails,
 partial snapshots, crash-after-rename, corrupt snapshots and a 200-move WAL.
 Promotion is covered by the in-process persistence test, which snapshots a
-directly prepared promotion position.
+directly prepared promotion position. `bench/group_commit_experiment.js`
+additionally runs the batch-size sweep, verifies every client-visible result
+and includes a group-64 crash/restart case.
 
 ---
 
