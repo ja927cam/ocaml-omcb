@@ -745,12 +745,15 @@ A snapshot request is a normal FIFO item in the state worker. At the boundary
 sequence `S` no move is in progress. The worker:
 
 1. rotates the WAL so future records go to `wal-<S+1>.log`;
-2. copies the board, revisions and both ledger arrays;
+2. copies the board, revisions and both ledger arrays into one reusable
+   `world_copy` buffer;
 3. starts a preemptive thread that writes the copy.
 
 The copy is a 512 MiB `memcpy`-style `Bigarray` blit (roughly 0.1-0.3 s), but
 the worker never waits for the 536 MiB file write. Moves continue against the
-new WAL segment. The writer computes the checksum while encoding, so the file
+new WAL segment. Only one snapshot can be in progress, so the buffer is reused;
+otherwise each snapshot would allocate another 512 MiB Bigarray and RSS could
+inflate while major GC lagged behind the write rate. The writer computes the checksum while encoding, so the file
 is not reread.
 
 The file is written as `snapshot-<S>.snap.tmp.<pid>`, fsynced, renamed into
@@ -943,11 +946,12 @@ A 30-minute changing-workload soak (`test/adaptive_soak_test.js`) found that
 treating *any* event lag as broadcast pressure pinned the heavy phase at batch
 16: eight sentinel subscribers with 50–200 ms lag were enough, even though the
 client outbox was empty. Adding recipients-per-event fixed the classification;
-the heavy phase then settled at batch 128 and 8,821 moves/s instead of 1,792.
-The same soak showed RSS rising from ~560 MiB to ~1.25 GiB and peaking near
-1.7 GiB during 512 MiB snapshot copies, while fds, worker queue, outbox, event
-delivery and recovery stayed bounded. See `docs/FAILURE_AUDIT.md` for the full
-record.
+the full post-fix soak then sustained 11,901 moves/s in the heavy phase,
+1,473/s in fan-out, 2,146/s in mixed and 1,650/s with snapshot pressure, with
+exact recovery and zero missing/duplicate sentinel events. The same soak exposed
+snapshot-copy RSS growth and a per-request Lwt close-race leak; a reusable copy
+buffer and removal of the close race hold RSS at roughly 1.18 GiB. See
+`docs/FAILURE_AUDIT.md` for the full record.
 
 Measured on the reference machine (16 cores, btrfs home with
 `compress=zstd:3`; tmpfs noted for comparison):
@@ -1119,10 +1123,11 @@ boards, not a single board:
 - Live events are not replayed; a missed revision gap is repaired by a
   snapshot. No reconnect/resume is implemented.
 
-Client RTT metrics use `performance.now()` and a FIFO of send timestamps. With
-cross-origin isolation (COOP/COEP headers) Chrome exposes a finer clock
-(5 µs in the measured environment); without it the browser quantises the
-clock. The display reports the measured resolution.
+Optional client RTT diagnostics use `performance.now()` and a FIFO of send
+timestamps. They are disabled in production builds; set `Metrics.enabled` to
+true when profiling a browser session. With cross-origin isolation (COOP/COEP
+headers) Chrome exposes a finer clock (5 µs in the measured environment);
+without it the browser quantises the clock.
 
 ## 11. Benchmarks
 

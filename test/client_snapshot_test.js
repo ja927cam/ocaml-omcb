@@ -371,6 +371,12 @@ async function main() {
     if ((await coordsText()) !== `(${BOARD.x}, ${BOARD.y})`) {
       fail(`coordinates overlay showed ${await coordsText()}`);
     }
+    const status = await evaluate(
+      "JSON.stringify({text: document.getElementById('status').textContent, kind: document.getElementById('status').dataset.status})"
+    );
+    if (status !== '{"text":"Live","kind":"live"}') {
+      fail(`connection status did not become live: ${status}`);
+    }
 
     // Move a pawn on the centre board.
     await drag({ boardX: BOARD.x, boardY: BOARD.y, col: 4, row: 6 },

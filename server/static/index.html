@@ -1,11 +1,24 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Chessboards</title>
-  <link rel="icon" href="data:,">
+  <meta name="theme-color" content="#14171c">
+  <title>One Million Chessboards</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2314171c'/%3E%3Cpath d='M20 46h24v6H20z' fill='%237bd88f'/%3E%3Cpath d='M24 40c0-8 4-10 4-16l-4 2 6-10 10 10c6 4 6 10 4 14z' fill='%23f2f4f8'/%3E%3C/svg%3E">
   <style>
+    :root {
+      color-scheme: dark;
+      --bg: #14171c;
+      --panel: rgba(20, 23, 28, 0.78);
+      --text: #f2f4f8;
+      --muted: #a8b1c0;
+      --line: rgba(255, 255, 255, 0.12);
+      --ok: #7bd88f;
+      --warn: #e5c07b;
+      --bad: #e06c75;
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -16,33 +29,114 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #1b1b1b;
+      background:
+        radial-gradient(1200px 800px at 50% -10%, #232936 0%, transparent 60%),
+        var(--bg);
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      color: var(--text);
     }
 
     canvas#game {
       display: block;
       width: 100vw;
       height: 100vh;
-      touch-action: none;      /* let pointer events drive dragging and panning */
+      touch-action: none;
+      cursor: grab;
+      outline: none;
+    }
+
+    body[data-move-pending="true"] canvas#game {
+      cursor: grabbing;
+    }
+
+    canvas#game:focus-visible {
+      outline: 2px solid rgba(123, 216, 143, 0.75);
+      outline-offset: -2px;
+    }
+
+    .pill {
+      position: fixed;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--text);
+      pointer-events: none;
+      user-select: none;
+      white-space: nowrap;
     }
 
     #coords {
-      position: fixed;
-      top: 10px;
-      right: 12px;
-      padding: 4px 8px;
-      font: 13px ui-monospace, monospace;
-      color: #f2f2f2;
-      background: rgba(0, 0, 0, 0.45);
-      border-radius: 4px;
-      pointer-events: none;
-      user-select: none;
+      top: 12px;
+      right: 14px;
+      letter-spacing: 0.01em;
+    }
+
+    #status {
+      left: 14px;
+      bottom: 14px;
+      color: var(--muted);
+    }
+
+    #status::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--warn);
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    #status[data-status="live"] {
+      color: var(--text);
+    }
+
+    #status[data-status="live"]::before {
+      background: var(--ok);
+      box-shadow: 0 0 10px var(--ok);
+    }
+
+    #status[data-status="error"]::before,
+    #status[data-status="offline"]::before {
+      background: var(--bad);
+      box-shadow: 0 0 10px var(--bad);
+    }
+
+    #hint {
+      left: 50%;
+      bottom: 14px;
+      transform: translateX(-50%);
+      color: var(--muted);
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 12px;
+      opacity: 0.9;
+    }
+
+    @media (max-width: 640px) {
+      #hint {
+        display: none;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        scroll-behavior: auto !important;
+      }
     }
   </style>
 </head>
 <body>
-  <canvas id="game"></canvas>
-  <div id="coords">(0, 0)</div>
+  <canvas id="game" tabindex="0" aria-label="One million chessboards grid"></canvas>
+  <div id="coords" class="pill" aria-live="off">(0, 0)</div>
+  <div id="status" class="pill" data-status="connecting" aria-live="polite">Connecting...</div>
+  <div id="hint" class="pill">Drag a piece to move · drag empty space to pan</div>
   <script src="/static/main.bc.wasm.js"></script>
 </body>
 </html>

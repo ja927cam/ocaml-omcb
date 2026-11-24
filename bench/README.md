@@ -437,6 +437,7 @@ event visibility, process fail-stop, snapshot cleanup and restart digests:
 
 ```bash
 node test/failure_injection_test.js
+node test/deployment_smoke_test.js
 ```
 
 `test/adaptive_soak_test.js` runs quiet, heavy-write, fan-out, mixed,
@@ -447,6 +448,17 @@ queue/outbox depth, group size, fsync latency, event lag and adaptive policy:
 node test/adaptive_soak_test.js
 SOAK_PHASE_SECONDS=10 node test/adaptive_soak_test.js  # smoke
 ```
+
+Snapshot memory retention can be profiled separately:
+
+```bash
+node test/memory_profile_test.js
+```
+
+It compares a no-snapshot control with a snapshot-heavy workload and records
+RSS, smaps_rollup, `Gc.quick_stat`, live snapshot-copy bytes and the effect of
+a forced full GC/compaction. Results are written to
+`bench/memory_profile_results.md` and `.json`.
 
 The results and defect list are in `docs/FAILURE_AUDIT.md`.
 

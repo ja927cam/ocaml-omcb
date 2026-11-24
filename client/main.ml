@@ -178,6 +178,11 @@ let main () =
     | None -> failwith ("Could not find #" ^ id)
   in
   let coords_el = find_el "coords" in
+  let status_el = find_el "status" in
+  let set_status label kind =
+    El.set_children status_el [ El.txt (Jstr.v label) ];
+    El.set_at (Jstr.v "data-status") (Some (Jstr.v kind)) status_el
+  in
   let set_move_pending pending =
     El.set_at (Jstr.v "data-move-pending")
       (if pending then Some (Jstr.v "true") else None)
@@ -1222,11 +1227,20 @@ let main () =
       (Ev.listen Ev.open'
          (fun _ ->
            Console.(log [ Jstr.v "ws: connected" ]);
+           set_status "Live" "live";
            ensure_window ())
          target);
     ignore
       (Ev.listen Ev.error
-         (fun _ -> Console.(log [ Jstr.v "ws: connection error" ]))
+         (fun _ ->
+           Console.(log [ Jstr.v "ws: connection error" ]);
+           set_status "Connection error" "error")
+         target);
+    ignore
+      (Ev.listen Ev.close
+         (fun _ ->
+           Console.(log [ Jstr.v "ws: disconnected" ]);
+           set_status "Disconnected" "offline")
          target);
     ignore
       (Ev.listen Ev.beforeunload

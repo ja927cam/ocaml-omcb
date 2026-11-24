@@ -1,0 +1,26 @@
+[Unit]
+Description=One Million Chessboards
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sim-map
+Group=sim-map
+WorkingDirectory=/var/lib/sim-map
+EnvironmentFile=/etc/sim-map/env
+ExecStart=/opt/sim-map/server.exe
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=35
+KillSignal=SIGTERM
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sim-map
+ReadOnlyPaths=/opt/sim-map
+
+[Install]
+WantedBy=multi-user.target

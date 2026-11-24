@@ -11,3 +11,5 @@ wal-*.log
 # Audit/soak data
 /soak-data/
 /failure-audit-data/
+/memory-profile-data/
+/deployment-smoke-data/

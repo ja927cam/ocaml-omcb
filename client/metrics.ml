@@ -1,9 +1,10 @@
 open Brr
 
-(* Temporary round-trip metrics for moves.
-   Flip [enabled] to false to turn measuring and UI updates off. *)
+(* Optional local round-trip diagnostics for moves.
+   Disabled in production builds; flip [enabled] to true when profiling a
+   browser session. *)
 
-let enabled = true
+let enabled = false
 
 let display = ref None
 let pending = Queue.create ()

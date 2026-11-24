@@ -82,6 +82,191 @@ let adaptive_json controller ~fixed_group ~fixed_delay_us =
         ("snapshot_active", `Bool state.snapshot_active);
       ]
 
+let file_contents path =
+  try
+    let channel = open_in_bin path in
+    Fun.protect
+      ~finally:(fun () -> close_in_noerr channel)
+      (fun () ->
+        let buffer = Buffer.create 4096 in
+        (try
+           while true do
+             Buffer.add_string buffer (input_line channel);
+             Buffer.add_char buffer '\n'
+           done
+         with End_of_file -> ());
+        Buffer.contents buffer)
+  with _ -> ""
+
+let trim = String.trim
+
+let proc_status_rss_kb () =
+  let lines = String.split_on_char '\n' (file_contents "/proc/self/status") in
+  let rec find = function
+    | [] -> None
+    | line :: rest -> (
+      match String.split_on_char ':' line with
+      | [ key; value ] when trim key = "VmRSS" ->
+        let value = trim value in
+        let value =
+          if String.length value > 2
+             && String.sub value (String.length value - 2) 2 = "kB"
+          then String.sub value 0 (String.length value - 2)
+          else value
+        in
+        (try Some (int_of_string (trim value)) with _ -> None)
+      | _ -> find rest)
+  in
+  find lines
+
+let smaps_rollup () =
+  let wanted =
+    [
+      "Rss";
+      "Pss";
+      "Shared_Clean";
+      "Shared_Dirty";
+      "Private_Clean";
+      "Private_Dirty";
+      "Anonymous";
+      "Swap";
+      "Locked";
+    ]
+  in
+  let values = Hashtbl.create 16 in
+  String.split_on_char '\n' (file_contents "/proc/self/smaps_rollup")
+  |> List.iter (fun line ->
+         match String.split_on_char ':' line with
+         | [ key; value ] ->
+           let key = trim key in
+           if List.mem key wanted then begin
+             let value = trim value in
+             let value =
+               if String.length value > 2
+                  && String.sub value (String.length value - 2) 2 = "kB"
+               then String.sub value 0 (String.length value - 2)
+               else value
+             in
+             match int_of_string_opt (trim value) with
+             | Some value -> Hashtbl.replace values key value
+             | None -> ()
+           end
+         | _ -> ());
+  `Assoc
+    (List.map
+       (fun key ->
+         let value =
+           match Hashtbl.find_opt values key with Some value -> value | None -> 0
+         in
+         (key, `Int value))
+       wanted)
+
+let memory_json () =
+  let gc = Gc.quick_stat () in
+  let copies, copy_bytes = Persistence.snapshot_copy_memory () in
+  let field name value = (name, `Int value) in
+  `Assoc
+    [
+      ( "rss_kb",
+        match proc_status_rss_kb () with Some value -> `Int value | None -> `Null );
+      ("smaps_rollup_kb", smaps_rollup ());
+      ( "gc",
+        `Assoc
+          [
+            field "heap_words" gc.Gc.heap_words;
+            field "live_words" gc.Gc.live_words;
+            field "free_words" gc.Gc.free_words;
+            field "top_heap_words" gc.Gc.top_heap_words;
+            field "major_words" (int_of_float gc.Gc.major_words);
+            field "minor_words" (int_of_float gc.Gc.minor_words);
+            field "promoted_words" (int_of_float gc.Gc.promoted_words);
+            field "compactions" gc.Gc.compactions;
+            field "major_collections" gc.Gc.major_collections;
+            field "minor_collections" gc.Gc.minor_collections;
+          ] );
+      field "snapshot_copy_live" copies;
+      field "snapshot_copy_live_bytes" copy_bytes;
+    ]
+
+type memprof_site = { mutable count : int; mutable bytes : int }
+
+let memprof_sites : (string, memprof_site) Hashtbl.t = Hashtbl.create 256
+let memprof_lock = Mutex.create ()
+let memprof_profile : Gc.Memprof.t option ref = ref None
+
+let memprof_update key bytes delta =
+  Mutex.lock memprof_lock;
+  let site =
+    match Hashtbl.find_opt memprof_sites key with
+    | Some site -> site
+    | None ->
+      let site = { count = 0; bytes = 0 } in
+      Hashtbl.add memprof_sites key site;
+      site
+  in
+  site.count <- max 0 (site.count + delta);
+  site.bytes <- max 0 (site.bytes + (delta * bytes));
+  Mutex.unlock memprof_lock
+
+let memprof_key allocation =
+  Printexc.raw_backtrace_to_string allocation.Gc.Memprof.callstack
+
+let start_memprof () =
+  if int_env "SIM_MAP_MEMPROF" 0 <> 0 then begin
+    let rate = float_env "SIM_MAP_MEMPROF_RATE" 1e-4 in
+    let rate = max 1e-6 (min 1. rate) in
+    let tracker : (string * int, string * int) Gc.Memprof.tracker =
+      {
+        alloc_minor =
+          (fun allocation ->
+            let key = memprof_key allocation in
+            memprof_update key allocation.size 1;
+            Some (key, allocation.size));
+        alloc_major =
+          (fun allocation ->
+            let key = memprof_key allocation in
+            memprof_update key allocation.size 1;
+            Some (key, allocation.size));
+        promote = (fun (key, bytes) -> Some (key, bytes));
+        dealloc_minor =
+          (fun (key, bytes) -> memprof_update key bytes (-1));
+        dealloc_major =
+          (fun (key, bytes) -> memprof_update key bytes (-1));
+      }
+    in
+    memprof_profile :=
+      Some (Gc.Memprof.start ~sampling_rate:rate ~callstack_size:8 tracker)
+  end
+
+let memprof_site_json (key, site) =
+  `Assoc
+    [
+      ("bytes", `Int site.bytes);
+      ("count", `Int site.count);
+      ("stack", `String key);
+    ]
+
+let memprof_json () =
+  Gc.full_major ();
+  let all =
+    Hashtbl.fold (fun key site acc -> (key, site) :: acc) memprof_sites []
+  in
+  let by_bytes =
+    List.sort (fun (_, a) (_, b) -> compare b.bytes a.bytes) all
+    |> List.filteri (fun index _ -> index < 100)
+  in
+  let by_count =
+    List.sort (fun (_, a) (_, b) -> compare b.count a.count) all
+    |> List.filteri (fun index _ -> index < 100)
+  in
+  `Assoc
+    [
+      ( "sampling",
+        `Bool (match !memprof_profile with Some _ -> true | None -> false) );
+      ("sites", `List (List.map memprof_site_json by_bytes));
+      ("sites_by_count", `List (List.map memprof_site_json by_count));
+    ]
+
 let metrics_body manager worker persistence adaptive ~fixed_group ~fixed_delay_us =
   let worker_metrics = State_worker.metrics worker in
   let connection_metrics = Connection_manager.metrics manager in
@@ -92,6 +277,7 @@ let metrics_body manager worker persistence adaptive ~fixed_group ~fixed_delay_u
            ("worker", worker_metrics_json worker_metrics);
            ("connections", connection_metrics_json connection_metrics);
            ("persistence", Persistence.metrics_json persistence);
+           ("memory", memory_json ());
            ("adaptive", adaptive_json adaptive ~fixed_group ~fixed_delay_us);
          ]
        ())
@@ -221,16 +407,13 @@ let handle_socket manager worker socket =
       ~close_raw:(fun () -> Dream.close_websocket socket)
   in
   let rec loop () =
-    match%lwt
-      Lwt.pick
-        [
-          (Dream.receive socket >|= fun data -> `Data data);
-          (Connection_manager.wait_closed conn >|= fun () -> `Closed);
-        ]
-    with
-    | `Closed -> Lwt.return_unit
-    | `Data None -> Lwt.return_unit
-    | `Data (Some data) ->
+    (* A per-request race against the connection's close signal was removed:
+       Lwt.pick on a never-resolving waiter leaked callback nodes under high
+       request rates. Dream.receive returns None when the pinned httpun-ws
+       writer close path closes the socket, so the handler still unblocks. *)
+    match%lwt Dream.receive socket with
+    | None -> Lwt.return_unit
+    | Some data ->
       let bytes = Bytes.of_string data in
       let response_lwt : socket_response option Lwt.t =
         match String.length data with
@@ -363,6 +546,8 @@ let () =
     | None -> "data"
   in
   let adaptive_enabled = int_env "SIM_MAP_ADAPTIVE" 1 <> 0 in
+  let debug_gc_enabled = int_env "SIM_MAP_DEBUG_GC" 0 <> 0 in
+  let port = max 1 (int_env "SIM_MAP_PORT" 8080) in
   let fixed_group = max 1 (int_env "SIM_MAP_WAL_GROUP" 64) in
   let fixed_delay_us = max 0 (int_env "SIM_MAP_WAL_GROUP_DELAY_US" 0) in
   let wal_sync = int_env "SIM_MAP_WAL_SYNC" 1 <> 0 in
@@ -534,10 +719,34 @@ let () =
         timer ()
       in
       timer ());
+  let stopping = ref false in
+  let shutdown signal =
+    if not !stopping then begin
+      stopping := true;
+      Printf.eprintf "received signal %d: draining worker and snapshot\n%!" signal;
+      flush stderr;
+      Lwt.async (fun () ->
+          Lwt.pick
+            [
+              (State_worker.stop worker >>= fun () ->
+               Persistence.wait_for_snapshot persistence >>= fun () ->
+               Persistence.close persistence;
+               Lwt.return_unit);
+              (Lwt_unix.sleep 30. >>= fun () ->
+               Printf.eprintf "shutdown drain timed out; exiting anyway\n%!";
+               flush stderr;
+               Lwt.return_unit);
+            ]
+          >|= fun () -> exit 0)
+    end
+  in
+  Sys.set_signal Sys.sigterm (Sys.Signal_handle (fun _ -> shutdown Sys.sigterm));
+  Sys.set_signal Sys.sigint (Sys.Signal_handle (fun _ -> shutdown Sys.sigint));
   log_phase "state worker startup" worker_started;
   log_phase "total startup" total_started;
+  start_memprof ();
 
-  Dream.run ~port:8080
+  Dream.run ~port
   @@ Dream.logger
   @@ cross_origin_isolation
   @@ Dream.router [
@@ -547,12 +756,37 @@ let () =
          Dream.respond
            ~headers:[ ("Content-Type", "application/json") ]
            (metrics_body manager worker persistence adaptive_controller ~fixed_group ~fixed_delay_us));
+       Dream.get "/debug/memprof" (fun _req ->
+         if int_env "SIM_MAP_MEMPROF" 0 = 0 then Dream.respond ~status:`Not_Found ""
+         else
+           Dream.respond
+             ~headers:[ ("Content-Type", "application/json") ]
+             (Yojson.Safe.to_string (memprof_json ())));
+       Dream.get "/debug/gc" (fun _req ->
+         if not debug_gc_enabled then Dream.respond ~status:`Not_Found ""
+         else begin
+           Gc.full_major ();
+           Gc.compact ();
+           Dream.respond
+             ~headers:[ ("Content-Type", "application/json") ]
+             (Yojson.Safe.to_string (memory_json ()))
+         end);
        Dream.get "/state-hash" (fun _req ->
          let digest = Persistence.state_digest state in
          Dream.respond
            ~headers:[ ("Content-Type", "application/json") ]
            (Printf.sprintf "{\"sequence\":\"%Ld\",\"digest\":\"%s\"}"
               (Game_state.sequence state) digest));
+       Dream.get "/healthz" (fun _req ->
+         Dream.respond
+           ~headers:[ ("Content-Type", "application/json") ]
+           (Printf.sprintf "{\"status\":\"ok\",\"sequence\":\"%Ld\"}"
+              (Game_state.sequence state)));
+       Dream.get "/readyz" (fun _req ->
+         Dream.respond
+           ~headers:[ ("Content-Type", "application/json") ]
+           (Printf.sprintf "{\"status\":\"ready\",\"sequence\":\"%Ld\"}"
+              (Game_state.sequence state)));
        Dream.scope "/static" [] [
          Dream.get "/**" (Dream.static "_build/default/client");
        ];

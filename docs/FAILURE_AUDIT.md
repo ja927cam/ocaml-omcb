@@ -64,6 +64,13 @@ real WebSocket protocol, checks events, kills/fail-stops servers, restarts them
 and compares `/state-hash`. Results are written to
 `bench/failure_audit_results.md` and `.json`.
 
+Memory work uses `test/memory_profile_test.js`. It compares a no-snapshot
+control with a snapshot-heavy workload and records `/proc` RSS,
+`smaps_rollup`, `Gc.quick_stat`, explicitly tracked snapshot-copy bytes, and
+the effect of a forced full major GC/compaction (`SIM_MAP_DEBUG_GC=1`).
+`SIM_MAP_MEMPROF=1` additionally samples live allocation sites through
+`Gc.Memprof`; both debug endpoints return 404 when not enabled.
+
 ## 3. WAL failure injection
 
 | Failure | Exact injection | Expected | Observed |
@@ -117,10 +124,11 @@ fallback.
 | Snapshot writing | SIGTERM while `snapshot_pending` and `snapshot_writing` were true | acknowledged moves survive; restart valid; no temp survives recovery | 48/48; restart digest identical; no temp remained |
 | During fsync / torn WAL | existing `wal-before-write`, `wal-partial-write`, `wal-after-fsync` crash points | recovery either truncates the torn tail or keeps the durable prefix | crash suite 9/9 |
 
-SIGTERM is not a graceful-drain operation in this server; it terminates the
-process. That is acceptable because every acknowledgement is already past its
-group fsync. An in-flight snapshot may leave a temporary file, which recovery
-removes.
+SIGTERM now drains the worker and waits up to 30 seconds for an in-flight
+snapshot before closing the WAL and exiting 0. SIGKILL remains the hard-crash
+path. Even a hard stop is safe for acknowledged moves because every
+acknowledgement is already past its group fsync; recovery removes any
+interrupted snapshot temp file.
 
 ## 6. Long-running adaptive stability
 
@@ -160,32 +168,91 @@ because eight sentinel subscribers had high end-to-end lag under write load.
 - Policy: 158 cumulative changes. Quiet phases had 28 and 26 changes per five
   minutes, mostly 8↔16 oscillation; heavy stayed at 16/broadcast-bound.
 
-### Post-fix validation (6 minutes, 60-second phases)
+### 30-minute run after D7 (before snapshot buffer reuse)
 
-After the recipient-aware classification fix (D7), the same workload ran for
-six minutes:
+The same six-phase workload on the D7 controller:
 
 | Phase | Accepted | Moves/s | Move p50 | Move p95 | Queue max | Fsync p95 max | Lag p95 max | Batch end | Class |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| quiet | 6,991 | 116 | 5.0 ms | 23.1 ms | 2 | 21 ms | 31 ms | 16 | moderate |
-| heavy writes | 529,347 | **8,821** | 8.9 ms | 20.3 ms | 32 | 22 ms | 24 ms | 128 | heavy |
-| fan-out | 71,031 | 1,184 | 11.0 ms | 23.7 ms | 16 | 36 ms | 22 ms | 64 | heavy |
-| mixed | 94,433 | 1,568 | 20.8 ms | 90.0 ms | 1 | 58 ms | 84 ms | 32 | broadcast-bound |
-| snapshot writes | 50,236 | 837 | 28.6 ms | 215.9 ms | 2 | 162 ms | 207 ms | 16 | broadcast-bound |
-| quiet again | 3,819 | 64 | 18.4 ms | 109.2 ms | 3 | 135 ms | 175 ms | 16 | moderate |
+| quiet | 35,920 | 120 | 5.9 ms | 13.0 ms | 4 | 113 ms | 40 ms | 8 | moderate |
+| heavy writes | 2,933,841 | **9,779** | 7.6 ms | 17.6 ms | 78 | 37 ms | 14 ms | 128 | heavy |
+| fan-out | 414,193 | 1,381 | 8.3 ms | 19.6 ms | 16 | 33 ms | 17 ms | 32 | heavy |
+| mixed | 434,902 | 1,449 | 18.8 ms | 136.8 ms | 36 | 227 ms | 203 ms | 16 | broadcast-bound |
+| snapshot writes | 395,099 | 1,316 | 22.8 ms | 160.1 ms | 64 | 187 ms | 172 ms | 16 | broadcast-bound |
+| quiet again | 13,750 | 46 | 52.9 ms | 177.8 ms | 4 | 203 ms | 110 ms | 8 | moderate |
 
-- Heavy throughput recovered from 1,792 to **8,821 moves/s**; heavy p50 fell
-  from 34.1 to 8.9 ms and batch settled at 128.
-- RSS: 564.5 MiB first median, 1,111.5 MiB last median, 1,665.8 MiB max.
-- FDs 369 → 369, max 370; queues/outbox bounded; sentinel 4,355 moves with
-  0 missing/duplicate; recovery sequence 760,212 exact.
-- Mixed-phase classification still changes (16 changes in 60 s) under 256
-  subscribers; this is real fan-out pressure, not the small-sentinel
-  misclassification.
+- D7 is stable for the complete workload: heavy stayed at batch 128 with zero
+  batch changes; fan-out/mixed/snapshot recovered from the pre-fix 186/275/371
+  moves/s to **1,381/1,449/1,316**.
+- FDs 369 → 369, max 370; queue max 78; outbox max 0; no drops or send
+  failures; sentinel 20,838 moves with zero missing/duplicates; recovery
+  sequence 4,248,543 exact.
+- RSS exposed D8: 563.8 MiB first median, **3,758.4 MiB last median**,
+  3,770.2 MiB max, growth 3,194.6 MiB. It did not return to baseline during
+  the final quiet phase.
 
-The full 30-minute run was not repeated after D7; the six-minute run validates
-the controller fix, while the 30-minute run above supplies the long-duration
-memory/fd/queue evidence.
+### Final 30-minute run after the memory fixes
+
+This run includes the reusable snapshot buffer (D8) and the close-race removal
+(D9):
+
+| Phase | Accepted | Moves/s | Move p50 | Move p95 | Queue max | Fsync p95 max | Lag p95 max | Batch end | Class |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| quiet | 36,524 | 122 | 6.4 ms | 11.2 ms | 4 | 86 ms | 18 ms | 8 | moderate |
+| heavy writes | 3,570,674 | **11,901** | 6.6 ms | 15.9 ms | 42 | 33 ms | 13 ms | 128 | heavy |
+| fan-out | 442,018 | 1,473 | 8.0 ms | 18.8 ms | 16 | 33 ms | 17 ms | 64 | heavy |
+| mixed | 644,456 | 2,146 | 16.2 ms | 30.5 ms | 48 | 33 ms | 32 ms | 16 | broadcast-bound |
+| snapshot writes | 495,176 | 1,650 | 22.1 ms | 157.1 ms | 64 | 147 ms | 138 ms | 8 | broadcast-bound |
+| quiet again | 12,825 | 43 | 67.0 ms | 200.0 ms | 4 | 222 ms | 131 ms | 32 | storage-bound |
+
+- RSS: 564.2 MiB first median, **1,182.2 MiB last median**, 1,185.2 MiB max,
+  growth 618.0 MiB. This is the world plus one reusable 512 MiB snapshot buffer
+  plus normal heap; it is stable and does not grow through the final quiet
+  phase.
+- FDs 369 → 369, max 370; queue max 64; outbox max 0; no drops or send
+  failures.
+- Sentinel: 22,245 moves, 0 errors, 0 missing, 0 duplicates across eight
+  subscribers.
+- Recovery: sequence 5,223,918 → 5,223,918, digest identical.
+- D7 is stable under the complete workload: heavy batch stayed at 128 with no
+  changes; fan-out/mixed/snapshot sustained 1,473/2,146/1,650 moves/s.
+- Remaining controller churn is in fan-out/mixed/quiet transitions (77/126/61
+  policy changes over five minutes); throughput and p50 remain stable, so this
+  is recorded as tuning headroom rather than a correctness defect.
+
+### Snapshot memory profile
+
+`test/memory_profile_test.js` compares a 60-second write-only control with a
+60-second run that takes four snapshots. It records `/proc` RSS, smaps_rollup,
+`Gc.quick_stat` and the explicitly tracked snapshot-copy bytes, then forces a
+full major collection and compaction.
+
+After the reusable-buffer and close-race fixes (96 writers, 30 seconds):
+
+| Run | Moves | Snapshots | Peak RSS | Live growth (pre-GC) | Heap after GC | External idle | RSS drop after GC |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| control | 382,950 | 0 | 580 MB | 23.9 MB | 10.3 MB | 0 | 14 MB |
+| snapshots | 298,593 | 4 | **1,115 MB** | 22.8 MB | 10.3 MB | **511.9 MB reusable** | 16 MB |
+
+The earlier profile isolated the sources: before reuse, 511.9 MB of transient
+snapshot data remained live at idle and a forced GC dropped RSS by 573 MB.
+Before the close-race fix, the control run grew 199.1 MiB of live objects in
+30 seconds at 96 writers; after the fix it grows 23.9 MiB.
+
+Interpretation:
+
+- The growth is **not a live OCaml object leak**: after a forced full GC the
+  OCaml heap is only ~50 MB and live objects did not grow materially.
+- It is **external snapshot-copy memory plus heap/allocator retention**. Before
+  reuse, the profile showed 511.9 MB of a transient copy still live at idle
+  and a 573 MB RSS drop after a forced GC/compaction. In the 30-minute soak,
+  copies accumulated between major collections and RSS reached 3.76 GiB.
+- After reuse, exactly one 511.9 MB buffer is retained; transient copies are
+  zero and peak RSS is bounded at roughly control + one buffer (~1.23 GiB in
+  the profile). The remaining ~50 MB RSS drop after GC is allocator/heap
+  retention, not the snapshot data.
+- The full 30-minute soak must be repeated on this build to confirm the bound
+  under fan-out and snapshot transitions.
 
 ## 7. Defects found and fixed
 
@@ -280,16 +347,47 @@ memory/fd/queue evidence.
 - Severity rationale: this was a 5× throughput and 4× median-latency
   regression under an ordinary mixed workload, not a durability violation.
 
-### Residual memory finding
+### D8 — High: repeated snapshot copies inflated RSS
 
-RSS rose from ~560 MiB to ~1.25 GiB over 30 minutes and peaked at ~1.7 GiB
-during the 512 MiB snapshot copy. FDs, worker queue, outbox, drops and sentinel
-delivery stayed bounded, and recovery was exact. This is consistent with
-retained allocator/heap pages after repeated full-world copies rather than an
-unbounded queue or descriptor leak, but the retained ~700 MiB is operationally
-significant. It was not fixed because changing snapshot buffer reuse/GC policy
-would be a performance change outside this audit; it should be profiled with a
-heap dump before changing production defaults.
+- Location: `lib/persistence.ml` (`capture_copy`).
+- Before: every snapshot allocated a new 512 MiB board copy plus ledger
+  arrays. A 30-minute soak with 42 snapshots reached **3.76 GiB RSS** and did
+  not return to baseline during a final five-minute quiet phase. The 60-second
+  profile showed 511.9 MiB of transient external snapshot memory still live at
+  idle and a 573 MiB RSS drop after a forced full GC/compaction.
+- Diagnosis: the memory was external Bigarray data and heap/allocator
+  retention, not a growing live OCaml object graph. After the forced GC the
+  OCaml heap was only ~50 MiB; live objects had not grown materially. Snapshot
+  copies were accumulating between major collections because the write path
+  allocated a fresh 512 MiB buffer each time.
+- Fix: retain one reusable snapshot-copy buffer in `Persistence.t` and blit
+  into it on each capture. Only one snapshot can be in progress at a time, so
+  reuse is safe. The profile after the fix still shows 511.9 MiB external
+  memory, but it is the single intentional reusable buffer; transient copies
+  are zero and peak RSS is bounded at roughly control + one buffer
+  (~1.23 GiB in the profile).
+- Regression: `test/memory_profile_test.js` records RSS, smaps_rollup, GC
+  heap/live words and explicit live-copy bytes. The final 30-minute soak on
+  the reuse + close-race build held RSS at 1.18 GiB (564 MiB first median),
+  versus 3.76 GiB before the fixes.
+
+### D9 — High: per-request close race leaked Lwt callbacks
+
+- Location: `server/server.ml` (`handle_socket`, `Lwt.pick` against
+  `Connection_manager.wait_closed`).
+- Before: every WebSocket request raced `Dream.receive` against the
+  connection's never-resolving close signal. At high request rates the losing
+  waiter left Lwt pending-callback nodes behind. A 30-second 96-writer profile
+  showed **199.1 MiB live growth**, 71.4 MiB heap after GC and 773 MiB RSS with
+  no snapshots; the 30-minute soak reached multi-gigabyte RSS.
+- Fix: remove the per-request `Lwt.pick` race and rely on `Dream.receive`
+  returning `None` when the pinned httpun-ws close path closes the socket. The
+  close path is still exercised by the write-failure and teardown tests.
+- Result: the same 30-second profile fell to **23.9 MiB live growth**, 10.3 MiB
+  heap after GC and 580 MiB RSS; snapshot peak fell to 1.115 GiB.
+- Regression: `ws_write_failure_test.js` (37,500 moves, 12 failed sends, idle
+  CPU 0, fds 14→14), `ws_teardown_test.js` (6 abrupt disconnects, idle CPU 0)
+  and the live broadcast test all pass, plus the memory profile.
 
 ### Before/after summary
 
@@ -301,6 +399,8 @@ heap dump before changing production defaults.
 | Interrupted snapshot temp | never removed on recovery | removed before snapshot listing |
 | Broadcast lag after subscribers leave | ~118 ms stale forever | zero after five seconds without recipient samples |
 | Small-fanout lag under heavy writes | batch pinned at 16; 1,792 moves/s | batch 128; 8,821 moves/s |
+| Recurrent snapshot copies | new 512 MiB copy per snapshot; 3.76 GiB soak RSS | one reusable buffer; ~1.12 GiB profile peak |
+| Per-request close race | 199 MiB live growth/30 s at 96 writers | 24 MiB growth/30 s; RSS 580 MiB |
 
 ## 8. Test suite before/after
 
@@ -319,11 +419,18 @@ After the fixes:
 - crash recovery passed **9/9** with adaptive default and **9/9** with the
   fixed-64 fallback;
 - `test/failure_injection_test.js` passed **10/10**;
+- deployment smoke test passed on an alternate port with health/readiness,
+  graceful SIGTERM exit 0 and exact restart;
 - live broadcast, snapshot consistency, browser cache and WebSocket
   write-failure tests passed again (`37,500` write-failure moves, 12 failed
   sends, 0 idle ticks, fds 21 → 21);
-- adaptive 30-minute soak plus a 6-minute post-D7 validation completed with
-  exact recovery and zero missing/duplicate sentinel events.
+- two full 30-minute post-D7 soaks completed (before and after the memory
+  fixes) with exact recovery and zero missing/duplicate sentinel events;
+  the final soak held RSS at 1.18 GiB;
+- deployment smoke on port 18080: health/readiness, graceful SIGTERM exit 0,
+  and exact restart;
+- snapshot memory profile: control 580 MB, snapshot peak 1,115 MB with one
+  reusable 512 MB buffer, post-GC heap 10 MB.
 
 ## 9. Verified invariants
 

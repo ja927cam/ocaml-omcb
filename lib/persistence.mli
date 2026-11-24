@@ -81,6 +81,10 @@ val capture : t -> Game_state.t -> unit
 val wait_for_snapshot : t -> unit Lwt.t
 (** Resolve when no snapshot write is in progress. *)
 
+val snapshot_copy_memory : unit -> int * int
+(** Number of live snapshot copies and their external Bigarray bytes. Used by
+    diagnostics to separate snapshot-copy memory from OCaml heap retention. *)
+
 val snapshot_active : t -> bool
 (** True only while the worker is rotating the WAL and copying the world.
     The asynchronous snapshot write is reported separately in

@@ -1108,6 +1108,7 @@ The default durability settings are:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SIM_MAP_DATA_DIR` | `data` | WAL and snapshot directory |
+| `SIM_MAP_PORT` | `8080` | HTTP/WebSocket listen port |
 | `SIM_MAP_WAL_GROUP` | `64` | Fallback maximum per commit when adaptive is off |
 | `SIM_MAP_WAL_SYNC` | `1` | Enable WAL `fsync` |
 | `SIM_MAP_ADAPTIVE` | `1` | Adaptive commit controller (`0` = fixed fallback) |
@@ -1118,6 +1119,7 @@ The default durability settings are:
 | `SIM_MAP_ADAPTIVE_HYSTERESIS` | `3` | Samples before a batch increase |
 | `SIM_MAP_SNAPSHOT_MOVES` | `100000` | Commit count between snapshots (`0` disables) |
 | `SIM_MAP_SNAPSHOT_SECONDS` | `600` | Seconds between snapshots (`0` disables) |
+| `SIM_MAP_DEBUG_GC` | `0` | Test-only `/debug/gc` endpoint (`1` enables) |
 
 ### WAL format
 
@@ -1276,7 +1278,8 @@ snapshot is pending, and the last snapshot write duration.
    `on_snapshot = Persistence.capture`.
 6. Start the one-second snapshot timer and the first WAL segment.
 7. Build the Dream router (`/`, `/metrics`, `/state-hash`, `/static`, `/ws`).
-8. `Dream.run` on port 8080.
+8. Install SIGTERM/SIGINT drain handlers.
+9. `Dream.run` on `SIM_MAP_PORT` (default 8080).
 
 Startup timings are logged for allocation, persistence recovery, verification,
 worker startup, and total startup. Recovery logs the restored sequence, the
@@ -1307,9 +1310,33 @@ This enables a higher-resolution browser timer for RTT metrics.
 | Route | Handler |
 |---|---|
 | `/` | `server/static/index.html` |
-| `/metrics` | Aggregate pipeline, worker, connection and outbox metrics as JSON |
+| `/metrics` | Aggregate pipeline, worker, connection, outbox, persistence, memory and adaptive metrics as JSON |
+| `/healthz` | Lightweight liveness JSON |
+| `/readyz` | Lightweight readiness JSON (the listener starts only after recovery) |
+| `/debug/gc` | Test-only full GC/compaction endpoint when `SIM_MAP_DEBUG_GC=1` |
+| `/debug/memprof` | Test-only live allocation sampler when `SIM_MAP_MEMPROF=1` |
 | `/static/**` | Static files from `_build/default/client` (prefix stripped by `Dream.scope`) |
 | `/ws` | Binary WebSocket move endpoint |
+
+### Shutdown and probes
+
+`SIGTERM` and `SIGINT` stop accepting new work, drain the worker queue and its
+current commit group, wait up to 30 seconds for an in-progress snapshot, fsync
+and close the WAL, then exit 0. If the drain exceeds 30 seconds the process
+exits anyway; recovery treats it as a crash. `SIGKILL` is always a crash.
+
+`/healthz` and `/readyz` return `200` with the current sequence. The HTTP
+listener is created only after recovery, worker startup and WAL opening, so a
+successful `/readyz` means the process is accepting connections.
+
+`/metrics` includes a `memory` object with `/proc/self/status` RSS,
+`/proc/self/smaps_rollup` anonymous/private pages, `Gc.quick_stat` heap/live
+counters and the number/bytes of live snapshot copies. Snapshot copies are
+Bigarrays, so their data is external to the OCaml heap and must be accounted
+for separately. `/debug/gc` is compiled in but returns 404 unless
+`SIM_MAP_DEBUG_GC=1`; it forces a full major collection and compaction for
+memory-retention profiling only. `/debug/memprof` is likewise test-only and is
+enabled with `SIM_MAP_MEMPROF=1` (optional `SIM_MAP_MEMPROF_RATE`).
 
 ### WebSocket handler
 
@@ -1426,9 +1453,11 @@ never rolled back.
   writer failed, discards pending bytes, makes the write loop report `Close`,
   and makes the read loop close when the writer is closed. A dead client can
   therefore never leave a frame retrying forever.
-- The receive loop races `Dream.receive` against the connection-manager close
-  signal, so a send failure unblocks the handler and allows the HTTP connection
-  and its file descriptor to be reclaimed.
+- `Dream.receive` returns `None` when the pinned httpun-ws writer closes the
+  socket, so a send failure unblocks the handler and allows the HTTP connection
+  and its file descriptor to be reclaimed. The earlier per-request `Lwt.pick`
+  race against the connection close signal was removed: it leaked Lwt callback
+  nodes at high request rates.
 - The receive loop is wrapped in `Lwt.catch`, so EOF/connection errors and
   send timeouts end only that handler. Pending worker items are bounded by the
   normal worker queue capacity.

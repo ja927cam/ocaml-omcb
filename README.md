@@ -58,6 +58,7 @@ write/fsync/rename/directory-fsync failures and shutdown during writes:
 
 ```bash
 node test/failure_injection_test.js
+node test/deployment_smoke_test.js
 ```
 
 Adaptive-mode stability is exercised by a changing-workload soak test:
@@ -65,6 +66,12 @@ Adaptive-mode stability is exercised by a changing-workload soak test:
 ```bash
 node test/adaptive_soak_test.js                  # 30 minutes
 SOAK_PHASE_SECONDS=10 node test/adaptive_soak_test.js  # smoke
+```
+
+Snapshot memory retention is profiled with:
+
+```bash
+node test/memory_profile_test.js
 ```
 
 See `docs/FAILURE_AUDIT.md` for the hardening audit, defects and results.
@@ -102,6 +109,7 @@ Environment variables:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SIM_MAP_DATA_DIR` | `data` | Directory for the WAL and snapshots |
+| `SIM_MAP_PORT` | `8080` | HTTP/WebSocket listen port |
 | `SIM_MAP_WAL_GROUP` | `64` | Fallback max consecutive moves per commit fsync (`1` = strict per-move) |
 | `SIM_MAP_WAL_SYNC` | `1` | Enable WAL fsync (`0` for development only) |
 | `SIM_MAP_ADAPTIVE` | `1` | Adaptive commit controller (`0` = fixed fallback policy) |
@@ -112,10 +120,18 @@ Environment variables:
 | `SIM_MAP_ADAPTIVE_HYSTERESIS` | `3` | Samples required before increasing the policy |
 | `SIM_MAP_SNAPSHOT_MOVES` | `100000` | Commit count between snapshots (`0` disables) |
 | `SIM_MAP_SNAPSHOT_SECONDS` | `600` | Seconds between snapshots (`0` disables) |
+| `SIM_MAP_DEBUG_GC` | `0` | Test-only `/debug/gc` endpoint (`1` enables) |
 
 `GET /state-hash` returns the current global sequence and a digest of the
 board, revisions and bounded ledger. It is intended for recovery tests and
 diagnostics; computing it reads the whole world and takes about a second.
+`GET /healthz` and `GET /readyz` are lightweight liveness/readiness probes.
+`GET /metrics` also includes `/proc` RSS, OCaml GC statistics and explicit
+live-snapshot-copy accounting for operational profiling.
+
+`SIGTERM`/`SIGINT` drain the worker, wait up to 30 seconds for an in-flight
+snapshot, fsync/close the WAL and exit 0. `SIGKILL` remains a crash. See
+`deploy/README.md` for systemd, TLS reverse-proxy and backup guidance.
 
 ## Controls
 
@@ -137,6 +153,8 @@ The board grid fills the whole window.
   formal-verification opportunities.
 - `bench/README.md` — benchmark runner and dashboard.
 - `docs/FAILURE_AUDIT.md` — production-hardening and failure-injection audit.
+- `CHANGELOG.md` — recent release and hardening notes.
+- `deploy/README.md` — systemd, reverse proxy, health, backups and capacity.
 
 ## Benchmarks
 

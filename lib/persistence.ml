@@ -34,6 +34,18 @@ type segment = {
   mutable bytes : int64;
 }
 
+type world_copy = {
+  mutable sequence : int64;
+  board : Board.t;
+  revisions : (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t;
+  ledger_moves :
+    (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t;
+  ledger_metadata :
+    (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t;
+  mutable ledger_head : int64;
+  mutable ledger_oldest : int64;
+}
+
 type snapshot_info = { path : string; sequence : int64 }
 
 type t = {
@@ -51,6 +63,7 @@ type t = {
   mutable snapshot_pending : bool;
   mutable snapshot_in_progress : bool;
   mutable snapshot_capturing : bool;
+  mutable snapshot_buffer : world_copy option;
   mutable snapshot_write_ms : float;
   truncated_wal : bool;
   mutable closed : bool;
@@ -273,18 +286,6 @@ let read_words fd hash array offset length =
   done;
   !hash
 
-type world_copy = {
-  sequence : int64;
-  board : Board.t;
-  revisions : (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t;
-  ledger_moves :
-    (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t;
-  ledger_metadata :
-    (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t;
-  ledger_head : int64;
-  ledger_oldest : int64;
-}
-
 let copy_array source =
   let copy =
     Bigarray.Array1.create Bigarray.int64 Bigarray.c_layout
@@ -293,16 +294,62 @@ let copy_array source =
   Bigarray.Array1.blit source copy;
   copy
 
-let capture_copy (state : Game_state.t) : world_copy =
-  {
-    sequence = Game_state.sequence state;
-    board = Game_state.copy_board state;
-    revisions = copy_array (Game_state.raw_revisions state);
-    ledger_moves = copy_array (Game_state.raw_ledger_moves state);
-    ledger_metadata = copy_array (Game_state.raw_ledger_metadata state);
-    ledger_head = Game_state.ledger_head state;
-    ledger_oldest = Game_state.ledger_oldest state;
-  }
+(* External (Bigarray) memory is not visible to the OCaml heap statistics.
+   Track live snapshot copies explicitly so /metrics can distinguish a copy
+   that is still being written from heap retention. *)
+let live_snapshot_copies = ref 0
+let live_snapshot_copy_bytes = ref 0
+
+let track_snapshot_copy copy bytes =
+  incr live_snapshot_copies;
+  live_snapshot_copy_bytes := !live_snapshot_copy_bytes + bytes;
+  Gc.finalise
+    (fun _ ->
+      decr live_snapshot_copies;
+      live_snapshot_copy_bytes := !live_snapshot_copy_bytes - bytes)
+    copy
+
+let snapshot_copy_memory () =
+  (!live_snapshot_copies, !live_snapshot_copy_bytes)
+
+let capture_copy (t : t) (state : Game_state.t) : world_copy =
+  let copy =
+    match t.snapshot_buffer with
+    | Some copy -> copy
+    | None ->
+      let copy =
+        {
+          sequence = Game_state.sequence state;
+          board = Game_state.copy_board state;
+          revisions = copy_array (Game_state.raw_revisions state);
+          ledger_moves = copy_array (Game_state.raw_ledger_moves state);
+          ledger_metadata = copy_array (Game_state.raw_ledger_metadata state);
+          ledger_head = Game_state.ledger_head state;
+          ledger_oldest = Game_state.ledger_oldest state;
+        }
+      in
+      let bytes =
+        (Game_state.board_count * 64 * 8)
+        + (Game_state.board_count * 8)
+        + (Game_state.ledger_capacity * 8 * 2)
+      in
+      track_snapshot_copy copy bytes;
+      t.snapshot_buffer <- Some copy;
+      copy
+  in
+  (* Only one snapshot can be in progress, so the previous writer has
+     finished with this buffer before the next capture starts. Reusing it
+     avoids allocating and retaining several 512 MiB Bigarrays under a
+     sustained write load. *)
+  Bigarray.Array1.blit (Game_state.raw_board state) (Board.raw_words copy.board);
+  Bigarray.Array1.blit (Game_state.raw_revisions state) copy.revisions;
+  Bigarray.Array1.blit (Game_state.raw_ledger_moves state) copy.ledger_moves;
+  Bigarray.Array1.blit (Game_state.raw_ledger_metadata state)
+    copy.ledger_metadata;
+  copy.sequence <- Game_state.sequence state;
+  copy.ledger_head <- Game_state.ledger_head state;
+  copy.ledger_oldest <- Game_state.ledger_oldest state;
+  copy
 
 (* The board is private; expose a copy only. *)
 let _ = capture_copy
@@ -734,6 +781,7 @@ let recover (config : config) (state : Game_state.t) =
         snapshot_pending = false;
         snapshot_in_progress = false;
         snapshot_capturing = false;
+        snapshot_buffer = None;
         snapshot_write_ms = 0.;
         truncated_wal = !truncated;
         closed = false;
@@ -1055,7 +1103,7 @@ let capture (t : t) (state : Game_state.t) =
     t.snapshot_capturing <- true;
     try
       rotate_wal t ~sequence:(Game_state.sequence state);
-      let copy = capture_copy state in
+      let copy = capture_copy t state in
       t.snapshot_capturing <- false;
       Lwt.async (fun () ->
           Lwt.catch
@@ -1151,6 +1199,13 @@ let metrics_json (t : t) =
         `Float p95 );
       ("snapshot_active", `Bool t.snapshot_capturing);
       ("snapshot_writing", `Bool (t.snapshot_in_progress && not t.snapshot_capturing));
+      ("snapshot_buffer", `Bool (t.snapshot_buffer <> None));
+      ( "snapshot_copy_live",
+        let copies, _ = snapshot_copy_memory () in
+        `Int copies );
+      ( "snapshot_copy_live_bytes",
+        let _, bytes = snapshot_copy_memory () in
+        `Int bytes );
       ("dirty", `Bool t.dirty);
       ("truncated_wal", `Bool t.truncated_wal);
     ]
