@@ -64,15 +64,15 @@ The authoritative world is durable by default:
 
 - `data/` (or `SIM_MAP_DATA_DIR`) holds `wal-<first-sequence>.log` segments and
   `snapshot-<sequence>.snap` files.
-- Every accepted move is appended to the WAL. By default up to 64 consecutive
-  moves are committed with one fsync (group commit), and responses/events are
-  published only after that fsync. `SIM_MAP_WAL_GROUP=1` gives strict per-move
-  fsync; `SIM_MAP_WAL_SYNC=0` disables fsync for development.
-- `SIM_MAP_ADAPTIVE=1` (opt-in) replaces the fixed group maximum with a bounded
-  controller. It samples move arrivals, queued moves, recent fsync percentiles,
-  client outbox depth and broadcast lag every 100 ms and picks both a maximum
-  batch size and a group-formation delay. It never validates or orders moves,
-  and every group is still fsynced before responses or events are published.
+- Every accepted move is appended to the WAL, and responses/events are
+  published only after the group's fsync. By default a bounded adaptive
+  controller chooses the commit batch from move arrivals, queued moves, recent
+  fsync percentiles, client outbox depth and broadcast lag. Fixed group commit
+  remains the fallback: `SIM_MAP_ADAPTIVE=0` commits up to 64 consecutive moves
+  per fsync, `SIM_MAP_WAL_GROUP=1` (with adaptive off) gives strict per-move
+  fsync, and `SIM_MAP_WAL_SYNC=0` disables fsync for development.
+- The controller never validates or orders moves, and every group is still
+  fsynced before responses or events are published.
 - A full-world snapshot is taken after `SIM_MAP_SNAPSHOT_MOVES` commits
   (default 100,000) or `SIM_MAP_SNAPSHOT_SECONDS` seconds (default 600),
   whichever comes first.
@@ -86,9 +86,9 @@ Environment variables:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SIM_MAP_DATA_DIR` | `data` | Directory for the WAL and snapshots |
-| `SIM_MAP_WAL_GROUP` | `64` | Max consecutive moves per commit fsync (`1` = strict per-move) |
+| `SIM_MAP_WAL_GROUP` | `64` | Fallback max consecutive moves per commit fsync (`1` = strict per-move) |
 | `SIM_MAP_WAL_SYNC` | `1` | Enable WAL fsync (`0` for development only) |
-| `SIM_MAP_ADAPTIVE` | `0` | Enable the adaptive commit controller |
+| `SIM_MAP_ADAPTIVE` | `1` | Adaptive commit controller (`0` = fixed fallback policy) |
 | `SIM_MAP_ADAPTIVE_MIN` | `1` | Minimum adaptive batch size |
 | `SIM_MAP_ADAPTIVE_MAX` | `256` | Maximum adaptive batch size |
 | `SIM_MAP_ADAPTIVE_MIN_DELAY_US` | `0` | Minimum adaptive group-formation delay |

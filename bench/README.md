@@ -108,8 +108,14 @@ Markdown. `ws_write_failure_test.js` covers the deliberate dead-socket path.
 
 ### Recorded results
 
-Current default: group commit (`SIM_MAP_WAL_GROUP=64`), data directory on
-`/home` (btrfs, `compress=zstd:3`), event batching enabled.
+These runs used the previous fixed-64 default (`SIM_MAP_ADAPTIVE=0`,
+`SIM_MAP_WAL_GROUP=64`), data directory on `/home` (btrfs,
+`compress=zstd:3`), event batching enabled. Adaptive is now the default; set
+`SIM_MAP_ADAPTIVE=0` to reproduce this table.
+
+With adaptive as the default, three `default`-profile runs on the same machine
+had median 1,397 requests/s, move p50 7.0 ms and event lag p50 11.9 ms, using
+35 fsyncs for 300 moves (average group 8.6).
 
 | Profile | Requests | Throughput | Snapshot p50 | Move p50 | Event lag p50 | CPU avg / peak | RSS peak | fds peak |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -122,7 +128,8 @@ The default run used 9 fsyncs for 100 moves (average group 11.1); stress used
 duplicates or misses, no events leaked to silent clients, and no unexpected
 closes.
 
-Strict per-move fsync (`SIM_MAP_WAL_GROUP=1`) measured 1,065 requests/s and
+Strict per-move fsync (`SIM_MAP_ADAPTIVE=0 SIM_MAP_WAL_GROUP=1`) measured
+1,065 requests/s and
 move p50 35.0 ms for `default`, and 1,546 requests/s and 57.2 ms for `stress`.
 With the WAL on tmpfs, or with `SIM_MAP_WAL_SYNC=0`, the default profile reaches
 about 1,822-2,006 requests/s with move p50 2.6 ms. On btrfs, group commit is
@@ -202,7 +209,11 @@ measurement, then stops only that child. It writes `scale_results.json` and
 `scale_results.js` after every level. If a level is unstable the runner stops
 by default (`SCALE_STOP_ON_FAIL=0` continues).
 
-### Current default: group commit (max 64) on btrfs
+### Fixed-64 fallback baseline on btrfs
+
+These levels were measured before adaptive became the default. Pin
+`SIM_MAP_ADAPTIVE=0` to reproduce them; a plain rerun now measures the adaptive
+default.
 
 `SCALE_CLIENTS=0,20,40,80,160,320,640,800,1020`, 100 moves and 4 snapshots per
 client, data directory on `/home`:
@@ -247,8 +258,8 @@ This baseline is partly client-harness limited at the top end: the single Node
 process parses and applies 102,000 events while driving 100 moves. At 1,020
 clients, recipient lookup p50 is ~0.13 ms and outbox enqueue p50 is ~0.11 ms;
 the end-to-end time is dominated by the batch window and client processing.
-The strict per-move run was instead dominated by per-move fsync; the current
-default group commit removes most of that cost.
+The strict per-move run was instead dominated by per-move fsync; group commit
+removes most of that cost.
 
 ## Subscription distributions
 
@@ -363,14 +374,15 @@ All 37 experiment runs had zero rejected moves, zero snapshot errors and zero
 missing/duplicate/extra/wrong events. Group-64 crash recovery passed for 64
 concurrently acknowledged moves. Fan-out at 1,020 clients reduced move p50
 from 577.8 ms (sync) to 259.7 ms (group-256). The actual average group at a
-configured 256 is ~85 because the worker starts before all writers arrive; the
-current default of 64 is a latency/throughput balance.
+configured 256 is ~85 because the worker starts before all writers arrive.
+Group-64 remains the fixed fallback (`SIM_MAP_ADAPTIVE=0`) and a predictable
+latency/throughput balance.
 
 ## Adaptive commit experiment
 
 `bench/adaptive_commit_test.js` compares fixed batch 16, fixed batch 64 and the
-opt-in adaptive controller (`SIM_MAP_ADAPTIVE=1`) across workload transitions
-rather than a single steady state:
+default adaptive controller (`SIM_MAP_ADAPTIVE=1`, set to `0` for fixed batch
+sizes) across workload transitions rather than a single steady state:
 
 1. quiet writes (2 s);
 2. 128 writers (5 s);

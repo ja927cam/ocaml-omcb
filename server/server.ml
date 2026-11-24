@@ -361,7 +361,7 @@ let () =
     | Some dir -> dir
     | None -> "data"
   in
-  let adaptive_enabled = int_env "SIM_MAP_ADAPTIVE" 0 <> 0 in
+  let adaptive_enabled = int_env "SIM_MAP_ADAPTIVE" 1 <> 0 in
   let fixed_group = max 1 (int_env "SIM_MAP_WAL_GROUP" 64) in
   let fixed_delay_us = max 0 (int_env "SIM_MAP_WAL_GROUP_DELAY_US" 0) in
   let wal_sync = int_env "SIM_MAP_WAL_SYNC" 1 <> 0 in

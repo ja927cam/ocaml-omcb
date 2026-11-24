@@ -141,6 +141,7 @@ async function start_server(dataDir, mode, fresh = true) {
     env: {
       ...process.env,
       SIM_MAP_DATA_DIR: dataDir,
+      SIM_MAP_ADAPTIVE: "0",
       SIM_MAP_WAL_GROUP: String(mode.group),
       SIM_MAP_WAL_SYNC: String(mode.sync),
       SIM_MAP_SNAPSHOT_MOVES: "0",

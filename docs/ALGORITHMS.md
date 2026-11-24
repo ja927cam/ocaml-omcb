@@ -798,12 +798,15 @@ specific cross-board and special-move squares.
 
 Commit policies:
 
-- **Strict** (`SIM_MAP_WAL_GROUP=1`): append → fsync → apply → publish.
-- **Group** (default, 64): take up to 64 consecutive moves, validate, append
-  and apply them in order, fsync once, then publish the whole group. The
-  in-memory apply is tentative until the fsync; a failure fail-stops without
-  publishing. Snapshot requests are non-move items and force a flush first, so
-  no client read can observe an uncommitted group.
+- **Strict** (`SIM_MAP_ADAPTIVE=0`, `SIM_MAP_WAL_GROUP=1`): append → fsync →
+  apply → publish.
+- **Adaptive** (default): a bounded controller chooses the batch ceiling and
+  formation delay; every group still fsyncs before publishing.
+- **Group** (fallback, `SIM_MAP_ADAPTIVE=0`, 64): take up to 64 consecutive
+  moves, validate, append and apply them in order, fsync once, then publish
+  the whole group. The in-memory apply is tentative until the fsync; a failure
+  fail-stops without publishing. Snapshot requests are non-move items and
+  force a flush first, so no client read can observe an uncommitted group.
 - **No fsync** (`SIM_MAP_WAL_SYNC=0`): append and publish without fsync;
   process crashes survive in the page cache, power loss can lose recent acks.
 
@@ -814,8 +817,9 @@ board state.
 
 ### Adaptive group commit
 
-`SIM_MAP_ADAPTIVE=1` replaces the fixed batch ceiling with a bounded,
-rule-based controller (`lib/adaptive_commit.ml`). It runs entirely outside
+`SIM_MAP_ADAPTIVE=1` (the default) replaces the fixed batch ceiling with a
+bounded, rule-based controller (`lib/adaptive_commit.ml`). Set it to `0` to use
+the fixed group-commit fallback. It runs entirely outside
 move validation, ordering, application and durability: the state worker still
 fsyncs each group before publishing responses or events, and a failed fsync
 still fail-stops without publishing the group.
@@ -926,8 +930,9 @@ Measured on the reference machine (16 cores, btrfs home with
 Group commit closes most of the strict-to-no-sync gap while preserving
 durable-before-ack. The actual average group at a configured maximum of 256 is
 about 85 because the worker starts before every concurrent writer arrives; a
-small group-formation window would raise that further, but the current
-default of 64 is a good latency/throughput balance.
+small group-formation window would raise that further. Group-64 is retained as
+the fixed fallback (`SIM_MAP_ADAPTIVE=0`) and remains a good latency/throughput
+balance when a predictable policy is preferable to the controller.
 
 ### Fault injection and tests
 

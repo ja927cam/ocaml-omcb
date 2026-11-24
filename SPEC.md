@@ -1058,19 +1058,21 @@ record from sequence 1.
 ### Commit policy and ordering
 
 The worker supports four commit policies, selected by
-`SIM_MAP_WAL_GROUP`, `SIM_MAP_WAL_SYNC` and `SIM_MAP_ADAPTIVE`:
+`SIM_MAP_WAL_GROUP`, `SIM_MAP_WAL_SYNC` and `SIM_MAP_ADAPTIVE`. Adaptive is
+the default; fixed group commit with a 64-move maximum is the fallback.
 
-- **Strict** (`SIM_MAP_WAL_GROUP=1`, `SIM_MAP_WAL_SYNC=1`): validate → append →
-  fsync → apply → publish. This is the original ordering and is available
-  explicitly.
-- **Group commit** (default, `SIM_MAP_WAL_GROUP=64`, `SIM_MAP_WAL_SYNC=1`):
+- **Strict** (`SIM_MAP_ADAPTIVE=0`, `SIM_MAP_WAL_GROUP=1`,
+  `SIM_MAP_WAL_SYNC=1`): validate → append → fsync → apply → publish. This is
+  the original ordering and is available explicitly.
+- **Group commit** (fallback, `SIM_MAP_ADAPTIVE=0`,
+  `SIM_MAP_WAL_GROUP=64`, `SIM_MAP_WAL_SYNC=1`):
   take up to 64 consecutive moves, validate/append/apply each in order (so
   later moves observe earlier ones), `fsync` the WAL once, then publish every
   response and event. The in-memory apply is tentative until the group fsync;
   if the fsync raises, the worker fail-stops without publishing any response
   from that group. A snapshot request is a non-move item and forces the
   current group to be flushed first, so no client can read uncommitted state.
-- **Adaptive** (`SIM_MAP_ADAPTIVE=1`): a bounded controller samples move
+- **Adaptive** (default, `SIM_MAP_ADAPTIVE=1`): a bounded controller samples move
   arrivals, queued moves, recent fsync p50/p95, queued client outbox frames,
   broadcast lag p95 and snapshot capture state every 100 ms. It chooses a
   maximum batch in `[SIM_MAP_ADAPTIVE_MIN, SIM_MAP_ADAPTIVE_MAX]` and a
@@ -1102,9 +1104,9 @@ The default durability settings are:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SIM_MAP_DATA_DIR` | `data` | WAL and snapshot directory |
-| `SIM_MAP_WAL_GROUP` | `64` | Maximum consecutive moves per commit fsync |
+| `SIM_MAP_WAL_GROUP` | `64` | Fallback maximum per commit when adaptive is off |
 | `SIM_MAP_WAL_SYNC` | `1` | Enable WAL `fsync` |
-| `SIM_MAP_ADAPTIVE` | `0` | Use the bounded adaptive commit controller |
+| `SIM_MAP_ADAPTIVE` | `1` | Adaptive commit controller (`0` = fixed fallback) |
 | `SIM_MAP_ADAPTIVE_MIN` | `1` | Minimum adaptive batch size |
 | `SIM_MAP_ADAPTIVE_MAX` | `256` | Maximum adaptive batch size |
 | `SIM_MAP_ADAPTIVE_MIN_DELAY_US` | `0` | Minimum group-formation delay |
