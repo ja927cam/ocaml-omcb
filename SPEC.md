@@ -1137,7 +1137,9 @@ checksum            int64 (FNV-1a 64 over everything before the footer)
 
 All array values are big-endian 64-bit words. The header's ledger head must be
 `sequence + 1`; the loader rejects a header that violates this or whose counts
-or file length do not match the running server.
+or file length do not match the running server. Writing the file takes about
+1.3 s on tmpfs and 2.6 s on the reference btrfs home filesystem; loading it
+takes about 1.2 s.
 
 ### Consistent snapshot boundary
 

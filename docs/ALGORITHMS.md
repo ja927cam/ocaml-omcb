@@ -796,18 +796,30 @@ square. The end-to-end crash suite compares this digest before and after a
 kill, rather than checking a few representative squares, and also checks
 specific cross-board and special-move squares.
 
-Measured on the reference machine:
+Measured on the reference machine (16 cores, btrfs home with
+`compress=zstd:3`; tmpfs noted for comparison):
 
-- 536,777,268-byte snapshot write (including checksum and fsync): ~1.3 s;
-- snapshot load and recovery: ~0.9-1.9 s;
+- 536,777,268-byte snapshot write (including checksum and fsync): ~2.6 s on
+  btrfs, ~1.3 s on tmpfs;
+- snapshot load and recovery: ~1.2 s on btrfs, ~0.9-1.9 s in the unit tests;
 - 37,538-record WAL replay: ~0.4 s;
-- 200 synchronously durable moves: ~0.3 s replay.
+- 200 synchronously durable moves: ~0.3 s replay;
+- 37,500 acknowledged moves with synchronous fsync: 73.6 s (~510 moves/s) on
+  btrfs, ~11.6 s on tmpfs;
+- default load (40 clients, 100 moves): 1,065 requests/s and move p50 35.0 ms
+  with fsync, versus 1,855 requests/s and 2.4 ms with `SIM_MAP_WAL_SYNC=0`;
+- stress load (80 clients, 200 moves): 1,546 requests/s, move p50 57.2 ms,
+  event lag p50 63.9 ms, zero errors;
+- 1,020-client scaling: 4,540 requests/s, move p50 202.3 ms, event lag p50
+  236.3 ms, CPU 41.5% average (the worker is often blocked on fsync), 687 MiB
+  RSS, 1,033 fds, zero errors.
 
-Synchronous fsync per move is the default. If disk latency becomes the
-bottleneck, the next step is group commit: prepare a batch, append all records,
+Synchronous fsync per move is the default. These measurements make group
+commit the next practical optimisation: prepare a batch, append all records,
 fsync once, then apply and publish the batch. That preserves the
-durable-before-ack invariant while amortising fsync; it is deliberately not
-enabled until measured need.
+durable-before-ack invariant while amortising the ~1.4 ms btrfs commit and its
+tens-of-milliseconds tail spikes. It is deliberately not enabled yet; the
+current implementation is correct and fail-stop, just disk-latency bound.
 
 ### Fault injection and tests
 

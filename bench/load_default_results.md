@@ -1,37 +1,37 @@
 # Live load test results
 
-Profile: default
+Profile: default-disk-sync
 
-Generated: 2026-11-23T00:06:18.528Z
+Generated: 2026-11-24T10:17:29.823Z
 
 ## Load
 
 - 40 active clients, 4 silent clients, high subscription distribution
 - 596 requests: 44 connections, 44 subscriptions, 408 snapshots, 100 moves
 - 20 move drivers on a 10 x 10 fresh block, 25 x 25 subscriptions
-- Duration: 319 ms, throughput 1870 requests/s
+- Duration: 560 ms, throughput 1065 requests/s
 
 ## Latency
 
-- Snapshot RTT: p50 1.6 ms, p95 8.2 ms, p99 9.3 ms, max 9.4 ms
-- Move RTT: p50 1.8 ms, p95 4.5 ms, p99 6.6 ms, max 6.6 ms
-- Client event delivery lag: p50 3.9 ms, p95 6.3 ms, p99 7.9 ms, max 8.7 ms
+- Snapshot RTT: p50 2.6 ms, p95 9.1 ms, p99 10.0 ms, max 10.3 ms
+- Move RTT: p50 35.0 ms, p95 128.8 ms, p99 130.3 ms, max 130.3 ms
+- Client event delivery lag: p50 38.9 ms, p95 132.1 ms, p99 133.2 ms, max 142.0 ms
 
 ## Server pipeline
 
-- receive → submit: p50 0.000 ms, p95 0.001 ms, p99 0.003 ms, max 0.003 ms (n=100)
-- worker queue wait: p50 0.019 ms, p95 0.066 ms, p99 0.234 ms, max 0.234 ms (n=100)
-- move processing: p50 0.001 ms, p95 0.002 ms, p99 0.006 ms, max 0.006 ms (n=100)
-- commit → broadcaster: p50 0.000 ms, p95 0.001 ms, p99 0.002 ms, max 0.002 ms (n=100)
-- broadcast wait: p50 0.069 ms, p95 0.262 ms, p99 0.345 ms, max 0.345 ms (n=100)
-- recipient lookup: p50 0.003 ms, p95 0.005 ms, p99 0.007 ms, max 0.007 ms (n=100)
-- event encoding: p50 0.000 ms, p95 0.001 ms, p99 0.002 ms, max 0.002 ms (n=100)
-- outbox enqueue: p50 0.002 ms, p95 0.006 ms, p99 0.010 ms, max 0.010 ms (n=100)
-- WebSocket write: p50 0.010 ms, p95 0.017 ms, p99 0.032 ms, max 0.417 ms (n=334)
-- end-to-end broadcast: p50 1.982 ms, p95 2.980 ms, p99 3.157 ms, max 3.157 ms (n=100)
+- receive → submit: p50 0.000 ms, p95 0.003 ms, p99 0.004 ms, max 0.004 ms (n=100)
+- worker queue wait: p50 10.308 ms, p95 106.269 ms, p99 111.932 ms, max 111.932 ms (n=100)
+- move processing: p50 1.393 ms, p95 1.801 ms, p99 82.463 ms, max 82.463 ms (n=100)
+- commit → broadcaster: p50 0.001 ms, p95 0.005 ms, p99 0.009 ms, max 0.009 ms (n=100)
+- broadcast wait: p50 9.419 ms, p95 20.735 ms, p99 30.858 ms, max 30.858 ms (n=100)
+- recipient lookup: p50 0.004 ms, p95 0.010 ms, p99 0.012 ms, max 0.012 ms (n=100)
+- event encoding: p50 0.000 ms, p95 0.002 ms, p99 0.003 ms, max 0.003 ms (n=100)
+- outbox enqueue: p50 0.003 ms, p95 0.016 ms, p99 0.522 ms, max 0.522 ms (n=100)
+- WebSocket write: p50 0.016 ms, p95 0.032 ms, p99 0.097 ms, max 0.788 ms (n=295)
+- end-to-end broadcast: p50 23.464 ms, p95 116.002 ms, p99 126.272 ms, max 126.272 ms (n=100)
 
 - Broadcasts: 100 events, 40.0 recipients/event average, 40 max
-- Outbox: 0 max depth, 256 capacity, 942 enqueues
+- Outbox: 0 max depth, 256 capacity, 903 enqueues
 - Drops/failures: 0 dropped events, 0 send failures, 0 full-outbox unregisters
 
 ## Accuracy
@@ -45,12 +45,6 @@ Generated: 2026-11-23T00:06:18.528Z
 
 ## Server resources
 
-- RSS: 518 MiB baseline, 526 MiB peak, 527 MiB after close requests
-- fds: 7 baseline, 51 with clients, 51 peak, 52 after close requests
-- CPU: 9.4% average, 19.5% peak; 0 idle ticks/s after close requests
-
-Post-exit fds/RSS/CPU are appended by `bench/load_after.js`.
-
-## After the load process exits
-
-- fds: 6, RSS: 527 MiB, idle: 0 ticks/s
+- RSS: 534 MiB baseline, 543 MiB peak, 543 MiB after close requests
+- fds: 8 baseline, 52 with clients, 52 peak, 53 after close requests
+- CPU: 8.9% average, 19.6% peak; 0 idle ticks/s after close requests

@@ -1,6 +1,6 @@
 {
-  "generated": "2026-11-23T00:06:18.528Z",
-  "label": "default",
+  "generated": "2026-11-24T10:17:29.823Z",
+  "label": "default-disk-sync",
   "profile": {
     "clients": 40,
     "silent_clients": 4,
@@ -18,39 +18,39 @@
     "moves": 100,
     "requests": 596
   },
-  "duration_ms": 318.64590799999996,
-  "throughput_requests_per_second": 1870.4147300708473,
+  "duration_ms": 559.629741,
+  "throughput_requests_per_second": 1064.9898608587353,
   "snapshot_rtt": {
     "n": 400,
-    "mean_ms": 2.447266137500001,
-    "p50_ms": 1.6237280000000283,
-    "p95_ms": 8.220307999999989,
-    "p99_ms": 9.261484999999993,
-    "max_ms": 9.405777
+    "mean_ms": 3.108145159999999,
+    "p50_ms": 2.5632830000000126,
+    "p95_ms": 9.11761800000005,
+    "p99_ms": 10.045681000000002,
+    "max_ms": 10.298195000000021
   },
   "silent_snapshot_rtt": {
     "n": 8,
-    "mean_ms": 0.16570924999999193,
-    "p50_ms": 0.17621300000001838,
-    "p95_ms": 0.22872200000000475,
-    "p99_ms": 0.22872200000000475,
-    "max_ms": 0.22872200000000475
+    "mean_ms": 0.1659041249999902,
+    "p50_ms": 0.20330200000000787,
+    "p95_ms": 0.30047400000000835,
+    "p99_ms": 0.30047400000000835,
+    "max_ms": 0.30047400000000835
   },
   "move_rtt": {
     "n": 100,
-    "mean_ms": 2.4328314299999994,
-    "p50_ms": 1.7871360000000323,
-    "p95_ms": 4.5273820000000455,
-    "p99_ms": 6.64915000000002,
-    "max_ms": 6.64915000000002
+    "mean_ms": 48.08986779,
+    "p50_ms": 34.991187000000025,
+    "p95_ms": 128.816707,
+    "p99_ms": 130.257091,
+    "max_ms": 130.257091
   },
   "event_delivery_lag": {
     "n": 4000,
-    "mean_ms": 3.8832331912500053,
-    "p50_ms": 3.9056580000000167,
-    "p95_ms": 6.277107000000001,
-    "p99_ms": 7.887990000000002,
-    "max_ms": 8.681700000000035
+    "mean_ms": 54.879000250250186,
+    "p50_ms": 38.87688200000002,
+    "p95_ms": 132.097617,
+    "p99_ms": 133.16724499999998,
+    "max_ms": 142.00415600000002
   },
   "accuracy": {
     "snapshots_ok": 400,
@@ -84,121 +84,119 @@
     }
   },
   "resources": {
-    "rss_baseline_kb": 530036,
-    "rss_before_kb": 531340,
-    "rss_peak_kb": 539112,
-    "fds_baseline": 7,
-    "fds_before": 51,
-    "fds_peak": 51,
-    "cpu_average_percent": 9.414839245323057,
-    "cpu_peak_percent": 19.460617650229473,
+    "rss_baseline_kb": 546352,
+    "rss_before_kb": 547804,
+    "rss_peak_kb": 555616,
+    "fds_baseline": 8,
+    "fds_before": 52,
+    "fds_peak": 52,
+    "cpu_average_percent": 8.934478698479323,
+    "cpu_peak_percent": 19.6053536417611,
     "cpu_peak_window_ms": 100,
-    "fds_after_close_requests": 52,
-    "rss_after_close_requests_kb": 539340,
+    "fds_after_close_requests": 53,
+    "rss_after_close_requests_kb": 555716,
     "cpu_idle_ticks_per_second": 0,
-    "rss_after_exit_kb": 539356,
-    "fds_after_exit": 6,
-    "cpu_idle_after_exit_ticks_per_second": 0
+    "post_exit_error": "ENOENT: no such file or directory, open '/proc/1841304/stat'"
   },
   "server_metrics": {
-    "started_ns": 223258511419931,
-    "uptime_ms": 2094.14148,
+    "started_ns": 346329060957196,
+    "uptime_ms": 2840.659253,
     "stages": {
       "receive_to_submit": {
         "n": 100,
-        "mean_ms": 0.000359,
-        "p50_ms": 0.000191,
-        "p95_ms": 0.001353,
-        "p99_ms": 0.003467,
-        "max_ms": 0.003467,
-        "total_ms": 0.03592
+        "mean_ms": 0.000502,
+        "p50_ms": 0.000241,
+        "p95_ms": 0.003096,
+        "p99_ms": 0.003647,
+        "max_ms": 0.003647,
+        "total_ms": 0.05022
       },
       "worker_queue_wait": {
         "n": 100,
-        "mean_ms": 0.025749,
-        "p50_ms": 0.019056,
-        "p95_ms": 0.066346,
-        "p99_ms": 0.234102,
-        "max_ms": 0.234102,
-        "total_ms": 2.574968
+        "mean_ms": 24.865615,
+        "p50_ms": 10.307923,
+        "p95_ms": 106.268652,
+        "p99_ms": 111.932426,
+        "max_ms": 111.932426,
+        "total_ms": 2486.561586
       },
       "move_processing": {
         "n": 100,
-        "mean_ms": 0.00077,
-        "p50_ms": 0.000571,
-        "p95_ms": 0.002425,
-        "p99_ms": 0.006292,
-        "max_ms": 0.006292,
-        "total_ms": 0.077013
+        "mean_ms": 2.337443,
+        "p50_ms": 1.392896,
+        "p95_ms": 1.801011,
+        "p99_ms": 82.462876,
+        "max_ms": 82.462876,
+        "total_ms": 233.744352
       },
       "commit_to_broadcast": {
         "n": 100,
-        "mean_ms": 0.000369,
-        "p50_ms": 0.00025,
-        "p95_ms": 0.001263,
-        "p99_ms": 0.001823,
-        "max_ms": 0.001823,
-        "total_ms": 0.036985
+        "mean_ms": 0.00175,
+        "p50_ms": 0.001132,
+        "p95_ms": 0.005079,
+        "p99_ms": 0.008677,
+        "max_ms": 0.008677,
+        "total_ms": 0.175086
       },
       "broadcast_wait": {
         "n": 100,
-        "mean_ms": 0.086525,
-        "p50_ms": 0.06866,
-        "p95_ms": 0.262396,
-        "p99_ms": 0.345292,
-        "max_ms": 0.345292,
-        "total_ms": 8.652513
+        "mean_ms": 9.851615,
+        "p50_ms": 9.419345,
+        "p95_ms": 20.735262,
+        "p99_ms": 30.858177,
+        "max_ms": 30.858177,
+        "total_ms": 985.161573
       },
       "broadcast_dispatch": {
         "n": 100,
-        "mean_ms": 0.003181,
-        "p50_ms": 0.002996,
-        "p95_ms": 0.00536,
-        "p99_ms": 0.007384,
-        "max_ms": 0.007384,
-        "total_ms": 0.318168
+        "mean_ms": 0.004856,
+        "p50_ms": 0.004308,
+        "p95_ms": 0.010039,
+        "p99_ms": 0.011682,
+        "max_ms": 0.011682,
+        "total_ms": 0.485657
       },
       "encoding": {
         "n": 100,
-        "mean_ms": 0.000375,
-        "p50_ms": 0.00031,
-        "p95_ms": 0.000902,
-        "p99_ms": 0.001513,
-        "max_ms": 0.001513,
-        "total_ms": 0.037592
+        "mean_ms": 0.00067,
+        "p50_ms": 0.000441,
+        "p95_ms": 0.002354,
+        "p99_ms": 0.002885,
+        "max_ms": 0.002885,
+        "total_ms": 0.067043
       },
       "outbox_enqueue": {
         "n": 100,
-        "mean_ms": 0.002637,
-        "p50_ms": 0.002144,
-        "p95_ms": 0.006232,
-        "p99_ms": 0.010099,
-        "max_ms": 0.010099,
-        "total_ms": 0.26378
+        "mean_ms": 0.009593,
+        "p50_ms": 0.003206,
+        "p95_ms": 0.0158,
+        "p99_ms": 0.522271,
+        "max_ms": 0.522271,
+        "total_ms": 0.959355
       },
       "websocket_write": {
-        "n": 334,
-        "mean_ms": 0.013183,
-        "p50_ms": 0.010309,
-        "p95_ms": 0.016711,
-        "p99_ms": 0.03183,
-        "max_ms": 0.416517,
-        "total_ms": 4.403373
+        "n": 295,
+        "mean_ms": 0.021875,
+        "p50_ms": 0.01576,
+        "p95_ms": 0.031649,
+        "p99_ms": 0.097463,
+        "max_ms": 0.78779,
+        "total_ms": 6.453261
       },
       "end_to_end_broadcast": {
         "n": 100,
-        "mean_ms": 1.957895,
-        "p50_ms": 1.981523,
-        "p95_ms": 2.980059,
-        "p99_ms": 3.156692,
-        "max_ms": 3.156692,
-        "total_ms": 195.789553
+        "mean_ms": 44.489794,
+        "p50_ms": 23.463935,
+        "p95_ms": 116.002288,
+        "p99_ms": 126.271728,
+        "max_ms": 126.271728,
+        "total_ms": 4448.979464
       }
     },
     "counters": {
       "events_broadcast": 100,
       "recipients": 4000,
-      "outbox_enqueues": 942,
+      "outbox_enqueues": 903,
       "outbox_dropped": 0,
       "send_failures": 0,
       "outbox_full_unregisters": 0,
@@ -206,16 +204,16 @@
       "max_outbox_depth": 1,
       "max_recipients": 40
     },
-    "end_to_end_p95_ms": 2.980059,
+    "end_to_end_p95_ms": 116.002288,
     "worker": {
       "queue_depth": 0,
       "queue_capacity": 4096,
       "requests_processed": 608,
       "requests_rejected": 0,
-      "avg_queue_wait_ms": 0.119492,
-      "max_queue_wait_ms": 4.75401,
-      "avg_processing_ms": 0.000536,
-      "max_processing_ms": 0.007524
+      "avg_queue_wait_ms": 4.215137,
+      "max_queue_wait_ms": 111.932496,
+      "avg_processing_ms": 0.384985,
+      "max_processing_ms": 82.462876
     },
     "connections": {
       "clients": 44,
@@ -223,8 +221,20 @@
       "max_outbox_depth": 0,
       "outbox_capacity": 256,
       "event_batching": true
+    },
+    "persistence": {
+      "data_dir": "/home/james/Work/sim-map/bench-data",
+      "sequence": "100",
+      "wal_segments": 1,
+      "wal_bytes": "8416",
+      "snapshots": 0,
+      "last_snapshot_sequence": null,
+      "snapshot_pending": false,
+      "snapshot_write_ms": 0,
+      "commits_since_snapshot": 100,
+      "sync": true,
+      "truncated_wal": false
     }
   },
-  "metrics_error": null,
-  "post_exit_measured_at": "2026-11-23T00:06:24.073Z"
+  "metrics_error": null
 }

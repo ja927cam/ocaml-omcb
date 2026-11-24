@@ -108,19 +108,28 @@ Markdown. `ws_write_failure_test.js` covers the deliberate dead-socket path.
 
 ### Recorded results
 
-The latest runs on the benchmark machine:
+Current default: synchronous WAL fsync, data directory on `/home` (btrfs,
+`compress=zstd:3`), event batching enabled.
 
-| Profile | Requests | Throughput | Snapshot p50 | Move p50 | Event lag p50 | CPU avg / peak | RSS | fds peak → after exit |
+| Profile | Requests | Throughput | Snapshot p50 | Move p50 | Event lag p50 | CPU avg / peak | RSS peak | fds peak |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `default` | 596 | ~1,870/s | 1.6 ms | 1.8 ms | 3.9 ms | 9.4% / 19.5% | 526 MiB peak | 51 → 6 |
-| `stress` | 1,176 | ~3,318/s | 3.5 ms | 7.8 ms | 8.5 ms | 22.6% / 69.1% | 538 MiB peak | 91 → 6 |
+| `default` | 596 | 1,065/s | 2.6 ms | 35.0 ms | 38.9 ms | 8.9% / 19.6% | 543 MiB | 52 |
+| `stress` | 1,176 | 1,546/s | 3.1 ms | 57.2 ms | 63.9 ms | 15.8% / 29.7% | 552 MiB | 92 |
 
 Both runs had 100% move acceptance, 100% valid snapshots, exactly one event per
 move per active client, no duplicates or misses, no events leaked to silent
-clients, and no unexpected closes. The final fds were measured after the load
-process exited. Event frames are batched: the default run used 334 WebSocket
-writes for 4,000 recipient events, and the stress run used 1,306 writes for
-16,000.
+clients, and no unexpected closes.
+
+The same profiles with the WAL on tmpfs, or with `SIM_MAP_WAL_SYNC=0`, are much
+faster: `default` ~1,822-2,006 requests/s with move p50 2.6 ms; `stress`
+~3,112 requests/s with move p50 9.0 ms. On the real filesystem, fsync adds
+about 1.4 ms at p50 and 30-80 ms at p99, which is the dominant move-latency
+term. A 37,500-move acknowledged stream took 73.6 s (about 510 moves/s) with
+synchronous fsync on btrfs, versus about 11.6 s on tmpfs. This is the explicit
+durable-before-publish trade-off; group commit is the next optimisation.
+
+Event frames are batched: the default run used 334 WebSocket writes for 4,000
+recipient events, and the stress run used 1,306 writes for 16,000.
 
 ### Server pipeline metrics
 
@@ -193,7 +202,33 @@ measurement, then stops only that child. It writes `scale_results.json` and
 `scale_results.js` after every level. If a level is unstable the runner stops
 by default (`SCALE_STOP_ON_FAIL=0` continues).
 
-Measured (1020 clients was the largest completed level):
+### Current default: synchronous persistence on btrfs
+
+`SCALE_CLIENTS=0,20,40,80,160,320,640,800,1020`, 100 moves and 4 snapshots per
+client, data directory on `/home`:
+
+| Clients | Requests | Req/s | Snapshot p50 | Move p50 | Event lag p50 | CPU avg | RSS | fds | Errors |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 20 | 236 | 441 | 1.4 ms | 30.2 ms | 31.8 ms | 7.5% | 538 MiB | 32 | 0 |
+| 40 | 356 | 744 | 1.9 ms | 72.9 ms | 75.5 ms | 8.4% | 541 MiB | 52 | 0 |
+| 80 | 596 | 1,149 | 6.2 ms | 96.3 ms | 99.1 ms | 13.5% | 546 MiB | 92 | 0 |
+| 160 | 1,076 | 1,828 | 9.3 ms | 55.9 ms | 66.0 ms | 17.0% | 558 MiB | 172 | 0 |
+| 320 | 2,036 | 2,840 | 19.9 ms | 102.4 ms | 115.6 ms | 25.1% | 581 MiB | 332 | 0 |
+| 640 | 3,956 | 3,203 | 37.7 ms | 209.9 ms | 248.3 ms | 31.6% | 636 MiB | 652 | 0 |
+| 800 | 4,916 | 4,075 | 52.1 ms | 197.6 ms | 219.4 ms | 39.0% | 655 MiB | 812 | 0 |
+| 1,020 | 6,236 | 4,540 | 60.8 ms | 202.3 ms | 236.3 ms | 41.5% | 687 MiB | 1,033 | 0 |
+
+Every level delivered every event exactly once, with zero errors. Move latency
+is dominated by fsync: the worker serialises commits, and individual btrfs
+fsyncs occasionally spike to tens of milliseconds (visible in the non-monotonic
+40/80/160 ms and the 1,020-client p95 of 241 ms). CPU average falls at the top
+end because the worker is blocked on durability, not because the fan-out became
+cheap. Group commit is the next optimisation if sustained move throughput
+matters.
+
+### Earlier baseline: no synchronous fsync / tmpfs
+
+The same matrix before persistence was added:
 
 | Clients | Requests | Req/s | Snapshot p50 | Move p50 | Event lag p50 | CPU avg | RSS | fds | Errors |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -209,17 +244,11 @@ Measured (1020 clients was the largest completed level):
 | 800 | 4,916 | 6,166 | 44.5 ms | 55.3 ms | 66.6 ms | 57.7% | 639 MiB | 812 | 0 |
 | 1,020 | 6,236 | 6,976 | 55.4 ms | 62.2 ms | 85.5 ms | 60.4% | 666 MiB | 1,032 | 0 |
 
-Every level delivered every event exactly once, with zero missing, duplicate,
-extra, wrong-board, wrong-revision, wrong-change or wrong-request-ID events.
-Outbox depth stayed at 1 and there were zero drops/failures because the
-browser-like clients read continuously.
-
-The run is partly **client-harness limited** at the top end: the single Node
-process parses and applies 102,000 events and drives 100 moves while the server
-sends them. Server CPU remains below 62%, so the rising move RTT is not simply
-server saturation. Batching keeps the server stage costs low: at 1,020 clients,
-recipient lookup p50 is ~0.13 ms and outbox enqueue p50 is ~0.11 ms; the
-end-to-end time is dominated by the batch window and client processing.
+This baseline is partly client-harness limited at the top end: the single Node
+process parses and applies 102,000 events while driving 100 moves. At 1,020
+clients, recipient lookup p50 is ~0.13 ms and outbox enqueue p50 is ~0.11 ms;
+the end-to-end time is dominated by the batch window and client processing.
+The persistence run above is instead dominated by per-move fsync.
 
 ## Subscription distributions
 

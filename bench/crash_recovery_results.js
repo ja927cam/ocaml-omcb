@@ -1,52 +1,52 @@
 window.CRASH_RECOVERY_RESULTS = {
-  "generated": "2026-11-23T22:52:27.115Z",
+  "generated": "2026-11-24T10:24:57.644Z",
   "passed": 9,
   "failed": 0,
   "cases": [
     {
       "name": "empty world restart",
       "ok": true,
-      "duration_ms": 2886
+      "duration_ms": 2883
     },
     {
       "name": "several moves restart",
       "ok": true,
-      "duration_ms": 4512
+      "duration_ms": 4811
     },
     {
       "name": "cross-board move restart",
       "ok": true,
-      "duration_ms": 4561
+      "duration_ms": 5347
     },
     {
       "name": "castling and en passant restart",
       "ok": true,
-      "duration_ms": 4601
+      "duration_ms": 4756
     },
     {
       "name": "torn trailing WAL record",
       "ok": true,
-      "duration_ms": 2924
+      "duration_ms": 2997
     },
     {
       "name": "crash during snapshot temp write",
       "ok": true,
-      "duration_ms": 3714
+      "duration_ms": 4330
     },
     {
       "name": "crash after snapshot rename before WAL cleanup",
       "ok": true,
-      "duration_ms": 6123
+      "duration_ms": 5579
     },
     {
       "name": "corrupt newest snapshot falls back",
       "ok": true,
-      "duration_ms": 12424
+      "duration_ms": 12501
     },
     {
       "name": "large WAL replay",
       "ok": true,
-      "duration_ms": 2828
+      "duration_ms": 3348
     }
   ]
 };

@@ -1,5 +1,5 @@
 window.CONSISTENCY_RESULTS = {
-  "generated": "2026-11-23T22:45:54.487Z",
+  "generated": "2026-11-24T10:23:57.339Z",
   "races": 20,
   "buffered_after_snapshot": 20,
   "snapshot_contains_move": 0,
