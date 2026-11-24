@@ -11,6 +11,7 @@
   wal_format
   snapshot_format
   persistence
+  adaptive_commit
   move
   move_validator
   move_processor

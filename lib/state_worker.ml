@@ -2,6 +2,8 @@ open Lwt.Infix
 
 type config = { queue_capacity : int }
 
+type commit_policy = { max_batch : int; max_delay_s : float }
+
 type submit_error =
   | Queue_full
   | Worker_stopped
@@ -11,7 +13,10 @@ type submit_error =
 type metrics = {
   queue_depth : int;
   queue_capacity : int;
+  move_queue_depth : int;
   requests_processed : int64;
+  moves_processed : int64;
+  moves_submitted : int64;
   requests_rejected : int64;
   total_processing_time_ns : int64;
   max_processing_time_ns : int64;
@@ -64,7 +69,10 @@ type t = {
   mutable failed : bool;
   mutable notification_pending : bool;
   mutable depth : int;
+  mutable move_depth : int;
   mutable requests_processed : int64;
+  mutable moves_processed : int64;
+  mutable moves_submitted : int64;
   mutable requests_rejected : int64;
   mutable total_processing_time_ns : int64;
   mutable max_processing_time_ns : int64;
@@ -76,7 +84,7 @@ type t = {
   on_commit : committed -> unit;
   precommit : Game_state.t -> Move_engine.commit -> unit;
   on_snapshot : Game_state.t -> unit;
-  commit_batch : int;
+  commit_policy : unit -> commit_policy;
   commit_group : int -> unit;
 }
 
@@ -99,6 +107,7 @@ let fail_queue t exn =
     t.queue;
   Queue.clear t.queue;
   t.depth <- 0;
+  t.move_depth <- 0;
   finish t
 
 let update_metrics t ~started_ns ~finished_ns item =
@@ -165,6 +174,7 @@ let process_move t item request =
    | Some timing -> Metrics.mark_committed timing finished_ns
    | None -> ());
   update_metrics t ~started_ns ~finished_ns item;
+  t.moves_processed <- Int64.succ t.moves_processed;
   match result with
   | Move_engine.Accepted accepted ->
     (result, Some (committed_of_accepted t accepted item.timing))
@@ -183,6 +193,9 @@ let publish_move t item result committed =
   Lwt.wakeup_later item.promise (Ok (Move_result result))
 
 let process_move_group t =
+  let policy = t.commit_policy () in
+  let max_batch = max 1 policy.max_batch in
+  let max_delay = max 0. policy.max_delay_s in
   let rec take acc remaining =
     if remaining = 0 || Queue.is_empty t.queue then List.rev acc
     else
@@ -190,34 +203,52 @@ let process_move_group t =
       | Move _ ->
         let item = Queue.take t.queue in
         t.depth <- t.depth - 1;
+        t.move_depth <- max 0 (t.move_depth - 1);
         take (item :: acc) (remaining - 1)
       | Snapshot _ | Snapshot_world -> List.rev acc
   in
-  let items = take [] t.commit_batch in
-  let processed = ref [] in
-  (try
-     List.iter
-       (fun item ->
-         match item.request with
-         | Move request ->
-           let result, committed = process_move t item request in
-           processed := (item, result, committed) :: !processed
-         | Snapshot _ | Snapshot_world -> assert false)
-       items;
-     t.commit_group (List.length items);
-     List.iter
-       (fun (item, result, committed) -> publish_move t item result committed)
-       (List.rev !processed);
-     true
-   with exn ->
-     Printf.eprintf "state worker commit group failed: %s\n%!"
-       (Printexc.to_string exn);
-     List.iter
-       (fun item ->
-         Lwt.wakeup_later item.promise (Error Worker_failed))
-       items;
-     fail_queue t exn;
-     false)
+  let initial = take [] max_batch in
+  let next_is_snapshot =
+    not (Queue.is_empty t.queue)
+    &&
+    match (Queue.peek t.queue).request with
+    | Move _ -> false
+    | Snapshot _ | Snapshot_world -> true
+  in
+  let should_wait =
+    List.length initial < max_batch && max_delay > 0. && t.accepting
+    && not next_is_snapshot
+  in
+  let finish items =
+    let processed = ref [] in
+    try
+      List.iter
+        (fun item ->
+          match item.request with
+          | Move request ->
+            let result, committed = process_move t item request in
+            processed := (item, result, committed) :: !processed
+          | Snapshot _ | Snapshot_world -> assert false)
+        items;
+      t.commit_group (List.length items);
+      List.iter
+        (fun (item, result, committed) -> publish_move t item result committed)
+        (List.rev !processed);
+      (true, List.length items)
+    with exn ->
+      Printf.eprintf "state worker commit group failed: %s\n%!"
+        (Printexc.to_string exn);
+      List.iter
+        (fun item -> Lwt.wakeup_later item.promise (Error Worker_failed))
+        items;
+      fail_queue t exn;
+      (false, List.length items)
+  in
+  if should_wait then
+    Lwt_unix.sleep max_delay >>= fun () ->
+    let more = take [] (max_batch - List.length initial) in
+    Lwt.return (finish (initial @ more))
+  else Lwt.return (finish initial)
 
 let process_one t item =
   let started_ns = now_ns () in
@@ -263,9 +294,8 @@ let rec loop t budget =
   else
     match (Queue.peek t.queue).request with
     | Move _ ->
-      if process_move_group t then
-        loop t (max 0 (budget - t.commit_batch))
-      else Lwt.return_unit
+      process_move_group t >>= fun (ok, count) ->
+      if ok then loop t (max 0 (budget - count)) else Lwt.return_unit
     | Snapshot _ | Snapshot_world ->
       let item = Queue.take t.queue in
       t.depth <- t.depth - 1;
@@ -274,13 +304,11 @@ let rec loop t budget =
 let start ?(on_commit = fun _ -> ())
     ?(precommit = fun _ _ -> ())
     ?(on_snapshot = fun _ -> ())
-    ?(commit_batch = 1)
+    ?(commit_policy = fun () -> { max_batch = 1; max_delay_s = 0. })
     ?(commit_group = fun _ -> ())
     ~(config : config) state =
   if config.queue_capacity <= 0 then
     invalid_arg "State_worker.start: queue_capacity must be positive";
-  if commit_batch < 1 then
-    invalid_arg "State_worker.start: commit_batch must be positive";
   let finished, finished_u = Lwt.wait () in
   let worker =
     {
@@ -292,7 +320,10 @@ let start ?(on_commit = fun _ -> ())
       failed = false;
       notification_pending = false;
       depth = 0;
+      move_depth = 0;
       requests_processed = 0L;
+      moves_processed = 0L;
+      moves_submitted = 0L;
       requests_rejected = 0L;
       total_processing_time_ns = 0L;
       max_processing_time_ns = 0L;
@@ -304,7 +335,7 @@ let start ?(on_commit = fun _ -> ())
       on_commit;
       precommit;
       on_snapshot;
-      commit_batch;
+      commit_policy;
       commit_group;
     }
   in
@@ -334,6 +365,11 @@ let enqueue t ?timing request =
       { request; promise = resolver; enqueued_ns = now_ns (); timing }
       t.queue;
     t.depth <- t.depth + 1;
+    (match request with
+     | Move _ ->
+       t.move_depth <- t.move_depth + 1;
+       t.moves_submitted <- Int64.succ t.moves_submitted
+     | _ -> ());
     (match timing with
      | Some timing -> Metrics.mark_submitted timing
      | None -> ());
@@ -380,7 +416,10 @@ let metrics t =
   {
     queue_depth = t.depth;
     queue_capacity = t.settings.queue_capacity;
+    move_queue_depth = t.move_depth;
     requests_processed = t.requests_processed;
+    moves_processed = t.moves_processed;
+    moves_submitted = t.moves_submitted;
     requests_rejected = t.requests_rejected;
     total_processing_time_ns = t.total_processing_time_ns;
     max_processing_time_ns = t.max_processing_time_ns;

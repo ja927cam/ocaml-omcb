@@ -1,5 +1,5 @@
 (tests
- (names test_piece_board test_move test_game_state test_engine test_worker test_connection_manager test_wsd test_persistence)
+ (names test_piece_board test_move test_game_state test_engine test_worker test_connection_manager test_wsd test_persistence test_adaptive_commit)
  (libraries sim_map_lib lwt.unix httpun-ws bigstringaf))
 
 (test

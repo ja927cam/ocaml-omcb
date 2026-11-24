@@ -7,6 +7,11 @@
 
 type config = { queue_capacity : int }
 
+type commit_policy = {
+  max_batch : int;
+  max_delay_s : float;
+}
+
 type submit_error =
   | Queue_full
   | Worker_stopped
@@ -35,7 +40,10 @@ type committed = {
 type metrics = {
   queue_depth : int;
   queue_capacity : int;
+  move_queue_depth : int;
   requests_processed : int64;
+  moves_processed : int64;
+  moves_submitted : int64;
   requests_rejected : int64;
   total_processing_time_ns : int64;
   max_processing_time_ns : int64;
@@ -52,7 +60,7 @@ val start :
   ?on_commit:(committed -> unit) ->
   ?precommit:(Game_state.t -> Move_engine.commit -> unit) ->
   ?on_snapshot:(Game_state.t -> unit) ->
-  ?commit_batch:int ->
+  ?commit_policy:(unit -> commit_policy) ->
   ?commit_group:(int -> unit) ->
   config:config ->
   Game_state.t ->
@@ -65,15 +73,15 @@ val start :
 
     [precommit] runs synchronously inside a move after validation and before
     the first board write. It appends the transition to the WAL; raising
-    aborts the move and stops the worker. [commit_group] runs after a batch of
-    up to [commit_batch] consecutive moves has been applied; it must make
-    those transitions durable before returning. The worker publishes the
-    responses and broadcasts only after it returns. [on_snapshot] runs
-    synchronously when a world-snapshot request reaches the front of the
-    queue. It may copy the world but must not perform lengthy disk I/O.
+    aborts the move and stops the worker. [commit_policy] is queried for each
+    group; it returns the maximum batch and an optional formation delay.
+    [commit_group] runs after the batch has been applied; it must make those
+    transitions durable before returning. The worker publishes the responses
+    and broadcasts only after it returns. [on_snapshot] runs synchronously
+    when a world-snapshot request reaches the front of the queue. It may copy
+    the world but must not perform lengthy disk I/O.
 
-    @raise Invalid_argument if [queue_capacity] or [commit_batch] is not
-    positive. *)
+    @raise Invalid_argument if [queue_capacity] is not positive. *)
 
 val submit :
   ?timing:Metrics.move_timing ->

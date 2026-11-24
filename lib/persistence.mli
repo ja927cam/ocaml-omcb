@@ -17,8 +17,11 @@ type config = {
   (** [sync] enables WAL fsync. The commit policy decides how often
       {!sync} is called. *)
   group_size : int;
-  (** Maximum number of consecutive moves in one commit group. [1] is the
-      strict per-move mode. *)
+  (** Default maximum number of consecutive moves in one commit group. *)
+  strict_commit : bool;
+  (** When true, [before_commit] fsyncs before the engine applies the move.
+      Fixed group-size 1 uses this; group and adaptive modes defer the fsync
+      to [sync] after the batch. *)
   snapshot_every_moves : int;
   (** Request a snapshot after this many commits. [0] disables the move
       trigger. *)
@@ -77,6 +80,14 @@ val capture : t -> Game_state.t -> unit
 
 val wait_for_snapshot : t -> unit Lwt.t
 (** Resolve when no snapshot write is in progress. *)
+
+val snapshot_active : t -> bool
+(** True only while the worker is rotating the WAL and copying the world.
+    The asynchronous snapshot write is reported separately in
+    {!metrics_json} as [snapshot_writing]. *)
+
+val sync_percentiles : t -> float * float
+(** Recent WAL fsync p50 and p95 in microseconds. *)
 
 val last_sequence : t -> int64
 

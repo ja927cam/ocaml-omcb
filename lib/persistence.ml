@@ -4,6 +4,7 @@ type config = {
   data_dir : string;
   sync : bool;
   group_size : int;
+  strict_commit : bool;
   snapshot_every_moves : int;
   snapshot_every_seconds : float;
 }
@@ -13,6 +14,7 @@ let default_config ~data_dir =
     data_dir;
     sync = true;
     group_size = 1;
+    strict_commit = true;
     snapshot_every_moves = 100_000;
     snapshot_every_seconds = 600.;
   }
@@ -48,6 +50,7 @@ type t = {
   mutable last_snapshot_sequence : int64 option;
   mutable snapshot_pending : bool;
   mutable snapshot_in_progress : bool;
+  mutable snapshot_capturing : bool;
   mutable snapshot_write_ms : float;
   truncated_wal : bool;
   mutable closed : bool;
@@ -57,6 +60,10 @@ type t = {
   mutable batched_moves : int;
   mutable last_group_size : int;
   mutable last_sync_ms : float;
+  sync_samples : float array;
+  sync_times : float array;
+  mutable sync_next : int;
+  mutable sync_filled : int;
 }
 
 let now_ms () = Unix.gettimeofday () *. 1000.
@@ -671,6 +678,7 @@ let recover (config : config) (state : Game_state.t) =
         last_snapshot_sequence = !snapshot_sequence;
         snapshot_pending = false;
         snapshot_in_progress = false;
+        snapshot_capturing = false;
         snapshot_write_ms = 0.;
         truncated_wal = !truncated;
         closed = false;
@@ -680,6 +688,10 @@ let recover (config : config) (state : Game_state.t) =
         batched_moves = 0;
         last_group_size = 1;
         last_sync_ms = 0.;
+        sync_samples = Array.make 256 0.;
+        sync_times = Array.make 256 0.;
+        sync_next = 0;
+        sync_filled = 0;
       }
     in
     let duration_ms = now_ms () -. started in
@@ -712,6 +724,39 @@ let recover (config : config) (state : Game_state.t) =
 (* WAL append and snapshots                                                  *)
 (* ------------------------------------------------------------------------- *)
 
+let note_sync_latency (t : t) latency_ms =
+  t.sync_samples.(t.sync_next) <- latency_ms *. 1000.;
+  t.sync_times.(t.sync_next) <- now_ms ();
+  t.sync_next <- (t.sync_next + 1) mod Array.length t.sync_samples;
+  if t.sync_filled < Array.length t.sync_samples then
+    t.sync_filled <- t.sync_filled + 1
+
+(* Only the last few seconds describe the storage right now. Keeping the early
+   cold-start fsyncs in a 256-sample ring made p95 stay high for the whole run
+   when the workload issued only a few hundred commits. *)
+let sync_window_ms = 5_000.
+
+let sync_percentiles (t : t) =
+  let now = now_ms () in
+  let samples = ref [] in
+  let capacity = Array.length t.sync_samples in
+  for i = 0 to t.sync_filled - 1 do
+    let index =
+      if t.sync_filled < capacity then i
+      else (t.sync_next + i) mod capacity
+    in
+    if now -. t.sync_times.(index) <= sync_window_ms then
+      samples := t.sync_samples.(index) :: !samples
+  done;
+  let samples = Array.of_list !samples in
+  let n = Array.length samples in
+  if n = 0 then (0., 0.)
+  else begin
+    Array.sort Float.compare samples;
+    let at p = samples.(min (n - 1) (max 0 ((p * n) / 100))) in
+    (at 50, at 95)
+  end
+
 let append_bytes (t : t) bytes =
   write_all t.fd bytes 0 (Bytes.length bytes);
   t.dirty <- true;
@@ -730,6 +775,7 @@ let sync (t : t) ~moves =
         t.last_group_size <- moves
       end;
       t.last_sync_ms <- now_ms () -. started;
+      note_sync_latency t t.last_sync_ms;
       crash_point "wal-after-fsync"
     end
   end
@@ -791,7 +837,7 @@ let before_commit (t : t) (state : Game_state.t) (commit : Move_engine.commit) =
      crash_point "wal-partial-write"
    | _ -> ());
   append_bytes t frame;
-  if t.config.sync && t.config.group_size <= 1 then begin
+  if t.config.sync && t.config.strict_commit then begin
     (* Strict mode keeps the original ordering: durable before the engine
        applies the transition. Group mode defers this to [sync] after the
        batch, so later moves in the batch can validate against earlier ones. *)
@@ -803,6 +849,7 @@ let before_commit (t : t) (state : Game_state.t) (commit : Move_engine.commit) =
     t.batched_moves <- t.batched_moves + 1;
     t.last_group_size <- 1;
     t.last_sync_ms <- now_ms () -. started;
+    note_sync_latency t t.last_sync_ms;
     crash_point "wal-after-fsync"
   end;
   t.last_sequence <- commit.sequence;
@@ -884,6 +931,7 @@ let finish_snapshot (t : t) (copy : world_copy) path duration_ms =
   t.commits_since_snapshot <- 0;
   t.snapshot_pending <- false;
   t.snapshot_in_progress <- false;
+  t.snapshot_capturing <- false;
   Lwt_condition.broadcast t.snapshot_condition ();
   crash_point "snapshot-renamed";
   (match t.snapshots with
@@ -912,6 +960,7 @@ let write_snapshot (t : t) (copy : world_copy) =
 let snapshot_failed (t : t) exn =
   t.snapshot_pending <- false;
   t.snapshot_in_progress <- false;
+  t.snapshot_capturing <- false;
   Lwt_condition.broadcast t.snapshot_condition ();
   log "snapshot failed: %s" (Printexc.to_string exn)
 
@@ -920,9 +969,11 @@ let capture (t : t) (state : Game_state.t) =
   else begin
     t.snapshot_pending <- true;
     t.snapshot_in_progress <- true;
+    t.snapshot_capturing <- true;
     try
       rotate_wal t ~sequence:(Game_state.sequence state);
       let copy = capture_copy state in
+      t.snapshot_capturing <- false;
       Lwt.async (fun () ->
           Lwt.catch
             (fun () ->
@@ -932,6 +983,7 @@ let capture (t : t) (state : Game_state.t) =
               snapshot_failed t exn;
               Lwt.return_unit))
     with exn ->
+      t.snapshot_capturing <- false;
       snapshot_failed t exn
   end
 
@@ -955,6 +1007,7 @@ let rec wait_for_snapshot (t : t) =
   if not t.snapshot_in_progress then Lwt.return_unit
   else Lwt_condition.wait t.snapshot_condition >>= fun () -> wait_for_snapshot t
 
+let snapshot_active (t : t) = t.snapshot_capturing
 let last_sequence (t : t) = t.last_sequence
 
 let state_digest (state : Game_state.t) =
@@ -1007,6 +1060,14 @@ let metrics_json (t : t) =
          (if t.group_count = 0 then 0.
           else float_of_int t.batched_moves /. float_of_int t.group_count));
       ("last_sync_ms", `Float t.last_sync_ms);
+      ( "fsync_p50_us",
+        let p50, _ = sync_percentiles t in
+        `Float p50 );
+      ( "fsync_p95_us",
+        let _, p95 = sync_percentiles t in
+        `Float p95 );
+      ("snapshot_active", `Bool t.snapshot_capturing);
+      ("snapshot_writing", `Bool (t.snapshot_in_progress && not t.snapshot_capturing));
       ("dirty", `Bool t.dirty);
       ("truncated_wal", `Bool t.truncated_wal);
     ]

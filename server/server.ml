@@ -29,7 +29,10 @@ let worker_metrics_json (m : State_worker.metrics) =
     [
       ("queue_depth", `Int m.queue_depth);
       ("queue_capacity", `Int m.queue_capacity);
+      ("move_queue_depth", `Int m.move_queue_depth);
       ("requests_processed", `Intlit (Int64.to_string m.requests_processed));
+      ("moves_processed", `Intlit (Int64.to_string m.moves_processed));
+      ("moves_submitted", `Intlit (Int64.to_string m.moves_submitted));
       ("requests_rejected", `Intlit (Int64.to_string m.requests_rejected));
       ("avg_queue_wait_ms", `Float (ms_of_ns (Int64.of_float (avg m.total_queue_wait_ns))));
       ("max_queue_wait_ms", `Float (ms_of_ns m.max_queue_wait_ns));
@@ -44,11 +47,41 @@ let connection_metrics_json (m : Connection_manager.metrics) =
       ("clients", `Int m.client_count);
       ("subscriptions", `Int m.subscription_count);
       ("max_outbox_depth", `Int m.max_outbox_depth);
+      ("total_outbox_depth", `Int m.total_outbox_depth);
+      ("pending_event_count", `Int m.pending_event_count);
       ("outbox_capacity", `Int m.outbox_capacity);
       ("event_batching", `Bool m.event_batching);
     ]
 
-let metrics_body manager worker persistence =
+let adaptive_json controller ~fixed_group ~fixed_delay_us =
+  match controller with
+  | None ->
+    `Assoc
+      [
+        ("enabled", `Bool false);
+        ("fixed_group_size", `Int fixed_group);
+        ("fixed_delay_us", `Int fixed_delay_us);
+      ]
+  | Some controller ->
+    let state = Adaptive_commit.state controller in
+    `Assoc
+      [
+        ("enabled", `Bool true);
+        ("max_batch_size", `Int state.policy.max_batch_size);
+        ("max_batch_delay_us", `Int state.policy.max_batch_delay_us);
+        ("classification", `String (Adaptive_commit.classification_name state.classification));
+        ("samples", `Int state.samples);
+        ("changes", `Int state.changes);
+        ("move_rate", `Float state.move_rate);
+        ("pending_moves", `Int state.pending_moves);
+        ("fsync_p50_us", `Float state.fsync_p50_us);
+        ("fsync_p95_us", `Float state.fsync_p95_us);
+        ("broadcast_backlog", `Float state.broadcast_backlog);
+        ("event_lag_p95_ms", `Float state.event_lag_p95_ms);
+        ("snapshot_active", `Bool state.snapshot_active);
+      ]
+
+let metrics_body manager worker persistence adaptive ~fixed_group ~fixed_delay_us =
   let worker_metrics = State_worker.metrics worker in
   let connection_metrics = Connection_manager.metrics manager in
   Yojson.Safe.to_string
@@ -58,6 +91,7 @@ let metrics_body manager worker persistence =
            ("worker", worker_metrics_json worker_metrics);
            ("connections", connection_metrics_json connection_metrics);
            ("persistence", Persistence.metrics_json persistence);
+           ("adaptive", adaptive_json adaptive ~fixed_group ~fixed_delay_us);
          ]
        ())
 
@@ -327,11 +361,35 @@ let () =
     | Some dir -> dir
     | None -> "data"
   in
+  let adaptive_enabled = int_env "SIM_MAP_ADAPTIVE" 0 <> 0 in
+  let fixed_group = max 1 (int_env "SIM_MAP_WAL_GROUP" 64) in
+  let fixed_delay_us = max 0 (int_env "SIM_MAP_WAL_GROUP_DELAY_US" 0) in
+  let wal_sync = int_env "SIM_MAP_WAL_SYNC" 1 <> 0 in
+  let adaptive_controller =
+    if not adaptive_enabled then None
+    else
+      let config : Adaptive_commit.config =
+        {
+          Adaptive_commit.default_config with
+          min_batch_size = max 1 (int_env "SIM_MAP_ADAPTIVE_MIN" 1);
+          max_batch_size =
+            max 1 (int_env "SIM_MAP_ADAPTIVE_MAX" 256);
+          min_delay_us =
+            max 0 (int_env "SIM_MAP_ADAPTIVE_MIN_DELAY_US" 0);
+          max_delay_us =
+            max 0 (int_env "SIM_MAP_ADAPTIVE_MAX_DELAY_US" 2_000);
+          hysteresis_samples =
+            max 1 (int_env "SIM_MAP_ADAPTIVE_HYSTERESIS" 3);
+        }
+      in
+      Some (Adaptive_commit.create ~config ())
+  in
   let persistence_config : Persistence.config =
     {
       data_dir;
-      sync = int_env "SIM_MAP_WAL_SYNC" 1 <> 0;
-      group_size = max 1 (int_env "SIM_MAP_WAL_GROUP" 64);
+      sync = wal_sync;
+      group_size = fixed_group;
+      strict_commit = (not adaptive_enabled) && fixed_group <= 1 && wal_sync;
       snapshot_every_moves = int_env "SIM_MAP_SNAPSHOT_MOVES" 100_000;
       snapshot_every_seconds = float_env "SIM_MAP_SNAPSHOT_SECONDS" 600.;
     }
@@ -391,11 +449,59 @@ let () =
     State_worker.start ~on_commit
       ~precommit:(Persistence.before_commit persistence)
       ~on_snapshot:(Persistence.capture persistence)
-      ~commit_batch:persistence_config.group_size
+      ~commit_policy:(fun () ->
+        match adaptive_controller with
+        | None ->
+          {
+            State_worker.max_batch = fixed_group;
+            max_delay_s = float fixed_delay_us /. 1_000_000.;
+          }
+        | Some controller ->
+          let policy = Adaptive_commit.policy controller in
+          {
+            State_worker.max_batch = policy.max_batch_size;
+            max_delay_s = float policy.max_batch_delay_us /. 1_000_000.;
+          })
       ~commit_group:(fun moves -> Persistence.sync persistence ~moves)
       ~config:State_worker.default_config state
   in
   worker_ref := Some worker;
+  (match adaptive_controller with
+   | None -> ()
+   | Some controller ->
+     let last_moves = ref (State_worker.metrics worker).moves_submitted in
+     let last_time = ref (Unix.gettimeofday ()) in
+     Lwt.async (fun () ->
+         let rec loop () =
+           Lwt_unix.sleep 0.1 >>= fun () ->
+           let metrics = State_worker.metrics worker in
+           let now = Unix.gettimeofday () in
+           let dt = max 0.001 (now -. !last_time) in
+           let moves =
+             Int64.to_float (Int64.sub metrics.moves_submitted !last_moves)
+           in
+           last_moves := metrics.moves_submitted;
+           last_time := now;
+           let connection_metrics = Connection_manager.metrics manager in
+           let p50, p95 = Persistence.sync_percentiles persistence in
+           let event_lag =
+             Metrics.recent_p95_ms Metrics.End_to_end_broadcast ~window:256
+           in
+           ignore
+             (Adaptive_commit.sample controller
+                {
+                  Adaptive_commit.move_rate = moves /. dt;
+                  pending_moves = metrics.move_queue_depth;
+                  fsync_p50_us = p50;
+                  fsync_p95_us = p95;
+                  broadcast_backlog =
+                    connection_metrics.total_outbox_depth;
+                  event_lag_p95_ms = event_lag;
+                  snapshot_active = Persistence.snapshot_active persistence;
+                });
+           loop ()
+         in
+         loop ()));
   Lwt.async (fun () ->
       let rec timer () =
         Lwt_unix.sleep 1.0 >>= fun () ->
@@ -415,7 +521,7 @@ let () =
        Dream.get "/metrics" (fun _req ->
          Dream.respond
            ~headers:[ ("Content-Type", "application/json") ]
-           (metrics_body manager worker persistence));
+           (metrics_body manager worker persistence adaptive_controller ~fixed_group ~fixed_delay_us));
        Dream.get "/state-hash" (fun _req ->
          let digest = Persistence.state_digest state in
          Dream.respond

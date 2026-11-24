@@ -68,6 +68,11 @@ The authoritative world is durable by default:
   moves are committed with one fsync (group commit), and responses/events are
   published only after that fsync. `SIM_MAP_WAL_GROUP=1` gives strict per-move
   fsync; `SIM_MAP_WAL_SYNC=0` disables fsync for development.
+- `SIM_MAP_ADAPTIVE=1` (opt-in) replaces the fixed group maximum with a bounded
+  controller. It samples move arrivals, queued moves, recent fsync percentiles,
+  client outbox depth and broadcast lag every 100 ms and picks both a maximum
+  batch size and a group-formation delay. It never validates or orders moves,
+  and every group is still fsynced before responses or events are published.
 - A full-world snapshot is taken after `SIM_MAP_SNAPSHOT_MOVES` commits
   (default 100,000) or `SIM_MAP_SNAPSHOT_SECONDS` seconds (default 600),
   whichever comes first.
@@ -83,6 +88,12 @@ Environment variables:
 | `SIM_MAP_DATA_DIR` | `data` | Directory for the WAL and snapshots |
 | `SIM_MAP_WAL_GROUP` | `64` | Max consecutive moves per commit fsync (`1` = strict per-move) |
 | `SIM_MAP_WAL_SYNC` | `1` | Enable WAL fsync (`0` for development only) |
+| `SIM_MAP_ADAPTIVE` | `0` | Enable the adaptive commit controller |
+| `SIM_MAP_ADAPTIVE_MIN` | `1` | Minimum adaptive batch size |
+| `SIM_MAP_ADAPTIVE_MAX` | `256` | Maximum adaptive batch size |
+| `SIM_MAP_ADAPTIVE_MIN_DELAY_US` | `0` | Minimum adaptive group-formation delay |
+| `SIM_MAP_ADAPTIVE_MAX_DELAY_US` | `2000` | Maximum adaptive group-formation delay |
+| `SIM_MAP_ADAPTIVE_HYSTERESIS` | `3` | Samples required before increasing the policy |
 | `SIM_MAP_SNAPSHOT_MOVES` | `100000` | Commit count between snapshots (`0` disables) |
 | `SIM_MAP_SNAPSHOT_SECONDS` | `600` | Seconds between snapshots (`0` disables) |
 
@@ -126,6 +137,16 @@ stress, checks client-visible correctness, and writes plots:
 ```bash
 node bench/group_commit_experiment.js
 # open bench/group_commit_report.html
+```
+
+The adaptive experiment compares fixed batches 16 and 64 with the controller
+across quiet → heavy writes → quiet → high fan-out → mixed → snapshot
+transitions. It checks every move and event and writes plots and a Markdown
+summary:
+
+```bash
+ADAPTIVE_REPS=5 node bench/adaptive_commit_test.js   # 5 repetitions per mode
+# open bench/adaptive_commit_report.html
 ```
 
 ## Live load test

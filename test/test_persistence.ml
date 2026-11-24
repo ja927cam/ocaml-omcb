@@ -27,6 +27,7 @@ let config dir =
     Persistence.data_dir = dir;
     sync = false;
     group_size = 1;
+    strict_commit = false;
     snapshot_every_moves = 0;
     snapshot_every_seconds = 0.;
   }

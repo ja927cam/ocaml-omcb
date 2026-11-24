@@ -55,6 +55,8 @@ type metrics = {
   client_count : int;
   subscription_count : int;
   max_outbox_depth : int;
+  total_outbox_depth : int;
+  pending_event_count : int;
   outbox_capacity : int;
   event_batching : bool;
 }
@@ -453,16 +455,20 @@ let buffer_snapshot_event conn event =
 let metrics t =
   let subscription_count = ref 0 in
   let max_outbox_depth = ref 0 in
+  let total_outbox_depth = ref 0 in
   Hashtbl.iter
     (fun _ conn ->
       subscription_count := !subscription_count + Hashtbl.length conn.subscriptions;
       let depth = Queue.length conn.outbox in
+      total_outbox_depth := !total_outbox_depth + depth;
       if depth > !max_outbox_depth then max_outbox_depth := depth)
     t.clients;
   {
     client_count = Hashtbl.length t.clients;
     subscription_count = !subscription_count;
     max_outbox_depth = !max_outbox_depth;
+    total_outbox_depth = !total_outbox_depth;
+    pending_event_count = Queue.length t.pending_events;
     outbox_capacity = t.max_outbox;
     event_batching = t.event_batching;
   }
@@ -507,10 +513,10 @@ let broadcast_event t (event : State_worker.committed) =
    | None -> ());
   Metrics.note_event recipient_count;
   if recipient_count = 0 then begin
+    (* No client delivery; do not feed the zero-recipient broadcast time into
+       the end-to-end event-lag series used by the adaptive controller. *)
     (match timing with
-     | Some timing ->
-       Metrics.mark_enqueued timing;
-       Metrics.mark_complete timing
+     | Some timing -> Metrics.mark_enqueued timing
      | None -> ())
   end
   else begin

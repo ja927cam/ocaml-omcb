@@ -812,6 +812,94 @@ The group experiment (`bench/group_commit_experiment.js`,
 write-only and fan-out stress and verifies every move response, event and final
 board state.
 
+### Adaptive group commit
+
+`SIM_MAP_ADAPTIVE=1` replaces the fixed batch ceiling with a bounded,
+rule-based controller (`lib/adaptive_commit.ml`). It runs entirely outside
+move validation, ordering, application and durability: the state worker still
+fsyncs each group before publishing responses or events, and a failed fsync
+still fail-stops without publishing the group.
+
+Every 100 ms the server feeds the controller:
+
+- move arrivals per second, counted at queue admission;
+- move items currently queued in the worker;
+- recent WAL fsync p50/p95 (a five-second window, so a cold-start stall is not
+  remembered for the whole run);
+- total queued client outbox frames;
+- recent server end-to-end broadcast p95;
+- whether a snapshot capture is in progress.
+
+Committed events that have not yet been fanned out are deliberately excluded
+from the backlog signal. A write-only workload can briefly enqueue many
+events without any client delivery falling behind, so including them made the
+controller see false broadcast pressure.
+
+The controller emits a maximum batch size and a maximum group-formation delay.
+Signals are exponentially smoothed (weight 0.35) and the policy changes by at
+most a factor of two per sample. Increases need three consecutive samples;
+decreases need two. Absolute bounds come from the environment.
+
+| Classification | Trigger (smoothed) | Batch | Delay |
+|---|---|---:|---:|
+| Snapshot active | snapshot capture in progress | ≤32 | 0 |
+| Broadcast-bound | event lag p95 ≥50 ms or outbox ≥32 | 16 | 0 |
+| Broadcast-bound, outbox filling | outbox ≥512 | 8 | 0 |
+| Storage-bound | fsync p50 ≥8 ms | 32 or 64 | 0 |
+| Heavy | ≥8 queued moves, or ≥1,000/s | 64–256 | 0 |
+| Moderate | 30–1,000 moves/s | 8–32 | 250 µs |
+| Quiet | below 30/s and no backlog | 16 | 0 |
+
+The quiet ceiling deliberately stays at 16. With no group-formation delay, an
+idle server still commits each move on its own, so shrinking the ceiling buys
+nothing and only makes the next burst start at a tiny batch. Keeping 16 also
+means a short interactive burst batches immediately instead of waiting for
+several ramp samples; the default 100-move load improved from 1.9 to 7.7 moves
+per fsync and from 18.7 ms to 6.5 ms move p50 after this change.
+
+For heavy arrivals the target can be raised to twice the smoothed queue depth,
+but only after two consecutive samples. A lagging event stream holds batching
+at 16 rather than growing it; it does not shrink the batch further unless
+client outboxes are actually filling, because extra fsyncs do not fix a
+delivery bottleneck. The initial policy is batch 16 with a 1 ms delay, clamped
+to the configured bounds.
+
+The transition experiment (`bench/adaptive_commit_test.js`,
+`bench/adaptive_commit_report.html`) runs the same sequence against fixed 16,
+fixed 64 and adaptive: quiet → 128-writer heavy writes → quiet → 8 hot writers
+with 256 subscribers → 16 hot writers → continued writes, with five
+repetitions per mode. Full-world snapshot pressure is enabled for the whole
+run (`SIM_MAP_SNAPSHOT_MOVES=3000`), so snapshot writes also overlap the heavy
+and fan-out phases; the final phase measures writes while a snapshot is likely
+in flight. The values below are medians across the repetitions.
+
+| Mode | Heavy moves/s | Heavy p50 | Heavy p95 | Heavy avg group | Mixed p50 | Snapshot p50 | Event lag p50 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| fixed-16 | 2,034 | 32.6 ms | 190.5 ms | 16.3 | 18.3 ms | 15.4 ms | 22.5 ms |
+| fixed-64 | 2,791 | 18.6 ms | 170.9 ms | 63.9 | 13.2 ms | 17.1 ms | 20.0 ms |
+| adaptive | 3,493 | 17.2 ms | 146.2 ms | 71.1 | 12.7 ms | 18.9 ms | 20.0 ms |
+
+All fifteen runs were clean: zero rejected moves, missing, duplicate or
+unexpected events, outbox drops or send failures. The adaptive runs delivered
+101,310 acknowledged moves while 256 fan-out subscribers received every
+expected event exactly once, and every run completed at least one snapshot
+under concurrent writes.
+
+The controller walked from the quiet ceiling of 16 to 128 during the heavy
+phase, held 16 while fan-out delivery was behind, and returned to 16 in the
+following quiet phase. Its heavy throughput reached 3,493 moves/s: 72% above
+fixed-16 and 25% above fixed-64, with the lowest heavy p50 and p95 of the
+three. Holding the quiet ceiling at 16 removed most of the earlier ramp
+penalty, because short bursts now batch immediately instead of starting from a
+two-move ceiling. Once fan-out began, delivery was the bottleneck, so all
+policies sat at 9–12 ms move p50, and adaptive throughput was within the
+spread of the two fixed policies. In the mixed phase it matched
+fixed-64 (490 versus 497 moves/s) with the lowest p50 (12.7 ms), and it
+sustained more snapshot-phase throughput (404 versus 339 moves/s) at a 1.8 ms
+higher p50. The quiet-after-heavy p50 is dominated by draining the tail of the
+previous group queue, so it varies with the machine and is not a steady-state
+regression.
+
 Measured on the reference machine (16 cores, btrfs home with
 `compress=zstd:3`; tmpfs noted for comparison):
 

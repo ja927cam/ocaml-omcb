@@ -143,6 +143,22 @@ let record_between stage start_ns end_ns =
   if Int64.compare start_ns 0L > 0 && Int64.compare end_ns start_ns >= 0 then
     record stage (Int64.sub end_ns start_ns)
 
+let recent_p95_ms stage ~window =
+  let series = global.series.(stage_index stage) in
+  let n = min window series.filled in
+  if n = 0 then 0.
+  else begin
+    let samples =
+      Array.init n (fun i ->
+          let index =
+            (series.next - n + i + sample_capacity) mod sample_capacity
+          in
+          series.samples.(index))
+    in
+    Array.sort Int64.compare samples;
+    Int64.to_float (percentile samples 95) /. 1_000_000.
+  end
+
 type move_timing = {
   origin_conn_id : int;
   received_ns : int64;

@@ -288,7 +288,7 @@ node bench/slow_client_test.js
 | `baseline` | no slow client | 0.81 / 2.18 ms | 1 / 8 | 0 | 0 | n/a |
 | `paused-short` | stops reading, resumes after the burst | 0.79 / 2.05 ms | 8 / 8 | 11,746 | 0 | same connection, rev 1500 |
 | `paused-long` | stops reading past the 2 s send timeout | 0.79 / 2.05 ms | 8 / 8 | 11,099 | 27 | reconnected, rev 1500 |
-| `slow-read` | reads one chunk every 200 ms | 0.79 / 2.08 ms | 8 / 8 | 12,430 | 0 | same connection, rev 1500 |
+| `slow-read` | reads one chunk every 100 ms | 0.79 / 2.08 ms | 8 / 8 | 12,430 | 0 | same connection, rev 1500 |
 
 This is the key reliability result: one non-reading client does **not** block
 the broadcaster, and normal-client lag is effectively identical to the
@@ -365,6 +365,57 @@ concurrently acknowledged moves. Fan-out at 1,020 clients reduced move p50
 from 577.8 ms (sync) to 259.7 ms (group-256). The actual average group at a
 configured 256 is ~85 because the worker starts before all writers arrive; the
 current default of 64 is a latency/throughput balance.
+
+## Adaptive commit experiment
+
+`bench/adaptive_commit_test.js` compares fixed batch 16, fixed batch 64 and the
+opt-in adaptive controller (`SIM_MAP_ADAPTIVE=1`) across workload transitions
+rather than a single steady state:
+
+1. quiet writes (2 s);
+2. 128 writers (5 s);
+3. quiet again (1.5 s);
+4. 8 hot writers with 256 subscribers (3 s);
+5. 16 hot writers with subscribers (3 s);
+6. continued writes while snapshot I/O is active (3 s). Snapshots are
+   triggered every 3,000 commits for the whole run, so they also overlap the
+   heavy and fan-out phases.
+
+The runner starts a fresh server per run, samples `/metrics` every 100 ms and
+records the policy, delay, classification, queue depth, fsync percentiles,
+outbox depth and event lag. It runs each mode in rotating order and reports
+medians; the published results use five repetitions (`ADAPTIVE_REPS=5`).
+After the last writer stops it waits for fan-out delivery to drain before
+judging correctness, so a slow final socket does not look like a lost event.
+
+```bash
+ADAPTIVE_REPS=5 node bench/adaptive_commit_test.js
+# open bench/adaptive_commit_report.html
+```
+
+Results (5 repetitions per mode, data directory on btrfs):
+
+| Mode | Heavy moves/s | Heavy p50 | Heavy p95 | Avg group | Mixed p50 | Snapshot p50 | Event lag p50 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| fixed-16 | 2,034 | 32.6 ms | 190.5 ms | 16.3 | 18.3 ms | 15.4 ms | 22.5 ms |
+| fixed-64 | 2,791 | 18.6 ms | 170.9 ms | 63.9 | 13.2 ms | 17.1 ms | 20.0 ms |
+| adaptive | 3,493 | 17.2 ms | 146.2 ms | 71.1 | 12.7 ms | 18.9 ms | 20.0 ms |
+
+The adaptive policy went from the quiet ceiling of 16 to 128 during heavy
+writes, held 16 while the 256-subscriber fan-out was behind, and dropped back
+to 16 in the next quiet phase. Pure fan-out is delivery-bound, so all three
+policies have the same 9–11 ms move p50 there. Adaptive delivered 25% more
+heavy-phase throughput than fixed-64 with a lower p50 and p95, matched it in
+the mixed phase with the lowest p50, and sustained more snapshot-phase
+throughput, without any client-visible difference in correctness.
+
+All fifteen runs had zero rejected moves, errors, missing, duplicate or
+unexpected events, outbox drops and send failures. The adaptive runs
+acknowledged 101,310 moves while 256 subscribers received every expected event
+exactly once, and every run completed at least one snapshot under concurrent
+writes. The adaptive quiet-after-heavy p50 can be higher than both fixed modes
+because the first quiet requests drain the tail of the larger heavy group;
+that is a transition cost, not a steady-state regression.
 
 ## Crash recovery
 
