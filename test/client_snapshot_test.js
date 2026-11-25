@@ -585,6 +585,26 @@ async function main() {
       fail(`scroll wheel did not zoom out: ${zoomAfter} -> ${zoomBack}`);
     }
 
+    // The widest zoom-out must never show more than 10 boards along either
+    // viewport axis. Keep wheeling down well past the old 0.35 floor.
+    for (let i = 0; i < 40; i++) {
+      await send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: 400,
+        y: 350,
+        deltaX: 0,
+        deltaY: 240,
+      });
+      await sleep(10);
+    }
+    await sleep(300);
+    const widest = await evaluate(
+      "parseFloat(document.body.dataset.widestBoards)"
+    );
+    if (!(widest <= 10.05)) {
+      fail(`maximum zoom-out shows ${widest} boards on the longer axis`);
+    }
+
     if (exceptions !== 0) fail(`browser raised ${exceptions} exception(s)`);
     console.log(
       `Client snapshot test passed: ${load.loaded} boards loaded in ${load.ms} ms ` +

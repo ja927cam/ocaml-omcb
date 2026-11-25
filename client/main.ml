@@ -10,6 +10,10 @@ let board_px () = base_board_px *. !device_pixel_ratio *. !zoom
 let cell_px () = board_px () /. 8.
 let max_coord = 999
 let empty = '\000'
+(* At the widest zoom-out, never show more than this many boards along either
+   axis. On a rectangular viewport the larger axis reaches the limit and the
+   other shows fewer. *)
+let max_view_boards = 10.
 
 (* ------------------------------------------------------------------------- *)
 (* Client state                                                              *)
@@ -193,6 +197,16 @@ let main () =
     end
   in
   set_canvas_size ();
+  (* Zoom may never fall below the level that fits [max_view_boards] across
+     the longer viewport axis. This also lifts the initial zoom on very large
+     screens, where zoom 1 would already show more than ten boards. *)
+  let min_zoom () =
+    let ratio = max 1. !device_pixel_ratio in
+    max 0.35
+      (max (float !canvas_w) (float !canvas_h)
+      /. (max_view_boards *. base_board_px *. ratio))
+  in
+  zoom := max !zoom (min_zoom ());
   let body_el = Document.body G.document in
   let find_el id =
     match Document.find_el_by_id G.document (Jstr.v id) with
@@ -685,6 +699,10 @@ let main () =
       (Some (Jstr.of_float !view_top)) body_el;
     El.set_at (Jstr.v "data-zoom")
       (Some (Jstr.of_float !zoom)) body_el;
+    El.set_at (Jstr.v "data-widest-boards")
+      (Some
+         (Jstr.of_float (max (visible_w ()) (visible_h ()))))
+      body_el;
     C2d.set_fill_style ctx page_bg;
     C2d.fill_rect ctx ~x:0. ~y:0. ~w:(float !canvas_w)
       ~h:(float !canvas_h);
@@ -798,6 +816,7 @@ let main () =
   let on_resize _ =
     let cx, cy = centre_of_view () in
     set_canvas_size ();
+    zoom := max !zoom (min_zoom ());
     update_layout ();
     select_center cx cy
   in
@@ -1255,7 +1274,7 @@ let main () =
       let wx = !view_left +. (cx /. board_px ()) in
       let wy = !view_top +. (cy /. board_px ()) in
       let factor = clamp_float (exp (-.dy /. 420.)) 0.78 1.28 in
-      zoom := clamp_float (!zoom *. factor) 0.35 3.5;
+      zoom := clamp_float (!zoom *. factor) (min_zoom ()) 3.5;
       view_left :=
         clamp_float (wx -. (cx /. board_px ())) 0. (max_left ());
       view_top :=

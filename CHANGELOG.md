@@ -52,6 +52,10 @@
 - Disabled per-move browser RTT logging by default.
 - Fixed scroll-wheel zoom-out: the zoom factor clamp was receiving its bounds
   in the wrong order, so every wheel event selected the zoom-in factor.
+- The maximum zoom-out is now viewport-aware: it never shows more than 10
+  boards along the longer viewport axis (10 x 10 on a square viewport). The
+  initial zoom is raised on very large screens so the same bound holds before
+  any wheel input.
 
 ### Snapshot loading
 
