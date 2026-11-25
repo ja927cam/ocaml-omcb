@@ -4,8 +4,9 @@ open Brr_canvas
 (* 216 px boards are a comfortable zoom: three fit vertically in a 700 px
    window, while larger screens show more context. *)
 let base_board_px = 216.
+let device_pixel_ratio = ref 1.
 let zoom = ref 1.
-let board_px () = base_board_px *. !zoom
+let board_px () = base_board_px *. !device_pixel_ratio *. !zoom
 let cell_px () = board_px () /. 8.
 let max_coord = 999
 let empty = '\000'
@@ -166,8 +167,16 @@ let main () =
   let max_left () = max 0. (1000. -. visible_w ()) in
   let max_top () = max 0. (1000. -. visible_h ()) in
   let set_canvas_size () =
-    let w = max 1 (Window.inner_width G.window) in
-    let h = max 1 (Window.inner_height G.window) in
+    let ratio = max 1. (Window.device_pixel_ratio G.window) in
+    device_pixel_ratio := ratio;
+    let w =
+      max 1
+        (int_of_float (float (Window.inner_width G.window) *. ratio))
+    in
+    let h =
+      max 1
+        (int_of_float (float (Window.inner_height G.window) *. ratio))
+    in
     if w <> !canvas_w || h <> !canvas_h then begin
       canvas_w := w;
       canvas_h := h;
@@ -338,6 +347,7 @@ let main () =
     scale_x := float !canvas_w /. max 1. (El.bound_w canvas_el);
     scale_y := float !canvas_h /. max 1. (El.bound_h canvas_el)
   in
+  update_layout ();
 
   let to_canvas_of_mouse m =
     ( (Ev.Mouse.client_x m -. !origin_x) *. !scale_x,
@@ -1134,6 +1144,7 @@ let main () =
     in
     if dy <> 0. then begin
       Ev.prevent_default ev;
+      update_layout ();
       let cx, cy = to_canvas_of_mouse (Ev.Wheel.as_mouse wheel) in
       let wx = !view_left +. (cx /. board_px ()) in
       let wy = !view_top +. (cy /. board_px ()) in
