@@ -836,6 +836,11 @@
       });
       document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape' && !intro.hidden) closeIntro();
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        if (event.key === '?') { event.preventDefault(); openIntro(); return; }
+        if (event.key === '+' || event.key === '=') { event.preventDefault(); document.getElementById('zoom-in').click(); return; }
+        if (event.key === '-' || event.key === '_') { event.preventDefault(); document.getElementById('zoom-out').click(); return; }
+        if (event.key === '0') { event.preventDefault(); document.getElementById('zoom-reset').click(); }
       });
 
       // The assignment is made by the WASM client shortly after startup.

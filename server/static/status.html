@@ -72,6 +72,19 @@
     td { color: var(--muted); }
     td strong { color: var(--text); font-weight: 600; }
     .empty { color: var(--subtle); padding: 18px 8px; text-align: center; }
+    .region-grid {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 3px;
+      margin: 16px 0 20px;
+      max-width: 440px;
+    }
+    .region-cell {
+      aspect-ratio: 1;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
     .bar { height: 5px; border-radius: 99px; background: rgba(255,255,255,.07); overflow: hidden; margin-top: 12px; }
     .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
     @media (max-width: 620px) { body { padding: 16px; } .value { font-size: 20px; } th, td { padding: 8px 5px; } }
@@ -113,6 +126,7 @@
       </div>
       <div class="bar"><span id="load-bar"></span></div>
       <div class="note" id="load-note" style="margin-top:12px"></div>
+      <div id="region-grid" class="region-grid" aria-label="Board loading heatmap"></div>
     </section>
 
     <section class="card">
@@ -162,6 +176,23 @@
         // A 10 ms p95 is a useful visual full-scale for this workload.
         const p95 = Number(o.p95_ms || 0);
         document.getElementById('load-bar').style.width = `${Math.min(100, p95 / 10 * 100)}%`;
+        const byRegion = new Map((bl.regions || []).map((r) => [`${r.x},${r.y}`, r]));
+        const grid = document.getElementById('region-grid');
+        grid.innerHTML = '';
+        for (let y = 0; y < 10; y++) {
+          for (let x = 0; x < 10; x++) {
+            const region = byRegion.get(`${x},${y}`);
+            const cell = document.createElement('div');
+            cell.className = 'region-cell';
+            if (region) {
+              const p95 = Number(region.metrics.p95_ms || 0);
+              const alpha = Math.min(0.72, 0.08 + p95 / 10 * 0.64);
+              cell.style.background = `rgba(123, 216, 143, ${alpha})`;
+              cell.title = `Region ${x * 100}-${x * 100 + 99}, ${y * 100}-${y * 100 + 99}: ${p95.toFixed(2)} ms p95, ${region.metrics.requests} requests`;
+            }
+            grid.appendChild(cell);
+          }
+        }
         const regions = [...(bl.regions || [])].sort((a, b) => b.metrics.requests - a.metrics.requests).slice(0, 12);
         document.getElementById('regions').innerHTML = regions.length ? regions.map((r) => `
           <tr><td><strong>${r.x * 100}–${r.x * 100 + 99}, ${r.y * 100}–${r.y * 100 + 99}</strong></td>
