@@ -60,6 +60,12 @@
   The assignment is kept in `localStorage` and mirrored to a ten-year cookie,
   so reloads and clearing either store alone do not change it. A status pill
   shows the device colour.
+- The client only starts a drag on pieces of the device colour. Dragging an
+  opponent piece pans instead and sends no move request. This is a client-side
+  guard; the shared world server still accepts moves from any client.
+- Double-clicking a piece requests its full record; a third click opens a
+  panel with its position, original board, colour, type, ID, move/capture
+  counts, flags, revision and raw packed value.
 
 ### Snapshot loading
 

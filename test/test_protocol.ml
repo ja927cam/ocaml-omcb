@@ -542,4 +542,82 @@ let () =
   check "compact 25x25 standard under 2 KiB"
     (Bytes.length compact_full_bytes < 2048);
 
+  (* Piece information request and response. *)
+  let piece_request =
+    Protocol.Types.
+      { request_id = 5150l; board_x = 12; board_y = 34; square = 52 }
+  in
+  let piece_request_bytes =
+    Protocol.Types.piece_info_request_to_bytes piece_request
+  in
+  check "piece info request length"
+    (Bytes.length piece_request_bytes
+    = Protocol.Types.piece_info_request_bytes);
+  (match Protocol.Types.piece_info_request_of_bytes piece_request_bytes with
+   | Some decoded ->
+     check "piece info request id" (decoded.request_id = 5150l);
+     check "piece info request square" (decoded.square = 52)
+   | None -> failwith "piece info request decoded to None");
+  expect_invalid "piece info square out of range" (fun () ->
+      Protocol.Types.piece_info_request_to_bytes
+        { piece_request with square = 64 });
+  check "piece info bad square rejected"
+    (let bad = Bytes.copy piece_request_bytes in
+     Bytes.set bad 9 (Char.chr 64);
+     Protocol.Types.piece_info_request_of_bytes bad = None);
+
+  let piece_info =
+    Protocol.Types.
+      {
+        request_id = 5150l;
+        board_x = 12;
+        board_y = 34;
+        square = 52;
+        status = Piece_found;
+        revision = 9L;
+        id = 123456l;
+        type_code = 1;
+        is_white = true;
+        flags = 0b1000_0001;
+        adopted = false;
+        move_count = 3;
+        capture_count = 2;
+        raw = 0x1234_5678_9abcL;
+      }
+  in
+  let info_bytes =
+    Protocol.Types.wire_response_to_bytes
+      (Protocol.Types.Wire_piece_info piece_info)
+  in
+  check "piece info wire length"
+    (Bytes.length info_bytes = Protocol.Types.wire_response_bytes);
+  check "piece info wire kind"
+    (Char.code (Bytes.get info_bytes 0)
+    = Protocol.Types.wire_kind_piece_info);
+  (match Protocol.Types.wire_response_of_bytes info_bytes with
+   | Some (Protocol.Types.Wire_piece_info decoded) ->
+     check "piece info id" (decoded.id = piece_info.id);
+     check "piece info colour" (decoded.is_white = piece_info.is_white);
+     check "piece info moves" (decoded.move_count = piece_info.move_count);
+     check "piece info captures"
+       (decoded.capture_count = piece_info.capture_count);
+     check "piece info flags" (decoded.flags = piece_info.flags);
+     check "piece info raw" (decoded.raw = piece_info.raw);
+     check "piece info revision"
+       (decoded.revision = piece_info.revision)
+   | _ -> failwith "piece info decoded incorrectly");
+  let absent =
+    { piece_info with status = Piece_absent; id = 0l; raw = 0L;
+      type_code = 0; is_white = false; flags = 0; move_count = 0;
+      capture_count = 0 }
+  in
+  (match
+     Protocol.Types.piece_info_of_bytes
+       (Protocol.Types.wire_response_to_bytes
+          (Protocol.Types.Wire_piece_info absent))
+   with
+   | Some decoded -> check "absent piece status"
+       (decoded.status = Protocol.Types.Piece_absent)
+   | None -> failwith "absent piece info decoded to None");
+
   Printf.printf "All protocol move codec tests passed.\n"

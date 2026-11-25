@@ -1078,6 +1078,43 @@ before its move acknowledgement, preserving the client's event-before-response
 ordering. `EVENT_BATCHING=0` disables batching; `EVENT_BATCH_WINDOW_MS` sets the
 non-origin batch window (default 1 ms).
 
+### 13.6.5 Piece information — request 10 bytes, response kind 7
+
+Piece inspection is rare, so it uses the padded 4096-byte framing.
+
+Request:
+
+| Bytes | Field |
+|---|---|
+| 0 | Message type `0x08` |
+| 1–4 | Request ID, int32 |
+| 5–6 | Board X, uint16 |
+| 7–8 | Board Y, uint16 |
+| 9 | Square, 0–63 row-major |
+
+Response (wire kind `7`, payload begins at byte 1):
+
+| Bytes | Field |
+|---|---|
+| 1 | Status: 1 piece found, 0 empty |
+| 2–5 | Request ID, int32 |
+| 6–7 | Board X |
+| 8–9 | Board Y |
+| 10 | Square |
+| 11–18 | Board revision, int64 |
+| 19–22 | Piece ID, int32 |
+| 23 | Type code: 1 pawn, 2 knight, 3 bishop, 4 rook, 5 queen, 6 king, 7 promoted pawn |
+| 24 | 1 = white, 0 = black |
+| 25 | Flags: bit 0 just double moved, 1 king killer, 2 king pawner, 3 queen killer, 4 queen pawner, 5 adopted killer, 6 has captured another type, 7 on original board |
+| 26 | Adopted |
+| 27–28 | Move count, uint16 |
+| 29–30 | Capture count, uint16 |
+| 31–38 | Raw packed `Piece.t`, int64 |
+
+The worker reads the square and its board revision in one queue turn. The
+client sends the request on the second click of a triple-click and opens the
+information panel on the third.
+
 ### 13.7 Wire response framing — 4096 bytes
 
 Dream 1.0.0~alpha8 buffers WebSocket writes until 4096 bytes have accumulated.
@@ -1087,7 +1124,7 @@ in a fixed 4096-byte binary frame:
 
 | Bytes | Field |
 |---|---|
-| 0 | Kind: `1` move response, `2` snapshot response, `3` live event, `4` event batch, `5` batched snapshot, `6` compact batched snapshot |
+| 0 | Kind: `1` move response, `2` snapshot response, `3` live event, `4` event batch, `5` batched snapshot, `6` compact batched snapshot, `7` piece information |
 | 1..26, 1..77, or 1.. | The encoded response/event/batch |
 | Rest | Zero padding |
 

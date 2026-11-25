@@ -28,11 +28,20 @@ type request =
   | Move of Move_request.t
   | Snapshot of { board_x : int; board_y : int }
   | Snapshot_batch of { x0 : int; y0 : int; x1 : int; y1 : int }
+  | Piece_info of { board_x : int; board_y : int; square : int }
   | Snapshot_world
 
 type snapshot = {
   board : Piece.t array;
   revision : int64;
+}
+
+type piece_info = {
+  board_x : int;
+  board_y : int;
+  square : int;
+  revision : int64;
+  piece : Piece.t;
 }
 
 (* A rectangular batch is copied in a single worker turn. Encoding each board
@@ -65,6 +74,7 @@ type response =
   | Move_result of Move_engine.result
   | Snapshot_result of snapshot
   | Snapshot_batch_result of snapshot_batch
+  | Piece_info_result of piece_info
   | World_snapshot_result
 
 type item = {
@@ -221,7 +231,8 @@ let process_move_group t =
         t.depth <- t.depth - 1;
         t.move_depth <- max 0 (t.move_depth - 1);
         take (item :: acc) (remaining - 1)
-      | Snapshot _ | Snapshot_batch _ | Snapshot_world -> List.rev acc
+      | Snapshot _ | Snapshot_batch _ | Piece_info _ | Snapshot_world ->
+        List.rev acc
   in
   let initial = take [] max_batch in
   let next_is_snapshot =
@@ -229,7 +240,7 @@ let process_move_group t =
     &&
     match (Queue.peek t.queue).request with
     | Move _ -> false
-    | Snapshot _ | Snapshot_batch _ | Snapshot_world -> true
+    | Snapshot _ | Snapshot_batch _ | Piece_info _ | Snapshot_world -> true
   in
   let should_wait =
     List.length initial < max_batch && max_delay > 0. && t.accepting
@@ -244,7 +255,8 @@ let process_move_group t =
           | Move request ->
             let result, committed = process_move t item request in
             processed := (item, result, committed) :: !processed
-          | Snapshot _ | Snapshot_batch _ | Snapshot_world -> assert false)
+          | Snapshot _ | Snapshot_batch _ | Piece_info _ | Snapshot_world ->
+            assert false)
         items;
       t.commit_group (List.length items);
       List.iter
@@ -294,6 +306,16 @@ let process_one t item =
     Lwt.wakeup_later item.promise
       (Ok (Snapshot_batch_result { x0; y0; width; height; boards }));
     true
+  | Piece_info { board_x; board_y; square } ->
+    let board, revision =
+      Game_state.snapshot_board_with_revision t.state ~board_x ~board_y
+    in
+    let piece = board.(square) in
+    let finished_ns = now_ns () in
+    update_metrics t ~started_ns ~finished_ns item;
+    Lwt.wakeup_later item.promise
+      (Ok (Piece_info_result { board_x; board_y; square; revision; piece }));
+    true
   | Snapshot_world ->
     (try t.on_snapshot t.state with
      | exn ->
@@ -333,7 +355,7 @@ let rec loop t budget =
     | Move _ ->
       process_move_group t >>= fun (ok, count) ->
       if ok then loop t (max 0 (budget - count)) else Lwt.return_unit
-    | Snapshot _ | Snapshot_batch _ | Snapshot_world ->
+    | Snapshot _ | Snapshot_batch _ | Piece_info _ | Snapshot_world ->
       let item = Queue.take t.queue in
       t.depth <- t.depth - 1;
       if process_one t item then loop t (budget - 1) else Lwt.return_unit
@@ -421,7 +443,7 @@ let submit ?timing t request =
     (function
       | Ok (Move_result result) -> Ok result
       | Ok (Snapshot_result _) | Ok (Snapshot_batch_result _)
-      | Ok World_snapshot_result -> assert false
+      | Ok (Piece_info_result _) | Ok World_snapshot_result -> assert false
       | Error error -> Error error)
     (enqueue t ?timing (Move request))
 
@@ -434,7 +456,7 @@ let submit_snapshot ?timing t ~board_x ~board_y =
       (function
         | Ok (Snapshot_result snapshot) -> Ok snapshot
         | Ok (Move_result _) | Ok (Snapshot_batch_result _)
-        | Ok World_snapshot_result -> assert false
+        | Ok (Piece_info_result _) | Ok World_snapshot_result -> assert false
         | Error error -> Error error)
       (enqueue t ?timing (Snapshot { board_x; board_y }))
 
@@ -449,9 +471,25 @@ let submit_snapshot_batch ?timing t ~x0 ~y0 ~x1 ~y1 =
       (function
         | Ok (Snapshot_batch_result batch) -> Ok batch
         | Ok (Move_result _) | Ok (Snapshot_result _)
-        | Ok World_snapshot_result -> assert false
+        | Ok (Piece_info_result _) | Ok World_snapshot_result -> assert false
         | Error error -> Error error)
       (enqueue t ?timing (Snapshot_batch { x0; y0; x1; y1 }))
+[@@warning "-32"]
+
+let submit_piece_info ?timing t ~board_x ~board_y ~square =
+  if
+    board_x < 0 || board_x >= 1000 || board_y < 0 || board_y >= 1000
+    || square < 0 || square >= 64
+  then Lwt.return (Error Invalid_request)
+  else
+    Lwt.map
+      (function
+        | Ok (Piece_info_result info) -> Ok info
+        | Ok (Move_result _) | Ok (Snapshot_result _)
+        | Ok (Snapshot_batch_result _) | Ok World_snapshot_result ->
+          assert false
+        | Error error -> Error error)
+      (enqueue t ?timing (Piece_info { board_x; board_y; square }))
 [@@warning "-32"]
 
 let request_snapshot t =
@@ -459,7 +497,7 @@ let request_snapshot t =
     (function
       | Ok World_snapshot_result -> Ok ()
       | Ok (Move_result _) | Ok (Snapshot_result _)
-      | Ok (Snapshot_batch_result _) -> assert false
+      | Ok (Snapshot_batch_result _) | Ok (Piece_info_result _) -> assert false
       | Error error -> Error error)
     (enqueue t Snapshot_world)
 

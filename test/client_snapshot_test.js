@@ -255,6 +255,12 @@ async function main() {
         return original.call(this, data);
       };
     })();`;
+    // This test exercises board mechanics with white pieces, so make the
+    // device colour deterministic. Colour assignment itself is covered by
+    // client_colour_test.js.
+    await send("Page.addScriptToEvaluateOnNewDocument", {
+      source: "localStorage.setItem('sim-map.player-colour', 'white');",
+    });
     await send("Page.addScriptToEvaluateOnNewDocument", { source: hook });
     await send("Page.navigate", { url: `${SERVER}?x=${BOARD.x}&y=${BOARD.y}` });
     await sleep(1500);

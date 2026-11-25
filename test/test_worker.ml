@@ -343,4 +343,43 @@ let () =
   check "worker stays failed"
     (match again with Error State_worker.Worker_failed -> true | _ -> false)
 
+(* Piece information reads the authoritative board through the same queue. *)
+let () =
+  let state = Game_state.create () in
+  let board =
+    Game_state.with_state state (fun ~board ~ledger:_ ~sequence ->
+        (sequence, board))
+  in
+  let pawn = piece Piece.Pawn true in
+  place board 0 0 4 6 pawn;
+  let worker = State_worker.start ~config:{ queue_capacity = 8 } state in
+  (match
+     Lwt_main.run
+       (State_worker.submit_piece_info worker ~board_x:0 ~board_y:0
+          ~square:52)
+   with
+   | Ok info ->
+     check "piece info is the pawn" (Piece.id info.piece = Piece.id pawn);
+     check "piece info type" (Piece.piece_type info.piece = Piece.Pawn);
+     check "piece info colour" (Piece.is_white info.piece);
+     check "piece info revision" (info.revision = 0L)
+   | Error _ -> failwith "expected piece info");
+  (match
+     Lwt_main.run
+       (State_worker.submit_piece_info worker ~board_x:0 ~board_y:0
+          ~square:36)
+   with
+   | Ok info -> check "piece info empty" (Piece.is_empty info.piece)
+   | Error _ -> failwith "expected empty piece info");
+  check "piece info invalid square"
+    (match
+       Lwt_main.run
+         (State_worker.submit_piece_info worker ~board_x:0 ~board_y:0
+            ~square:64)
+     with
+     | Error State_worker.Invalid_request -> true
+     | _ -> false);
+  Lwt_main.run (State_worker.stop worker);
+  Printf.printf "All worker piece info tests passed.\n%!"
+
 let () = Printf.printf "All worker tests passed.\n%!"

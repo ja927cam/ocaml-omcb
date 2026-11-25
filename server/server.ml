@@ -401,7 +401,51 @@ type socket_response =
   [ `Move of Protocol.Types.response
   | `Snapshot of Protocol.Types.snapshot_response * Protocol.Types.move_event list
   | `Snapshot_batch of Protocol.Types.snapshot_batch
-                      * Protocol.Types.move_event list ]
+                      * Protocol.Types.move_event list
+  | `Piece_info of Protocol.Types.piece_info ]
+
+let piece_type_code = function
+  | Piece.Pawn -> 1
+  | Piece.Knight -> 2
+  | Piece.Bishop -> 3
+  | Piece.Rook -> 4
+  | Piece.Queen -> 5
+  | Piece.King -> 6
+  | Piece.Promoted_pawn -> 7
+
+let piece_info_response (request : Protocol.Types.piece_info_request)
+    (info : State_worker.piece_info) : Protocol.Types.piece_info =
+  let piece = info.piece in
+  let found = not (Piece.is_empty piece) in
+  let flags = ref 0 in
+  let set bit value = if value then flags := !flags lor (1 lsl bit) in
+  if found then begin
+    set 0 (Piece.just_double_moved piece);
+    set 1 (Piece.king_killer piece);
+    set 2 (Piece.king_pawner piece);
+    set 3 (Piece.queen_killer piece);
+    set 4 (Piece.queen_pawner piece);
+    set 5 (Piece.adopted_killer piece);
+    set 6 (Piece.has_captured_other_type piece);
+    set 7 (Piece.on_original_board piece)
+  end;
+  Protocol.Types.
+    {
+      request_id = request.request_id;
+      board_x = info.board_x;
+      board_y = info.board_y;
+      square = info.square;
+      status = (if found then Piece_found else Piece_absent);
+      revision = info.revision;
+      id = (if found then Piece.id piece else 0l);
+      type_code = (if found then piece_type_code (Piece.piece_type piece) else 0);
+      is_white = found && Piece.is_white piece;
+      flags = !flags;
+      adopted = found && Piece.adopted piece;
+      move_count = (if found then Piece.move_count piece else 0);
+      capture_count = (if found then Piece.capture_count piece else 0);
+      raw = piece;
+    }
 
 let snapshot_batch_response
     (request : Protocol.Types.snapshot_batch_request)
@@ -519,6 +563,19 @@ let handle_socket manager worker socket =
                           [] )))
                (State_worker.submit_snapshot worker
                   ~board_x:request.board_x ~board_y:request.board_y))
+        | 10 ->
+          (match Protocol.Types.piece_info_request_of_bytes bytes with
+           | None -> Lwt.return_none
+           | Some request ->
+             Lwt.map
+               (fun result ->
+                 match result with
+                 | Ok info ->
+                   Some (`Piece_info (piece_info_response request info))
+                 | Error _ -> None)
+               (State_worker.submit_piece_info worker
+                  ~board_x:request.board_x ~board_y:request.board_y
+                  ~square:request.square))
         | 13 ->
           (match Protocol.Types.snapshot_batch_request_of_bytes bytes with
            | None -> Lwt.return_none
@@ -579,7 +636,7 @@ let handle_socket manager worker socket =
            match response with
            | `Snapshot (_, released) | `Snapshot_batch (_, released) ->
              released
-           | `Move _ -> []
+           | `Move _ | `Piece_info _ -> []
          in
          let bytes =
            match response with
@@ -591,6 +648,9 @@ let handle_socket manager worker socket =
                (Protocol.Types.Wire_snapshot response)
            | `Snapshot_batch (batch, _) ->
              Protocol.Types.compact_snapshot_batch_to_bytes batch
+           | `Piece_info info ->
+             Protocol.Types.wire_response_to_bytes
+               (Protocol.Types.Wire_piece_info info)
          in
          Connection_manager.flush_conn_events conn;
          let send = Connection_manager.send conn bytes in

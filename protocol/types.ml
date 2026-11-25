@@ -253,6 +253,7 @@ let wire_kind_move = 1
 let wire_kind_snapshot = 2
 let wire_kind_event = 3
 let wire_kind_event_batch = 4
+let wire_kind_piece_info = 7
 
 let rejection_none = 0
 let rejection_stale_piece = 1
@@ -430,10 +431,146 @@ type move_event = {
   boards : event_board list;
 }
 
+(* {2 Piece information}
+
+   Viewing a piece is rare, so this request/response pair deliberately uses the
+   existing padded 4096-byte frame rather than a compact variable-size one.
+
+   Request (10 bytes):
+     byte 0      message type 0x08
+     byte 1..4   request ID
+     byte 5..6   board X
+     byte 7..8   board Y
+     byte 9      square (0..63, row-major)
+
+   Response is wire kind 7. It carries the board revision, the full packed
+   piece value and decoded fields for display. *)
+
+let piece_info_request_message_type = 0x08
+let piece_info_request_bytes = 10
+
+type piece_info_request = {
+  request_id : int32;
+  board_x : int;
+  board_y : int;
+  square : int;
+}
+
+let valid_square square = square >= 0 && square < 64
+
+let piece_info_request_to_bytes (request : piece_info_request) =
+  if
+    not
+      (valid_board_coord request.board_x
+      && valid_board_coord request.board_y
+      && valid_square request.square)
+  then
+    invalid_arg
+      "Protocol.Types.piece_info_request_to_bytes: invalid position";
+  let b = Bytes.create piece_info_request_bytes in
+  Bytes.set b 0 (Char.chr piece_info_request_message_type);
+  set_i32_le b 1 request.request_id;
+  set_u16_le b 5 request.board_x;
+  set_u16_le b 7 request.board_y;
+  Bytes.set b 9 (Char.chr request.square);
+  b
+
+let piece_info_request_of_bytes b : piece_info_request option =
+  if Bytes.length b <> piece_info_request_bytes then None
+  else if Char.code (Bytes.get b 0) <> piece_info_request_message_type then
+    None
+  else
+    let board_x = get_u16_le b 5
+    and board_y = get_u16_le b 7
+    and square = Char.code (Bytes.get b 9) in
+    if
+      valid_board_coord board_x && valid_board_coord board_y
+      && valid_square square
+    then Some { request_id = get_i32_le b 1; board_x; board_y; square }
+    else None
+
+type piece_info_status =
+  | Piece_found
+  | Piece_absent
+
+type piece_info = {
+  request_id : int32;
+  board_x : int;
+  board_y : int;
+  square : int;
+  status : piece_info_status;
+  revision : int64;
+  id : int32;
+  type_code : int;
+  is_white : bool;
+  flags : int;
+  adopted : bool;
+  move_count : int;
+  capture_count : int;
+  raw : int64;
+}
+
+let piece_info_to_bytes (info : piece_info) =
+  let bytes = Bytes.make wire_response_bytes '\000' in
+  Bytes.set bytes 0 (Char.chr wire_kind_piece_info);
+  Bytes.set bytes 1
+    (Char.chr (match info.status with Piece_found -> 1 | Piece_absent -> 0));
+  set_i32_le bytes 2 info.request_id;
+  set_u16_le bytes 6 info.board_x;
+  set_u16_le bytes 8 info.board_y;
+  Bytes.set bytes 10 (Char.chr info.square);
+  set_i64_le bytes 11 info.revision;
+  set_i32_le bytes 19 info.id;
+  Bytes.set bytes 23 (Char.chr (info.type_code land 0xff));
+  Bytes.set bytes 24 (Char.chr (if info.is_white then 1 else 0));
+  Bytes.set bytes 25 (Char.chr (info.flags land 0xff));
+  Bytes.set bytes 26 (Char.chr (if info.adopted then 1 else 0));
+  set_u16_le bytes 27 info.move_count;
+  set_u16_le bytes 29 info.capture_count;
+  set_i64_le bytes 31 info.raw;
+  bytes
+
+let piece_info_of_bytes b : piece_info option =
+  if Bytes.length b <> wire_response_bytes then None
+  else if Char.code (Bytes.get b 0) <> wire_kind_piece_info then None
+  else
+    let board_x = get_u16_le b 6
+    and board_y = get_u16_le b 8
+    and square = Char.code (Bytes.get b 10) in
+    if
+      not
+        (valid_board_coord board_x && valid_board_coord board_y
+        && valid_square square)
+    then None
+    else
+      let status =
+        match Char.code (Bytes.get b 1) with
+        | 1 -> Piece_found
+        | _ -> Piece_absent
+      in
+      Some
+        {
+          request_id = get_i32_le b 2;
+          board_x;
+          board_y;
+          square;
+          status;
+          revision = get_i64_le b 11;
+          id = get_i32_le b 19;
+          type_code = Char.code (Bytes.get b 23);
+          is_white = Char.code (Bytes.get b 24) = 1;
+          flags = Char.code (Bytes.get b 25);
+          adopted = Char.code (Bytes.get b 26) = 1;
+          move_count = get_u16_le b 27;
+          capture_count = get_u16_le b 29;
+          raw = get_i64_le b 31;
+        }
+
 type wire_response =
   | Wire_move of response
   | Wire_snapshot of snapshot_response
   | Wire_event of move_event
+  | Wire_piece_info of piece_info
 
 let wrap_wire kind payload =
   let bytes = Bytes.make wire_response_bytes '\000' in
@@ -615,6 +752,7 @@ let wire_response_to_bytes response =
   | Wire_snapshot response ->
     wrap_wire wire_kind_snapshot (snapshot_response_to_bytes response)
   | Wire_event event -> move_event_to_bytes event
+  | Wire_piece_info info -> piece_info_to_bytes info
 
 let wire_response_of_bytes bytes =
   if Bytes.length bytes <> wire_response_bytes then None
@@ -628,6 +766,8 @@ let wire_response_of_bytes bytes =
       |> Option.map (fun response -> Wire_snapshot response)
     | kind when kind = wire_kind_event ->
       move_event_of_bytes bytes |> Option.map (fun event -> Wire_event event)
+    | kind when kind = wire_kind_piece_info ->
+      piece_info_of_bytes bytes |> Option.map (fun info -> Wire_piece_info info)
     | _ -> None
 
 (* Project a packed piece to the one-byte client snapshot representation.

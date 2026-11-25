@@ -23,6 +23,14 @@ type snapshot = {
   revision : int64;
 }
 
+type piece_info = {
+  board_x : int;
+  board_y : int;
+  square : int;
+  revision : int64;
+  piece : Piece.t;
+}
+
 type snapshot_batch = {
   x0 : int;
   y0 : int;
@@ -123,6 +131,17 @@ val submit_snapshot_batch :
     board is returned as its revision and 64 client piece bytes. The area is
     capped by {!Protocol.Types.snapshot_batch_area_limit}; invalid or
     oversized regions return [Invalid_request]. *)
+
+val submit_piece_info :
+  ?timing:Metrics.move_timing ->
+  t ->
+  board_x:int ->
+  board_y:int ->
+  square:int ->
+  (piece_info, submit_error) result Lwt.t
+(** Read one square through the worker queue. The reply carries the board
+    revision and the full packed piece, or [Piece.empty] for an empty square.
+    Invalid coordinates or a square outside [0; 63] return [Invalid_request]. *)
 
 val request_snapshot : t -> (unit, submit_error) result Lwt.t
 (** Queue a consistent world-snapshot boundary. Resolves after [on_snapshot]

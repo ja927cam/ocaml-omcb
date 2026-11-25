@@ -105,6 +105,22 @@ type batch_request = {
   sent_at : float;
 }
 
+type piece_info_request_state = {
+  request_id : int32;
+  pi_bx : int;
+  pi_by : int;
+  pi_sq : int;
+  sent_at : float;
+}
+
+type click_streak = {
+  cs_bx : int;
+  cs_by : int;
+  cs_sq : int;
+  cs_last : float;
+  cs_count : int;
+}
+
 let board_key bx by = (by * 1000) + bx
 let clamp_int v lo hi = max lo (min hi v)
 let clamp_float v lo hi = max lo (min hi v)
@@ -312,9 +328,18 @@ let main () =
   let colour_el = find_el "colour" in
   let coords_el = find_el "coords" in
   let status_el = find_el "status" in
+  let piece_info_el = find_el "piece-info" in
+  let piece_info_title_el = find_el "piece-info-title" in
+  let piece_info_body_el = find_el "piece-info-body" in
+  let piece_info_close_el = find_el "piece-info-close" in
   let colour = assigned_colour () in
   let colour_label =
     match colour with White -> "White" | Black -> "Black"
+  in
+  let owns_piece byte =
+    match colour with
+    | White -> white_byte byte
+    | Black -> not (white_byte byte)
   in
   El.set_children colour_el [ El.txt (Jstr.v colour_label) ];
   El.set_at (Jstr.v "data-colour")
@@ -451,6 +476,11 @@ let main () =
      deterministic; the batch request now carries the whole cache. *)
   let max_snapshot_outstanding = 1 in
   let pending_batch : batch_request option ref = ref None in
+  let pending_piece_info : piece_info_request_state option ref = ref None in
+  let piece_info_target : (int * int * int) option ref = ref None in
+  let piece_info_data : Protocol.Types.piece_info option ref = ref None in
+  let click_streak : click_streak option ref = ref None in
+  let pointer_down_at : (float * float) option ref = ref None in
   let batch_expected = ref 0 in
   let batch_area = ref 0 in
   let batch_backoff = ref 500. in
@@ -692,6 +722,15 @@ let main () =
   ignore
     (G.set_interval ~ms:250 (fun () ->
          let now = Performance.now_ms G.performance in
+         (match !pending_piece_info with
+          | Some pending when now -. pending.sent_at > 3_000. ->
+            pending_piece_info := None;
+            (match !piece_info_target with
+             | Some _ ->
+               El.set_children piece_info_body_el
+                 [ El.txt (Jstr.v "Piece information request timed out.") ]
+             | None -> ())
+          | _ -> ());
          (match !pending_batch with
           | Some batch when now -. batch.sent_at > !batch_backoff ->
             pending_batch := None;
@@ -985,6 +1024,191 @@ let main () =
     end
   in
 
+  let square_label square =
+    let file = Char.chr (Char.code 'a' + (square mod 8)) in
+    let rank = 8 - (square / 8) in
+    Printf.sprintf "%c%d" file rank
+  in
+
+  let piece_type_name = function
+    | 1 -> "Pawn"
+    | 2 -> "Knight"
+    | 3 -> "Bishop"
+    | 4 -> "Rook"
+    | 5 -> "Queen"
+    | 6 -> "King"
+    | 7 -> "Promoted pawn"
+    | _ -> "Empty"
+  in
+
+  let yes_no value = if value then "yes" else "no" in
+  let flag flags bit = flags land (1 lsl bit) <> 0 in
+
+  let render_piece_info (info : Protocol.Types.piece_info) =
+    let square = square_label info.square in
+    let title =
+      Printf.sprintf "Piece at (%d, %d) · %s" info.board_x info.board_y
+        square
+    in
+    El.set_children piece_info_title_el [ El.txt (Jstr.v title) ];
+    let body =
+      match info.status with
+      | Protocol.Types.Piece_absent ->
+        Printf.sprintf "No piece on %s." square
+      | Protocol.Types.Piece_found ->
+        let flags = info.flags in
+        let colour = if info.is_white then "White" else "Black" in
+        let kind = piece_type_name info.type_code in
+        let en_passant =
+          if info.type_code = 1 then yes_no (flag flags 0) else "n/a"
+        in
+        let castling =
+          if info.type_code = 4 || info.type_code = 6 then
+            yes_no (info.move_count = 0)
+          else "n/a"
+        in
+        let pad label value =
+          Printf.sprintf "%-15s %s" label value
+        in
+        String.concat "\n"
+          [
+            pad "Position"
+              (Printf.sprintf "board (%d, %d), %s" info.board_x
+                 info.board_y square);
+            (let original = (Int32.to_int info.id - 1) / 32 in
+             pad "Original board"
+               (Printf.sprintf "(%d, %d)" (original mod 1000)
+                  (original / 1000)));
+            pad "Colour" colour;
+            pad "Type" kind;
+            pad "Piece ID" (Int32.to_string info.id);
+            pad "Moves" (string_of_int info.move_count);
+            pad "Captures" (string_of_int info.capture_count);
+            pad "On original" (yes_no (flag flags 7));
+            pad "En passant" en_passant;
+            pad "Castling" castling;
+            pad "Adopted" (yes_no info.adopted);
+            pad "Captured other" (yes_no (flag flags 6));
+            pad "Killer flags"
+              (Printf.sprintf "king=%s queen=%s adopted=%s"
+                 (yes_no (flag flags 1 || flag flags 2))
+                 (yes_no (flag flags 3 || flag flags 4))
+                 (yes_no (flag flags 5)));
+            pad "Revision" (Int64.to_string info.revision);
+            pad "Raw" (Printf.sprintf "0x%Lx" info.raw);
+          ]
+    in
+    El.set_children piece_info_body_el [ El.txt (Jstr.v body) ];
+    El.set_at (Jstr.v "hidden") None piece_info_el
+  in
+
+  let request_piece_info bx by sq =
+    let already_pending =
+      match !pending_piece_info with
+      | Some pending ->
+        pending.pi_bx = bx && pending.pi_by = by && pending.pi_sq = sq
+      | None -> false
+    in
+    if not already_pending then begin
+      let request_id = alloc_request_id () in
+      let request : Protocol.Types.piece_info_request =
+        { request_id; board_x = bx; board_y = by; square = sq }
+      in
+      if send_binary (Protocol.Types.piece_info_request_to_bytes request) then
+        pending_piece_info :=
+          Some
+            {
+              request_id;
+              pi_bx = bx;
+              pi_by = by;
+              pi_sq = sq;
+              sent_at = Performance.now_ms G.performance;
+            }
+    end
+  in
+
+  let open_piece_info bx by sq =
+    piece_info_target := Some (bx, by, sq);
+    match !piece_info_data with
+    | Some info
+      when info.board_x = bx && info.board_y = by && info.square = sq ->
+      render_piece_info info
+    | _ ->
+      El.set_children piece_info_title_el [ El.txt (Jstr.v "Piece") ];
+      El.set_children piece_info_body_el
+        [ El.txt (Jstr.v "Loading piece information...") ];
+      El.set_at (Jstr.v "hidden") None piece_info_el;
+      request_piece_info bx by sq
+  in
+
+  let close_piece_info () =
+    piece_info_target := None;
+    El.set_at (Jstr.v "hidden") (Some (Jstr.v "")) piece_info_el
+  in
+
+  ignore
+    (Ev.listen Ev.click
+       (fun ev ->
+         let mouse = Ev.as_type ev in
+         let cx, cy = to_canvas_of_mouse mouse in
+         let moved =
+           match !pointer_down_at with
+           | Some (px, py) ->
+             abs_float (cx -. px) > 4. || abs_float (cy -. py) > 4.
+           | None -> false
+         in
+         pointer_down_at := None;
+         if not moved then
+           match board_at_canvas cx cy with
+           | None -> ()
+           | Some (bx, by, col, row) ->
+             let sq = (row * 8) + col in
+             let state = state_of bx by in
+             if
+               state.loaded
+               && Bytes.unsafe_get state.pieces sq <> empty
+             then begin
+               let now = Performance.now_ms G.performance in
+               let count =
+                 match !click_streak with
+                 | Some streak
+                   when streak.cs_bx = bx && streak.cs_by = by
+                        && streak.cs_sq = sq
+                        && now -. streak.cs_last < 700. ->
+                   streak.cs_count + 1
+                 | _ -> 1
+               in
+               click_streak :=
+                 Some
+                   {
+                     cs_bx = bx;
+                     cs_by = by;
+                     cs_sq = sq;
+                     cs_last = now;
+                     cs_count = count;
+                   };
+               if count = 2 then request_piece_info bx by sq;
+               if count >= 3 then begin
+                 open_piece_info bx by sq;
+                 click_streak := None
+               end
+             end
+             else click_streak := None)
+       (El.as_target canvas_el));
+  ignore
+    (Ev.listen Ev.click
+       (fun _ -> close_piece_info ())
+       (El.as_target piece_info_close_el));
+  ignore
+    (Ev.listen Ev.keydown
+       (fun ev ->
+         if
+           Jstr.equal
+             (Ev.Keyboard.key (Ev.as_type ev))
+             (Jstr.v "Escape")
+         then close_piece_info ())
+       (Window.as_target G.window));
+
   let apply_move_event (event : Protocol.Types.move_event) =
     let resync = ref false in
     let changed = ref false in
@@ -1099,6 +1323,7 @@ let main () =
     update_layout ();
     if !pending = None then begin
       let cx, cy = to_canvas ev in
+      pointer_down_at := Some (cx, cy);
       let button =
         Ev.as_type ev |> Ev.Pointer.as_mouse |> Ev.Mouse.button
       in
@@ -1109,7 +1334,10 @@ let main () =
         | Some (bx, by, col, row) ->
           let state = state_of bx by in
           let sq = (row * 8) + col in
-          if state.loaded && Bytes.unsafe_get state.pieces sq <> empty then
+          if
+            state.loaded && Bytes.unsafe_get state.pieces sq <> empty
+            && owns_piece (Bytes.unsafe_get state.pieces sq)
+          then
             let byte = Bytes.unsafe_get state.pieces sq in
             Some (state, sq, byte)
           else None
@@ -1512,6 +1740,19 @@ let main () =
                   end
                 | None -> ());
                pump_snapshots ()
+             | Some (Protocol.Types.Wire_piece_info info) ->
+               (match !pending_piece_info with
+                | Some pending
+                  when pending.request_id = info.request_id ->
+                  pending_piece_info := None
+                | _ -> ());
+               piece_info_data := Some info;
+               (match !piece_info_target with
+                | Some (bx, by, sq)
+                  when bx = info.board_x && by = info.board_y
+                       && sq = info.square ->
+                  render_piece_info info
+                | _ -> ())
              | Some (Protocol.Types.Wire_event event) ->
                apply_move_event event
              | Some (Protocol.Types.Wire_move response) ->
