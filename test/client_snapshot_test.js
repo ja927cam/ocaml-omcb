@@ -6,8 +6,9 @@
  * and chromium on PATH. It spawns its own headless browser.
  *
  * The client renders the world full-screen at 216 px per board, so a 3x3
- * region is fully visible with more boards at the edges. It caches at most a
- * 25x25 board window around the centre.
+ * region is fully visible with more boards at the edges. It keeps a 25x25
+ * useful window plus a one-board prefetch margin, inside a hard 900-board
+ * cache bound.
  * This test checks nine visible boards, one-board camera pans in both
  * directions, the cache bound, move persistence across pans and a cache
  * eviction, that cross-board quiet moves are accepted, and that cross-board
@@ -228,9 +229,9 @@ async function main() {
       const original = WebSocket.prototype.send;
       WebSocket.prototype.send = function (data) {
         try {
-          if (data instanceof ArrayBuffer && data.byteLength === 13) {
+          if (data instanceof ArrayBuffer && (data.byteLength === 13 || data.byteLength === 18)) {
             const view = new DataView(data);
-            if (view.getUint8(0) === 6) {
+            if (view.getUint8(0) === 6 || view.getUint8(0) === 7) {
               window.__batchRequests.push([
                 view.getUint16(5, true),
                 view.getUint16(7, true),
@@ -526,20 +527,20 @@ async function main() {
     const centres = [BOARD.x - 1, BOARD.x, BOARD.x + 1];
     for (const [x, y] of requests) {
       const inside = centres.some(
-        (cx) => Math.abs(x - cx) <= 12 && Math.abs(y - BOARD.y) <= 12
+        (cx) => Math.abs(x - cx) <= 14 && Math.abs(y - BOARD.y) <= 14
       );
-      if (!inside) fail(`snapshot request (${x}, ${y}) escaped the 25x25 window`);
+      if (!inside) fail(`snapshot request (${x}, ${y}) escaped the 29x29 prefetch window`);
     }
     if (batches.length === 0) fail("the client sent no batched snapshot requests");
     for (const [x0, y0, x1, y1] of batches) {
       const inside = centres.some(
         (cx) =>
-          x0 >= cx - 12 &&
-          x1 <= cx + 12 &&
-          y0 >= BOARD.y - 12 &&
-          y1 <= BOARD.y + 12
+          x0 >= cx - 14 &&
+          x1 <= cx + 14 &&
+          y0 >= BOARD.y - 14 &&
+          y1 <= BOARD.y + 14
       );
-      if (!inside) fail(`batch region (${x0},${y0})-(${x1},${y1}) escaped the 25x25 window`);
+      if (!inside) fail(`batch region (${x0},${y0})-(${x1},${y1}) escaped the 29x29 prefetch window`);
     }
 
     // Move far enough to evict the centre board, then return. The client must
@@ -616,7 +617,7 @@ async function main() {
       `Client snapshot test passed: ${load.loaded} boards loaded in ${load.ms} ms ` +
       `over ${load.batches} batch frame(s) (${load.bytes} bytes), ` +
       `${batches.length} batch and ${requests.length} single requests, ` +
-      `each within 25x25 of a visited centre near (${BOARD.x}, ${BOARD.y}).`
+      `each within 29x29 of a visited centre near (${BOARD.x}, ${BOARD.y}).`
     );
     await send("Browser.close");
   } finally {

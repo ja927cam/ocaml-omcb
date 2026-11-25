@@ -1,11 +1,19 @@
+(library
+ (name sim_map_client_core)
+ (modules board_cache viewport snapshot_plan request_tracker)
+ (libraries))
+
 (executable
  (name main)
+ (modules main metrics)
  (modes wasm)
  (libraries
   brr
   protocol
+  sim_map_client_core
   )
 )
+
 (rule
  (target pieces.png)
  (deps assets/pieces.png)

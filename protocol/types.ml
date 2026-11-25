@@ -890,6 +890,81 @@ let snapshot_batch_request_of_bytes b : snapshot_batch_request option =
     if not (valid_batch_region x0 y0 x1 y1) then None
     else Some { request_id = get_i32_le b 1; x0; y0; x1; y1 }
 
+let snapshot_batch_window_request_message_type = 0x07
+let snapshot_batch_window_request_bytes = 18
+
+type snapshot_batch_window_request = {
+  request_id : int32;
+  x0 : int;
+  y0 : int;
+  x1 : int;
+  y1 : int;
+  center_x : int;
+  center_y : int;
+  radius : int;
+}
+
+let snapshot_batch_window_request_to_bytes
+    (request : snapshot_batch_window_request) =
+  if
+    not
+      (valid_batch_region request.x0 request.y0 request.x1 request.y1)
+  then
+    invalid_arg
+      "Protocol.Types.snapshot_batch_window_request_to_bytes: invalid region";
+  if
+    not
+      (valid_board_coord request.center_x
+      && valid_board_coord request.center_y)
+    || request.radius < 0 || request.radius > 100
+  then
+    invalid_arg
+      "Protocol.Types.snapshot_batch_window_request_to_bytes: invalid window";
+  let b = Bytes.create snapshot_batch_window_request_bytes in
+  Bytes.set b 0 (Char.chr snapshot_batch_window_request_message_type);
+  set_i32_le b 1 request.request_id;
+  set_u16_le b 5 request.x0;
+  set_u16_le b 7 request.y0;
+  set_u16_le b 9 request.x1;
+  set_u16_le b 11 request.y1;
+  set_u16_le b 13 request.center_x;
+  set_u16_le b 15 request.center_y;
+  Bytes.set b 17 (Char.chr request.radius);
+  b
+
+let snapshot_batch_window_request_of_bytes b :
+    snapshot_batch_window_request option =
+  if Bytes.length b <> snapshot_batch_window_request_bytes then None
+  else if
+    Char.code (Bytes.unsafe_get b 0)
+    <> snapshot_batch_window_request_message_type
+  then None
+  else
+    let x0 = get_u16_le b 5
+    and y0 = get_u16_le b 7
+    and x1 = get_u16_le b 9
+    and y1 = get_u16_le b 11
+    and center_x = get_u16_le b 13
+    and center_y = get_u16_le b 15
+    and radius = Char.code (Bytes.unsafe_get b 17) in
+    if
+      valid_batch_region x0 y0 x1 y1
+      && valid_board_coord center_x && valid_board_coord center_y
+      && radius >= 0 && radius <= 100
+    then
+      Some
+        {
+          request_id = get_i32_le b 1;
+          x0;
+          y0;
+          x1;
+          y1;
+          center_x;
+          center_y;
+          radius;
+        }
+    else None
+
 type snapshot_batch_board = {
   revision : int64;
   pieces : Bytes.t; (* 64 dense client piece bytes, row-major *)

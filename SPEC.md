@@ -996,6 +996,32 @@ included per board so subsequent live events can still detect gaps. The format
 is additive: the single-board request and response remain in use for
 resynchronisation and probes.
 
+### 13.6.1a-batch-window Atomic batched request with subscription window
+
+Message type `0x07` combines a batch request with an atomic replacement of the
+connection's subscription window. The server applies the window first, then
+registers and processes the batch. This lets the client keep subscriptions
+bounded to the current viewport without sending a separate subscription
+message before a snapshot request.
+
+The message is 18 bytes:
+
+| Bytes | Field |
+|---|---|
+| 0 | Message type `0x07` |
+| 1–4 | Request ID, int32 |
+| 5–6 | First board X, uint16 |
+| 7–8 | First board Y, uint16 |
+| 9–10 | Last board X, uint16 |
+| 11–12 | Last board Y, uint16 |
+| 13–14 | Window centre X, uint16 |
+| 15–16 | Window centre Y, uint16 |
+| 17 | Window radius, uint8 (0–100) |
+
+The response is the same compact batch response as `0x06`. The region and
+window must be valid; otherwise the message is ignored and the request has no
+response.
+
 ### 13.6.1b Compact batched snapshot response
 
 Wire kind `6` is an additive compact variant of kind `5`. It keeps the same

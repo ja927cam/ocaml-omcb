@@ -378,6 +378,47 @@ let () =
       Protocol.Types.snapshot_batch_request_to_bytes
         { batch_request with x0 = 0; y0 = 0; x1 = 999; y1 = 999 });
 
+  let batch_window =
+    {
+      Protocol.Types.request_id = 992l;
+      x0 = 486;
+      y0 = 486;
+      x1 = 514;
+      y1 = 514;
+      center_x = 500;
+      center_y = 500;
+      radius = 14;
+    }
+  in
+  let window_bytes =
+    Protocol.Types.snapshot_batch_window_request_to_bytes batch_window
+  in
+  check "batch window request length"
+    (Bytes.length window_bytes
+    = Protocol.Types.snapshot_batch_window_request_bytes);
+  (match
+     Protocol.Types.snapshot_batch_window_request_of_bytes window_bytes
+   with
+   | Some decoded ->
+     check "batch window request id" (decoded.request_id = 992l);
+     check "batch window center" (decoded.center_x = 500);
+     check "batch window radius" (decoded.radius = 14);
+     check "batch window region" (decoded.x0 = 486 && decoded.y1 = 514)
+   | None -> failwith "batch window request decoded to None");
+  check "batch window wrong length rejected"
+    (Protocol.Types.snapshot_batch_window_request_of_bytes
+       (Bytes.create 17) = None);
+  check "batch window wrong kind rejected"
+    (let b = Bytes.copy window_bytes in
+     Bytes.set b 0 (Char.chr 6);
+     Protocol.Types.snapshot_batch_window_request_of_bytes b = None);
+  expect_invalid "batch window invalid region" (fun () ->
+      Protocol.Types.snapshot_batch_window_request_to_bytes
+        { batch_window with x0 = 5; x1 = 4 });
+  expect_invalid "batch window invalid radius" (fun () ->
+      Protocol.Types.snapshot_batch_window_request_to_bytes
+        { batch_window with radius = 101 });
+
   let board_of pieces =
     let bytes = Bytes.make 64 '\000' in
     List.iter (fun (square, piece) -> Bytes.set bytes square (Char.chr piece)) pieces;

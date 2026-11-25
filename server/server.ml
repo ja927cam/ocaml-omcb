@@ -658,6 +658,53 @@ let handle_socket manager worker socket =
     Connection_manager.register manager ~send_raw:(send_bytes socket)
       ~close_raw:(fun () -> Dream.close_websocket socket)
   in
+  let handle_snapshot_batch
+      (request : Protocol.Types.snapshot_batch_request) =
+    let width = request.x1 - request.x0 + 1 in
+    let height = request.y1 - request.y0 + 1 in
+    let tokens =
+      Array.init (width * height) (fun index ->
+          let board_x = request.x0 + (index mod width) in
+          let board_y = request.y0 + (index / width) in
+          ( board_x,
+            board_y,
+            Connection_manager.begin_snapshot conn ~board_x ~board_y ))
+    in
+    Lwt.map
+      (fun result ->
+        match result with
+        | Ok (batch : State_worker.snapshot_batch) ->
+          let released = ref [] in
+          Array.iter
+            (fun (board_x, board_y, token) ->
+              let revision =
+                let index =
+                  ((board_y - request.y0) * width)
+                  + (board_x - request.x0)
+                in
+                fst batch.boards.(index)
+              in
+              match
+                Connection_manager.complete_snapshot conn ~board_x
+                  ~board_y ~token ~revision
+              with
+              | Some events -> released := events @ !released
+              | None -> ())
+            tokens;
+          Some
+            (`Snapshot_batch
+               ( snapshot_batch_response request batch,
+                 !released ))
+        | Error _ ->
+          Array.iter
+            (fun (board_x, board_y, token) ->
+              Connection_manager.abort_snapshot conn ~board_x ~board_y
+                token)
+            tokens;
+          None)
+      (State_worker.submit_snapshot_batch worker ~x0:request.x0
+         ~y0:request.y0 ~x1:request.x1 ~y1:request.y1)
+  in
   let rec loop () =
     (* A per-request race against the connection's close signal was removed:
        Lwt.pick on a never-resolving waiter leaked callback nodes under high
@@ -769,51 +816,25 @@ let handle_socket manager worker socket =
         | 13 ->
           (match Protocol.Types.snapshot_batch_request_of_bytes bytes with
            | None -> Lwt.return_none
+           | Some request -> handle_snapshot_batch request)
+        | 18 ->
+          (match
+             Protocol.Types.snapshot_batch_window_request_of_bytes bytes
+           with
+           | None -> Lwt.return_none
            | Some request ->
-             let width = request.x1 - request.x0 + 1 in
-             let height = request.y1 - request.y0 + 1 in
-             let tokens =
-               Array.init (width * height) (fun index ->
-                   let board_x = request.x0 + (index mod width) in
-                   let board_y = request.y0 + (index / width) in
-                   ( board_x,
-                     board_y,
-                     Connection_manager.begin_snapshot conn ~board_x ~board_y ))
-             in
-             Lwt.map
-               (fun result ->
-                 match result with
-                 | Ok (batch : State_worker.snapshot_batch) ->
-                   let released = ref [] in
-                   Array.iter
-                     (fun (board_x, board_y, token) ->
-                       let revision =
-                         let index =
-                           ((board_y - request.y0) * width)
-                           + (board_x - request.x0)
-                         in
-                         fst batch.boards.(index)
-                       in
-                       match
-                         Connection_manager.complete_snapshot conn ~board_x
-                           ~board_y ~token ~revision
-                       with
-                       | Some events -> released := events @ !released
-                       | None -> ())
-                     tokens;
-                   Some
-                     (`Snapshot_batch
-                        ( snapshot_batch_response request batch,
-                          !released ))
-                 | Error _ ->
-                   Array.iter
-                     (fun (board_x, board_y, token) ->
-                       Connection_manager.abort_snapshot conn ~board_x
-                         ~board_y token)
-                     tokens;
-                   None)
-               (State_worker.submit_snapshot_batch worker ~x0:request.x0
-                  ~y0:request.y0 ~x1:request.x1 ~y1:request.y1))
+             Connection_manager.set_window conn
+               ~center_x:request.center_x ~center_y:request.center_y
+               ~radius:request.radius;
+             handle_snapshot_batch
+               Protocol.Types.
+                 {
+                   request_id = request.request_id;
+                   x0 = request.x0;
+                   y0 = request.y0;
+                   x1 = request.x1;
+                   y1 = request.y1;
+                 })
         | _ ->
           Lwt.return_some
             (`Move

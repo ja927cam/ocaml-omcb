@@ -12,7 +12,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const SERVER = "http://localhost:8080/";
+const SERVER = process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
+const WS_URL = SERVER.replace(/^http/, "ws").replace(/\/$/, "") + "/ws";
 const BOARD_SCALE = 216;
 const CELL = BOARD_SCALE / 8;
 const CDP_PORT = 9800 + Math.floor(Math.random() * 300);
@@ -30,7 +31,7 @@ function boardByte(bytes, square) {
 
 class Remote {
   constructor() {
-    this.ws = new WebSocket("ws://localhost:8080/ws");
+    this.ws = new WebSocket(WS_URL);
     this.ws.binaryType = "arraybuffer";
     this.pending = new Map();
     this.nextId = 1;
@@ -183,8 +184,8 @@ async function main() {
             window.__snapshotRequestCount++;
           } else if (
             data instanceof ArrayBuffer &&
-            data.byteLength === 13 &&
-            new Uint8Array(data)[0] === 6
+            (data.byteLength === 13 || data.byteLength === 18) &&
+            (new Uint8Array(data)[0] === 6 || new Uint8Array(data)[0] === 7)
           ) {
             window.__snapshotRequestCount++;
           }

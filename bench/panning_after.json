@@ -1,0 +1,49 @@
+{
+  "generated": "2026-11-25T21:12:31.947Z",
+  "baseline": false,
+  "initial": {
+    "loaded": 841,
+    "occupancy": 841,
+    "visibleBoards": 15
+  },
+  "rapidPan": {
+    "settle_ms": 3,
+    "peak_visible_missing": 0,
+    "peak_blank_boards": 0,
+    "final_blank_after_timeout": null,
+    "final_visible_missing": 0,
+    "final_blank_boards": 0
+  },
+  "requests": {
+    "batch_requests": 70,
+    "single_requests": 0,
+    "boards_requested": 9667,
+    "duplicate_boards": 2772,
+    "duplicate_inflight": 0
+  },
+  "subscriptions": {
+    "adds": 0,
+    "removes": 0,
+    "windows": 70
+  },
+  "cache": {
+    "occupancy": 900,
+    "peak": 900,
+    "evictions": 8289,
+    "limit": 900
+  },
+  "server": {
+    "subscriptions": 841,
+    "rss_kb": 550128
+  },
+  "return": {
+    "snapshot_requests": 0,
+    "blank_boards": 0
+  },
+  "heap": {
+    "used_size": 6528532,
+    "total_size": 22282240,
+    "embedder_heap_used": 9566536
+  },
+  "exceptions": 0
+}

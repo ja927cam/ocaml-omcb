@@ -18,6 +18,36 @@
   satisfies opam's depext check; a pinned, checksummed static release is the
   `wasm-opt` used by the build.
 
+### Client panning and cache
+
+- Replaced the fixed 25 × 25 client board table with a bounded 900-board
+  LRU cache. Visible boards and the prefetch window are tracked separately;
+  old boards stay cached until capacity pressure, and visible boards are
+  never evicted.
+- Snapshot loading now requests only missing rectangles, prioritises visible
+  boards, deduplicates in-flight boards, bounds the number of in-flight
+  batches and treats partial/empty/stale responses explicitly.
+- The loading indicator is derived from the visible boards that are actually
+  missing. It reaches completion independently of optional prefetch work and
+  cannot get stuck on a superseded request.
+- Small pans no longer send per-board subscription churn. Batch requests now
+  carry an atomic window reset (message type `0x07`): the server replaces the
+  connection's subscription set with the current useful window and then
+  processes the batch. This keeps subscriptions bounded without sending small
+  subscription messages before a batch response, which could stall the
+  WebSocket writer.
+- If a new client reaches an older server that does not understand the
+  window-batch message, the rejection or repeated timeout switches it back to
+  the compatible `0x06` batch for the rest of the connection. This prevents a
+  cached new client from leaving the viewport permanently blank after a
+  rollback. The old server then falls back to add-only subscriptions.
+- The subscription stress test visits up to 50,000 boards: add-only
+  subscriptions grew to 49,081 and server RSS rose by about 26 MB, while the
+  bounded reset keeps subscriptions at 841 and RSS growth to about 8 MB.
+- Added unit tests for the cache, viewport math, missing-rectangle planner and
+  request tracker, plus a headless-browser panning stress test with recorded
+  before/after request and cache measurements.
+
 ### Monitoring
 
 - Added a public Prometheus text endpoint at `/metrics.prom` (in addition to

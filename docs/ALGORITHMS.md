@@ -559,7 +559,8 @@ message-type byte (0x02), request ID, board X and board Y as uint16. The
 response payload is 81 bytes: status, request ID, board coordinates, an
 int64 board revision, then 64 one-byte client pieces in row-major order. A failed snapshot
 has status 0, revision 0 and zero board contents. Requests dispatch by length
-(5 subscribe/unsubscribe, 6 cache window, 14 move, 9 snapshot). Every server
+(5 subscribe/unsubscribe, 6 cache window, 9 snapshot, 13 batch, 18 batch with
+atomic window reset, 14 move). Every server
 message is carried in a fixed 4096-byte wire frame with a kind byte (`1` move,
 `2` snapshot, `3` live event) and zero padding. The padding is a workaround for
 Dream 1.0.0~alpha8, which buffers WebSocket writes until 4096 bytes accumulate:
@@ -663,7 +664,10 @@ buffer.
 
 - `board_subscribers : board key -> set of connection IDs` gives O(1) lookup.
 - A 6-byte window message replaces a client's 25 x 25 set in O(625); 5-byte
-  subscribe/unsubscribe messages adjust one board.
+  subscribe/unsubscribe messages adjust one board. The browser client instead
+  uses an 18-byte batch-with-window message (`0x07`) that replaces the set and
+  requests the missing rectangle in one server turn, avoiding a small
+  subscription message before a batch request.
 - A broadcast collects subscribers from up to two affected boards into a
   temporary set, so a client subscribed to both receives one event.
 - The event is encoded once per move as a compact payload; each recipient
@@ -1028,59 +1032,46 @@ boards, not a single board:
 
 ### Snapshot cache
 
-- Boards are stored in a hash table keyed by `board_y * 1000 + board_x`.
-- The retained window is 25 x 25 boards around the camera centre. Boards
-  outside it are evicted and their pending requests forgotten.
-- On each camera change the client queues the visible boards plus a one-board
-  margin, then the rest of the window lazily. The queue is rebuilt from the
-  current camera so stale queued boards are not requested.
-- At most one snapshot request is in flight. Sequential requests avoid a lost
-  write-acknowledgement path in Dream's stream pipe when many responses are
-  queued. A 25-board window is still cheap over loopback.
-- Responses are matched by request ID and board key; stale or evicted
-  responses are ignored. A failed snapshot leaves the board unloaded, marks it
-  stale and retries. The response carries the `int64` revision at copy time.
-- The client sends one subscription-window message whenever its rounded cache
-  centre changes. The server window is exactly the retained 25 x 25 set.
-- Snapshot loading is single-flight. The centre board is queued first during a
-  window rebuild. A 250 ms watchdog reconciles `pending_snapshots` against the
-  board table, drops orphan request IDs, and retries a pending board after a
-  per-board backoff: 500 ms for the first retry, doubling to 4 s. A successful
-  snapshot resets the backoff.
-- A retry does not discard a delayed response. A snapshot response is applied
-  when it matches the current request, or when it is an older request for a
-  board that is still unloaded and not resyncing. Revisions are ordered per
-  board, so the older snapshot cannot roll back newer data; the
-  current-request rule still protects loaded boards and resyncs.
-- Why the older-response rule matters: in headless Chromium a WebSocket
-  message is occasionally not dispatched to the page for two to three seconds,
-  until the page sends another frame. Raw Node clients and the server do not
-  show this delay, and the page's timers and animation frames keep running.
-  Without the rule, the watchdog retry supersedes the stalled response, the
-  stalled response is then ignored, and the board stays unloaded forever.
-  This was the intermittent cache-eviction failure.
-- Moves use the same liveness idea. Receiving the client's own broadcast event
-  is authoritative (the server broadcasts only accepted moves), so it clears
-  the optimistic lock immediately, even if the direct move response is
-  delayed. While a move is pending, a probe snapshot request for the centre
-  board is sent every 250 ms; this releases a deferred message. If neither the
-  response nor the event arrives within 2 s, the optimistic move is rolled
-  back so the board does not stay locked.
-- The browser integration test selects a pristine 5 x 5 block by querying
-  snapshots directly. Every board must have revision 0, a white pawn on e2 and
-  an empty e4, so persisted moves from earlier test runs cannot invalidate the
-  assumptions. An overall deadline turns a stalled CDP/browser session into a
-  failure instead of a hang.
-- The client tracks an `int64` revision per cached board. An event at the next
-  revision applies; an equal or older revision is ignored as duplicate/stale;
-  a skipped revision marks the board stale and unavailable for local moves, and
-  queues a fresh snapshot. The server has already buffered events for a pending
-  snapshot, so events newer than the snapshot arrive after it in revision
-  order. The event matching a pending move sets an `event_applied` flag, so the
-  move response does not repeat castling/en-passant/promotion.
-- Each loaded board stores 64 one-byte pieces plus a small record, so a full
-  625-board cache is roughly 50 KiB. Decoding a byte to a glyph at draw time is
-  a handful of bit operations.
+- Boards are stored in a single bounded LRU cache keyed by
+  `board_y * 1000 + board_x`. The hard limit is 900 boards; visible boards are
+  protected, and old/prefetch boards are evicted in least-recently-used order.
+- The useful window is 25 x 25 boards around the camera centre plus a
+  two-board prefetch margin (29 x 29, 841 boards). The actual visible set is
+  computed from the canvas and is always inside that window.
+- Loading requests only rectangles that contain missing or stale boards. The
+  planner builds maximal runs per row and merges them vertically, so a
+  one-board pan requests one strip rather than the whole window. Cached boards
+  at an adequate revision are never re-requested.
+- At most one batch request is in flight. Board keys are tracked per request,
+  deduplicated while in flight, and released when the response arrives or the
+  request times out. A stale completion cannot clear a newer request. Failed,
+  empty and partial responses are recorded and retried with a bounded backoff.
+- Snapshot revisions are monotonic. A response is applied only when its
+  revision is at least the cached revision; an older response cannot overwrite
+  a newer live update. Responses may populate boards that are no longer in the
+  exact requested strip as long as they remain useful or there is cache room.
+- The loading indicator is derived from the visible rectangle:
+  `visibleMissing = visible area - loaded visible boards`. Prefetch work is
+  reported separately and cannot keep the indicator stuck. A missed or
+  superseded request therefore has no counter to leak.
+- Subscriptions are replaced atomically by the batch request itself: message
+  type `0x07` carries the batch rectangle plus the current window centre and
+  radius. The server applies `set_window` before registering the batch, so
+  there is no separate subscription message that could stall the WebSocket
+  writer between a subscription change and a snapshot request. Subscriptions
+  therefore stay bounded to the current useful window instead of growing with
+  every board ever visited.
+- Cached boards outside the new window are marked stale when the window is
+  replaced. They remain in the LRU cache (and can be evicted) but are fetched
+  again, and subscribed again, if the camera returns to them. Boards inside
+  the window stay loaded and subscribed.
+- If the server rejects `0x07` (an older image) or three window batches time
+  out before any success, the client switches to the compatible `0x06` batch
+  for that connection. The viewport still loads; subscriptions then fall back
+  to the legacy add-only behaviour until reconnect.
+- On disconnect, all in-flight bookkeeping is cleared and the server's
+  per-connection subscriptions are removed by `unregister`. On reconnect the
+  cache is marked stale and the useful window is requested again.
 
 ### Moves
 

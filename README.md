@@ -1,9 +1,10 @@
 # One Million Chessboards — OCaml
 
 Server-authoritative world of 1,000 × 1,000 chessboards (64,000,000 squares,
-32,000,000 starting pieces), with a pannable WASM/Brr grid client, a 25 × 25
-board snapshot cache, one-byte snapshot pieces, live move broadcasts over a
-binary WebSocket protocol.
+32,000,000 starting pieces), with a pannable WASM/Brr grid client, a bounded
+900-board LRU cache with a 25 × 25 prefetch window plus a small margin,
+one-byte snapshot pieces, live move broadcasts over a binary WebSocket
+protocol.
 
 ## Branches and production
 
@@ -49,10 +50,10 @@ node test/client_ownership_test.js   # devices only move their own colour
 node test/client_piece_info_test.js  # double/triple-click piece information
 ```
 
-The load performance test asserts that a full 25 x 25 cache arrives in at most
-a few compact batch frames, under 16 KiB and under 500 ms in a headless
-browser. A fresh standard window is one ~1.3 KiB frame. It also compares the
-batched frame with the legacy 625-frame / 2.56 MiB path.
+The load performance test asserts that the initial 29 x 29 prefetch window
+arrives in at most a few compact batch frames, under 16 KiB and under 500 ms in
+a headless browser. A fresh standard window is one ~1.7 KiB frame. It also
+compares the batched frame with the legacy per-board / 2.56 MiB path.
 
 Live update tests:
 
@@ -60,6 +61,10 @@ Live update tests:
 node test/live_update_test.js   # real two-client fan-out and subscriptions
 node test/live_client_test.js   # browser cache apply, duplicate and gap handling
 node test/snapshot_consistency_test.js  # snapshot/move race and concurrent clients
+node test/client_panning_test.js    # rapid panning, cache bound and settle time
+MODE=bounded node test/subscription_stress_test.js  # subscription/RSS bounds
+MODE=add-only node test/subscription_stress_test.js # before comparison
+node test/subscription_transition_test.js          # moves during window replacement
 ```
 
 The WebSocket teardown regression test (Linux) repeatedly kills a headless
@@ -78,10 +83,10 @@ node test/crash_recovery_test.js
 ```
 
 It checks that the nine centre boards are visible, that dragging empty space
-pans by one board, that the client stays within a 25 × 25 cache window, that
-cross-board quiet moves work, that off-board and off-home captures are
-blocked, and that moves persist across board switches and a
-cache eviction/re-fetch. On each run it probes a pristine 5 × 5 block
+pans by one board, that the bounded cache and 25 × 25 prefetch window stay
+within their limits, that cross-board quiet moves work, that off-board and
+off-home captures are blocked, and that moves persist across board switches
+and a cache eviction/re-fetch. On each run it probes a pristine 5 × 5 block
 (revision 0 and the standard starting position) because moves are
 authoritative and remain on the running server.
 

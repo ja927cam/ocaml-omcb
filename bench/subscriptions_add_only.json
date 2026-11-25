@@ -1,0 +1,58 @@
+{
+  "mode": "add-only",
+  "base": {
+    "subscriptions": 0,
+    "rss_kb": 545236
+  },
+  "window_boards": 841,
+  "windows": 100,
+  "targets": [
+    {
+      "visited_target": 1000,
+      "windows": 2,
+      "subscriptions": 1421,
+      "rss_kb": 546316,
+      "move_p50_ms": 1.9239159999999629,
+      "move_p95_ms": 2.181041999999934,
+      "broadcast_p50_ms": 0.001983,
+      "broadcast_p95_ms": 0.002565,
+      "move_event_received": true
+    },
+    {
+      "visited_target": 10000,
+      "windows": 20,
+      "subscriptions": 11861,
+      "rss_kb": 552296,
+      "move_p50_ms": 1.6884909999998854,
+      "move_p95_ms": 1.9743109999999433,
+      "broadcast_p50_ms": 0.001994,
+      "broadcast_p95_ms": 0.003126,
+      "move_event_received": true
+    },
+    {
+      "visited_target": 50000,
+      "windows": 100,
+      "subscriptions": 49081,
+      "rss_kb": 571448,
+      "move_p50_ms": 0.5707789999996749,
+      "move_p95_ms": 0.6589550000003328,
+      "broadcast_p50_ms": 0.002134,
+      "broadcast_p95_ms": 0.003767,
+      "move_event_received": true
+    }
+  ],
+  "return": {
+    "before": 49081,
+    "after": 49922,
+    "final": 49922
+  },
+  "moves": {
+    "total": 15,
+    "rejected": 0,
+    "p50_ms": 1.6709979999998268,
+    "p95_ms": 2.181041999999934
+  },
+  "events": 15,
+  "rss_kb": 571544,
+  "after_close_subscriptions": 0
+}

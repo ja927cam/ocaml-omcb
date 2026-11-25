@@ -1,5 +1,6 @@
 open Brr
 open Brr_canvas
+open Sim_map_client_core
 
 (* 216 px boards are a comfortable zoom: three fit vertically in a 700 px
    window, while larger screens show more context. *)
@@ -19,19 +20,21 @@ let max_view_boards = 10.
 (* Client state                                                              *)
 (* ------------------------------------------------------------------------- *)
 
-type board_state = {
+type board_state = Board_cache.board_state = {
   bx : int;
   by : int;
   mutable pieces : Bytes.t; (* 64 one-byte client pieces *)
   mutable revision : int64;
   mutable loaded : bool;
   mutable stale : bool;
-  mutable pending_request : int32 option;
-  mutable pending_since : float;
-  (* Retry delay for this board, doubled on each timeout so a slow server is
-     probed quickly once but is not flooded with duplicate requests. *)
-  mutable snapshot_backoff : float;
 }
+
+let cache_capacity = 900
+let window_radius = 12
+let prefetch_margin = 2
+let max_inflight_batches = 1
+let batch_timeout_ms = 1_000.
+let reconcile_interval_ms = 40.
 
 type drag = {
   state : board_state;
@@ -97,14 +100,6 @@ type pending = {
   mutable last_probe : float;
 }
 
-(* One in-flight request for a whole rectangular region. A 25 x 25 cache is a
-   single round trip instead of 625, and the reply is one compact frame rather
-   than 625 padded 4 KiB frames. *)
-type batch_request = {
-  request_id : int32;
-  sent_at : float;
-}
-
 type piece_info_request_state = {
   request_id : int32;
   pi_bx : int;
@@ -125,7 +120,6 @@ let board_key bx by = (by * 1000) + bx
 let clamp_int v lo hi = max lo (min hi v)
 let clamp_float v lo hi = max lo (min hi v)
 
-let empty_board () = Bytes.make 64 empty
 
 let glyph_of_byte byte =
   if byte = empty then empty
@@ -467,40 +461,43 @@ let main () =
     El.img ~at:[ At.src (Jstr.v "/static/pieces.png") ] ()
   in
 
-  let boards : (int, board_state) Hashtbl.t = Hashtbl.create 1024 in
-  let pending_snapshots : (int32, int) Hashtbl.t = Hashtbl.create 1024 in
-  let snapshot_queue = Queue.create () in
-  let queued_snapshots : (int, unit) Hashtbl.t = Hashtbl.create 1024 in
-  (* Dream's stream pipe can lose a write acknowledgement when many responses
-     are queued. One request at a time keeps the request/response path
-     deterministic; the batch request now carries the whole cache. *)
-  let max_snapshot_outstanding = 1 in
-  let pending_batch : batch_request option ref = ref None in
+  let cache = Board_cache.create ~capacity:cache_capacity () in
+  let tracker = Request_tracker.create ~max_inflight:max_inflight_batches () in
   let pending_piece_info : piece_info_request_state option ref = ref None in
   let piece_info_target : (int * int * int) option ref = ref None in
   let piece_info_data : Protocol.Types.piece_info option ref = ref None in
   let click_streak : click_streak option ref = ref None in
   let pointer_down_at : (float * float) option ref = ref None in
-  let batch_expected = ref 0 in
-  let batch_area = ref 0 in
-  let batch_backoff = ref 500. in
-  (* Load telemetry. The browser test asserts both the board count and the
-     bytes transferred, so a regression back to per-board padded frames is
-     caught rather than merely feeling slow. *)
+  (* Load telemetry. The browser tests assert the board count, batch count and
+     bytes transferred, and the new panning test reads the cache counters. *)
   let snapshot_batches = ref 0 in
   let snapshot_bytes = ref 0 in
   let load_started = ref 0. in
   let load_finished = ref 0. in
+  let initial_load_area = ref 0 in
+  let batch_failures = ref 0 in
+  let subscription_adds = ref 0 in
+  let subscription_removes = ref 0 in
+  let subscription_windows = ref 0 in
 
   let view_left = ref 0. and view_top = ref 0. in
   let drag : drag option ref = ref None in
   let panning : pan option ref = ref None in
   let pending : pending option ref = ref None in
   let ws = ref None in
+  let connected = ref false in
+  let ever_connected = ref false in
   let next_request_id = ref (random_request_id ()) in
-  let last_subscription = ref None in
-  let retry_snapshot_hook = ref (fun () -> ()) in
   let expire_move_hook = ref (fun () -> ()) in
+  let visible_rect = ref Viewport.empty in
+  let useful_rect = ref Viewport.empty in
+  let last_reconcile = ref 0. in
+  let reconcile_timer_pending = ref false in
+  let retry_at = ref 0. in
+  let batch_backoff = ref 250. in
+  let window_batch_supported = ref true in
+  let window_batch_success = ref false in
+  let window_batch_failures = ref 0 in
 
   let centre_of_view () =
     ( clamp_int
@@ -558,24 +555,6 @@ let main () =
     | _ -> false
   in
 
-  let send_batch_request x0 y0 x1 y1 =
-    if !pending_batch = None then begin
-      let request_id = alloc_request_id () in
-      let request : Protocol.Types.snapshot_batch_request =
-        { request_id; x0; y0; x1; y1 }
-      in
-      if send_binary (Protocol.Types.snapshot_batch_request_to_bytes request)
-      then begin
-        let now = Performance.now_ms G.performance in
-        if !load_started = 0. then load_started := now;
-        pending_batch := Some { request_id; sent_at = now };
-        let area = (x1 - x0 + 1) * (y1 - y0 + 1) in
-        batch_expected := area;
-        batch_area := area
-      end
-    end
-  in
-
   let bytes_of_buffer data =
     let length = Tarray.Buffer.byte_length data in
     let view = Tarray.Data_view.of_buffer data in
@@ -586,59 +565,224 @@ let main () =
     bytes
   in
 
+  let current_visible () =
+    Viewport.of_view ~left:!view_left ~top:!view_top
+      ~visible_w:(visible_w ()) ~visible_h:(visible_h ())
+  in
+
+  let current_useful () =
+    let center_x, center_y = centre_of_view () in
+    Viewport.expand
+      (Viewport.around ~center_x ~center_y ~radius:window_radius)
+      ~margin:prefetch_margin
+  in
+
+  let is_visible_key key =
+    let bx = key mod 1000 and by = key / 1000 in
+    Viewport.contains !visible_rect ~bx ~by
+  in
+
+  (* Visible boards are never evicted. Prefetch and old-window boards are
+     ordinary LRU candidates even while their request is in flight; dropping a
+     prefetched response is safe because it is re-fetched if it becomes
+     useful. *)
+  let protected_key key = is_visible_key key in
+
+  let make_room needed =
+    let target = max 0 (cache_capacity - max 0 needed) in
+    if Board_cache.length cache > target then
+      ignore (Board_cache.evict_to cache ~target ~protected:protected_key)
+  in
+
   let state_of bx by =
     let key = board_key bx by in
-    match Hashtbl.find_opt boards key with
+    match Board_cache.find cache key with
     | Some state -> state
     | None ->
-      let state =
+      make_room 1;
+      if Board_cache.length cache >= cache_capacity then
+        (* All remaining entries are visible. This cannot happen with the
+           configured viewport bounds, but keep the cache hard-bounded. *)
         {
           bx;
           by;
-          pieces = empty_board ();
+          pieces = Bytes.make 64 '\000';
           revision = 0L;
           loaded = false;
-          stale = false;
-          pending_request = None;
-          pending_since = 0.;
-          snapshot_backoff = 500.;
+          stale = true;
         }
-      in
-      Hashtbl.add boards key state;
-      state
+      else Board_cache.get_or_create cache ~bx ~by
   in
 
-  let forget_pending state =
-    match state.pending_request with
-    | None -> ()
-    | Some request_id ->
-      Hashtbl.remove pending_snapshots request_id;
-      state.pending_request <- None;
-      state.pending_since <- 0.
-  in
-
-  let send_snapshot_request state =
-    if (not state.loaded) && state.pending_request = None then begin
-      let request_id = alloc_request_id () in
-      state.pending_request <- Some request_id;
-      state.pending_since <- Performance.now_ms G.performance;
-      Hashtbl.replace pending_snapshots request_id
-        (board_key state.bx state.by);
-      let request : Protocol.Types.snapshot_request =
-        {
-          Protocol.Types.request_id;
-          board_x = state.bx;
-          board_y = state.by;
-        }
-      in
-      if send_binary (Protocol.Types.snapshot_request_to_bytes request) then
-        true
-      else begin
-        forget_pending state;
-        false
+  let update_stats () =
+    let vis = !visible_rect in
+    let use = !useful_rect in
+    let visible_loaded, visible_total, visible_missing =
+      Snapshot_plan.progress cache vis
+    in
+    let _, _, prefetch_missing = Snapshot_plan.progress cache use in
+    let set name value =
+      El.set_at (Jstr.v name) (Some (Jstr.v (string_of_int value))) body_el
+    in
+    set "data-loaded-boards" (Board_cache.loaded_count cache);
+    set "data-cache-occupancy" (Board_cache.length cache);
+    set "data-cache-peak" (Board_cache.peak cache);
+    set "data-cache-capacity" (Board_cache.capacity cache);
+    set "data-cache-hits" (Board_cache.hits cache);
+    set "data-cache-misses" (Board_cache.misses cache);
+    set "data-cache-evictions" (Board_cache.evictions cache);
+    set "data-visible-boards" visible_total;
+    set "data-visible-loaded" visible_loaded;
+    set "data-visible-missing" visible_missing;
+    set "data-prefetch-boards" (Viewport.area use);
+    set "data-prefetch-missing" prefetch_missing;
+    set "data-inflight-batches" (Request_tracker.batch_count tracker);
+    set "data-inflight-boards" (Request_tracker.board_count tracker);
+    set "data-subscription-adds" !subscription_adds;
+    set "data-subscription-removes" !subscription_removes;
+    set "data-subscription-windows" !subscription_windows;
+    set "data-batch-failures" !batch_failures;
+    set "data-window-batch-supported"
+      (if !window_batch_supported then 1 else 0);
+    if
+      !load_started > 0. && !load_finished = 0. && !initial_load_area > 0
+    then begin
+      let loaded_useful, _, _ = Snapshot_plan.progress cache use in
+      if loaded_useful >= !initial_load_area then begin
+        load_finished := Performance.now_ms G.performance;
+        El.set_at (Jstr.v "data-load-ms")
+          (Some (Jstr.of_float (!load_finished -. !load_started)))
+          body_el
       end
     end
-    else false
+  in
+
+  let send_batch_rect rect =
+    let keys =
+      Viewport.to_list rect
+      |> List.map (fun (bx, by) -> (by * 1000) + bx)
+    in
+    if keys = [] then false
+    else
+      let request_id = alloc_request_id () in
+      let now = Performance.now_ms G.performance in
+      let reset = !window_batch_supported in
+      if
+        Request_tracker.begin_batch ~reset tracker ~id:request_id ~rect
+          ~keys ~sent_at:now
+      then begin
+        let center_x, center_y = centre_of_view () in
+        let request : Protocol.Types.snapshot_batch_window_request =
+          {
+            request_id;
+            x0 = rect.x0;
+            y0 = rect.y0;
+            x1 = rect.x1;
+            y1 = rect.y1;
+            center_x;
+            center_y;
+            radius = window_radius + prefetch_margin;
+          }
+        in
+        let bytes =
+          if reset then
+            Protocol.Types.snapshot_batch_window_request_to_bytes request
+          else
+            Protocol.Types.snapshot_batch_request_to_bytes
+              Protocol.Types.
+                {
+                  request_id;
+                  x0 = rect.x0;
+                  y0 = rect.y0;
+                  x1 = rect.x1;
+                  y1 = rect.y1;
+                }
+        in
+        if send_binary bytes then begin
+          if !load_started = 0. then load_started := now;
+          if reset then begin
+            incr subscription_windows;
+            (* The server atomically replaced the subscription set with the
+               current useful window. Boards cached outside it will no longer
+               receive live events, so mark them stale; they are re-requested
+               (and re-subscribed) if they become useful again. *)
+            Board_cache.iter
+              (fun key _state ->
+                let bx = key mod 1000 and by = key / 1000 in
+                if
+                  not
+                    (Viewport.contains !useful_rect ~bx ~by)
+                then Board_cache.mark_stale cache key)
+              cache
+          end;
+          true
+        end
+        else begin
+          ignore (Request_tracker.fail tracker request_id);
+          false
+        end
+      end
+      else false
+  in
+
+  let plan_priority vis rect =
+    match Viewport.intersect vis rect with
+    | None -> 0
+    | Some overlap -> Viewport.area overlap
+  in
+
+  let reconcile ?(force = false) () =
+    let now = Performance.now_ms G.performance in
+    if force || now -. !last_reconcile >= reconcile_interval_ms then begin
+      last_reconcile := now;
+      let vis = current_visible () in
+      let use = current_useful () in
+      visible_rect := vis;
+      useful_rect := use;
+      (* Maintain recency for currently useful boards and account for cache
+         hits and misses once per reconciliation. *)
+      Viewport.iter use (fun bx by ->
+          let key = board_key bx by in
+          if Board_cache.find_loaded cache key <> None then
+            Board_cache.note_hit cache
+          else Board_cache.note_miss cache;
+          Board_cache.touch cache key);
+      make_room 0;
+      let slots =
+        Request_tracker.max_inflight tracker
+        - Request_tracker.batch_count tracker
+      in
+      if slots > 0 && now >= !retry_at && !pending = None then begin
+        let is_inflight = Request_tracker.is_in_flight tracker in
+        let rects = Snapshot_plan.rectangles cache use ~is_inflight in
+        let rects =
+          List.sort
+            (fun a b ->
+              let pa = plan_priority vis a and pb = plan_priority vis b in
+              if pa <> pb then compare pb pa
+              else compare (Viewport.area b) (Viewport.area a))
+            rects
+        in
+        if !initial_load_area = 0 && not (Viewport.is_empty use) then
+          initial_load_area := Viewport.area use;
+        let sent = ref 0 in
+        List.iter
+          (fun rect ->
+            if !sent < slots && send_batch_rect rect then incr sent)
+          rects
+      end;
+      update_stats ()
+    end
+  in
+
+  let schedule_reconcile () =
+    if not !reconcile_timer_pending then begin
+      reconcile_timer_pending := true;
+      ignore
+        (G.set_timeout ~ms:(int_of_float reconcile_interval_ms) (fun () ->
+             reconcile_timer_pending := false;
+             reconcile ~force:true ()))
+    end
   in
 
   (* Some Chromium builds defer dispatching a WebSocket message until the page
@@ -653,72 +797,6 @@ let main () =
     in
     ignore (send_binary (Protocol.Types.snapshot_request_to_bytes request))
   in
-
-  let rec pump_snapshots () =
-    if
-      Hashtbl.length pending_snapshots < max_snapshot_outstanding
-      && not (Queue.is_empty snapshot_queue)
-    then begin
-      let key = Queue.take snapshot_queue in
-      Hashtbl.remove queued_snapshots key;
-      match Hashtbl.find_opt boards key with
-      | None -> pump_snapshots ()
-      | Some state ->
-        if (not state.loaded) && state.pending_request = None then begin
-          if send_snapshot_request state then pump_snapshots ()
-        end
-        else pump_snapshots ()
-    end
-  in
-
-  let ensure_window () =
-    let center_x, center_y = centre_of_view () in
-    (match !last_subscription with
-     | Some (x, y) when x = center_x && y = center_y -> ()
-     | _ ->
-       let window : Protocol.Types.subscription_window =
-         { center_x; center_y; radius = 12 }
-       in
-       if
-         send_binary
-           (Protocol.Types.subscription_window_to_bytes window)
-       then last_subscription := Some (center_x, center_y));
-    let x0 = max 0 (center_x - 12) and x1 = min max_coord (center_x + 12) in
-    let y0 = max 0 (center_y - 12) and y1 = min max_coord (center_y + 12) in
-    let out_of_window =
-      Hashtbl.fold
-        (fun key state acc ->
-          if state.bx < x0 || state.bx > x1 || state.by < y0
-             || state.by > y1
-          then key :: acc
-          else acc)
-        boards []
-    in
-    List.iter
-      (fun key ->
-        match Hashtbl.find_opt boards key with
-        | None -> ()
-        | Some state ->
-          forget_pending state;
-          Hashtbl.remove boards key)
-      out_of_window;
-
-    Queue.clear snapshot_queue;
-    Hashtbl.clear queued_snapshots;
-    (* Load the whole cache with one batch request. The reply is a single
-       variable-size frame, so latency and padding no longer dominate. Boards
-       that are already loaded are left alone; the single-board path remains
-       available for liveness probes and older clients. *)
-    let missing = ref false in
-    for by = y0 to y1 do
-      for bx = x0 to x1 do
-        if not (state_of bx by).loaded then missing := true
-      done
-    done;
-    if !missing then send_batch_request x0 y0 x1 y1;
-    pump_snapshots ();
-  in
-  retry_snapshot_hook := ensure_window;
   ignore
     (G.set_interval ~ms:250 (fun () ->
          let now = Performance.now_ms G.performance in
@@ -731,53 +809,37 @@ let main () =
                  [ El.txt (Jstr.v "Piece information request timed out.") ]
              | None -> ())
           | _ -> ());
-         (match !pending_batch with
-          | Some batch when now -. batch.sent_at > !batch_backoff ->
-            pending_batch := None;
-            batch_expected := 0;
-            batch_backoff := min 4_000. (!batch_backoff *. 2.);
-            ensure_window ()
-          | _ -> ());
-         (* Reconcile the request-id map with the board table. Eviction or a
-            stale response can otherwise leave an orphan request id that keeps
-            the single-flight snapshot pump permanently at its limit. *)
-         let orphan_ids =
-           Hashtbl.fold
-             (fun id key acc ->
-               match Hashtbl.find_opt boards key with
-               | Some state when state.pending_request = Some id -> acc
-               | _ -> id :: acc)
-             pending_snapshots []
+         let due =
+           Request_tracker.due tracker ~now ~timeout:batch_timeout_ms
          in
-         List.iter (fun id -> Hashtbl.remove pending_snapshots id) orphan_ids;
-         Hashtbl.iter
-           (fun _ state ->
-             match state.pending_request with
-             | Some id when not (Hashtbl.mem pending_snapshots id) ->
-               state.pending_request <- None;
-               state.pending_since <- 0.
-             | _ -> ())
-           boards;
-         let stale = ref [] in
-         Hashtbl.iter
-           (fun _ state ->
-             match state.pending_request with
-             | Some _
-               when now -. state.pending_since > state.snapshot_backoff ->
-               stale := state :: !stale
-             | _ -> ())
-           boards;
-         if !stale <> [] then begin
+         if due <> [] then begin
            List.iter
-             (fun state ->
-               match state.pending_request with
-               | Some _ ->
-                 forget_pending state;
-                 state.snapshot_backoff <-
-                   min 4_000. (state.snapshot_backoff *. 2.)
-               | None -> ())
-             !stale
+             (fun (batch : Request_tracker.batch) ->
+               if batch.reset then incr window_batch_failures;
+               ignore (Request_tracker.fail tracker batch.id);
+               incr batch_failures)
+             due;
+           if
+             (not !window_batch_success)
+             && !window_batch_failures >= 3
+           then begin
+             (* An older server does not understand the 18-byte window batch.
+                Fall back to the compatible 13-byte request so a stale cached
+                client cannot leave the viewport blank indefinitely. *)
+             window_batch_supported := false;
+             Console.(
+               log
+                 [ Jstr.v
+                     "server does not support atomic window batches; falling back" ])
+           end;
+           batch_backoff := min 2_000. (!batch_backoff *. 2.);
+           retry_at := now +. !batch_backoff;
+           reconcile ~force:true ()
          end;
+         (* Recover from a failed/empty batch after its backoff, or from any
+            other missed planning turn. This is the watchdog that guarantees
+            every visible missing board has a completion path. *)
+         if now >= !retry_at then reconcile ();
          (match !pending with
           | Some p when now -. p.sent_at > 2000. -> !expire_move_hook ()
           | Some p when now -. p.last_probe > 250. ->
@@ -786,8 +848,7 @@ let main () =
                next unrelated send. *)
             p.last_probe <- now;
             send_probe ()
-          | _ -> ());
-         if orphan_ids <> [] || !stale <> [] then !retry_snapshot_hook ()));
+          | _ -> ())));
 
   let board_at_canvas x y =
     let wx = !view_left +. (x /. board_px ()) in
@@ -825,18 +886,16 @@ let main () =
       last_coords := coords;
       El.set_children coords_el [ El.txt (Jstr.v coords) ]
     end;
-    let remaining =
-      !batch_expected + Hashtbl.length pending_snapshots
-      + Queue.length snapshot_queue
-    in
-    if remaining > 0 && !ws <> None then begin
-      let label = Printf.sprintf "Loading %d" remaining in
+    let vis = if Viewport.is_empty !visible_rect then current_visible () else !visible_rect in
+    let _, _, visible_missing = Snapshot_plan.progress cache vis in
+    if visible_missing > 0 && !connected then begin
+      let label = Printf.sprintf "Loading %d" visible_missing in
       if label <> !last_loading then begin
         last_loading := label;
         set_status label "connecting"
       end
     end
-    else if !last_loading <> "" then begin
+    else if !last_loading <> "" && !connected then begin
       last_loading := "";
       set_status "Live" "live"
     end;
@@ -908,7 +967,7 @@ let main () =
     (* Pieces. *)
     for by = y_first to y_last do
       for bx = x_first to x_last do
-        match Hashtbl.find_opt boards (board_key bx by) with
+        match Board_cache.find cache (board_key bx by) with
         | None -> ()
         | Some state ->
           if state.loaded then begin
@@ -933,7 +992,8 @@ let main () =
     | None -> ()
     | Some d ->
       draw_piece ctx !atlas d.piece (d.x -. (cell_px () /. 2.))
-        (d.y -. (cell_px () /. 2.)) (cell_px ())
+        (d.y -. (cell_px () /. 2.)) (cell_px ());
+    update_stats ()
   in
 
   ignore
@@ -956,7 +1016,8 @@ let main () =
     in
     view_left := left;
     view_top := top;
-    ensure_window ();
+    visible_rect := current_visible ();
+    reconcile ~force:true ();
     request_draw ()
   in
 
@@ -969,59 +1030,54 @@ let main () =
   in
   ignore (Ev.listen Ev.resize on_resize (Window.as_target G.window));
 
-  let update_load_stats ~bytes =
+  let insert_snapshot ~bx ~by ~revision ~pieces =
+    let key = board_key bx by in
+    match Board_cache.find cache key with
+    | Some state ->
+      if Int64.compare revision state.revision >= 0 then begin
+        state.pieces <- pieces;
+        state.revision <- revision;
+        state.loaded <- true;
+        state.stale <- false;
+        Board_cache.touch cache key
+      end
+    | None ->
+      let useful = Viewport.contains !useful_rect ~bx ~by in
+      if useful || Board_cache.length cache < cache_capacity then begin
+        if Board_cache.length cache >= cache_capacity then make_room 1;
+        if Board_cache.length cache < cache_capacity then begin
+          let state = Board_cache.get_or_create cache ~bx ~by in
+          if Int64.compare revision state.revision >= 0 then begin
+            state.pieces <- pieces;
+            state.revision <- revision;
+            state.loaded <- true;
+            state.stale <- false;
+            Board_cache.touch cache key
+          end
+        end
+      end
+  in
+
+  let apply_snapshot_batch ~bytes (batch : Protocol.Types.snapshot_batch) =
     incr snapshot_batches;
     snapshot_bytes := !snapshot_bytes + bytes;
-    let loaded =
-      Hashtbl.fold
-        (fun _ state total -> if state.loaded then total + 1 else total)
-        boards 0
-    in
-    El.set_at (Jstr.v "data-loaded-boards")
-      (Some (Jstr.v (string_of_int loaded)))
-      body_el;
+    let count = Array.length batch.boards in
+    if batch.width > 0 && batch.height > 0 && count = batch.width * batch.height
+    then
+      for index = 0 to count - 1 do
+        let bx = batch.x0 + (index mod batch.width) in
+        let by = batch.y0 + (index / batch.width) in
+        let board = batch.boards.(index) in
+        insert_snapshot ~bx ~by ~revision:board.revision
+          ~pieces:board.pieces
+      done;
     El.set_at (Jstr.v "data-snapshot-batches")
       (Some (Jstr.v (string_of_int !snapshot_batches)))
       body_el;
     El.set_at (Jstr.v "data-snapshot-bytes")
       (Some (Jstr.v (string_of_int !snapshot_bytes)))
       body_el;
-    if
-      !load_started > 0. && !load_finished = 0. && !batch_area > 0
-      && loaded >= !batch_area
-    then begin
-      load_finished := Performance.now_ms G.performance;
-      El.set_at (Jstr.v "data-load-ms")
-        (Some (Jstr.of_float (!load_finished -. !load_started)))
-        body_el
-    end
-  in
-
-  let apply_snapshot_batch ~bytes (batch : Protocol.Types.snapshot_batch) =
-    let count = Array.length batch.boards in
-    if batch.width > 0 && batch.height > 0 && count = batch.width * batch.height
-    then begin
-      for index = 0 to count - 1 do
-        let bx = batch.x0 + (index mod batch.width) in
-        let by = batch.y0 + (index / batch.width) in
-        match Hashtbl.find_opt boards (board_key bx by) with
-        | None -> ()
-        | Some state ->
-          let board = batch.boards.(index) in
-          (* A move event can race the batch. Revisions are monotonic per
-             board, so never replace a newer cache entry with older data. *)
-          if Int64.compare board.revision state.revision >= 0 then begin
-            forget_pending state;
-            state.pieces <- board.pieces;
-            state.revision <- board.revision;
-            state.loaded <- true;
-            state.stale <- false;
-            state.snapshot_backoff <- 500.
-          end
-      done;
-      update_load_stats ~bytes;
-      request_draw ()
-    end
+    request_draw ()
   in
 
   let square_label square =
@@ -1215,7 +1271,7 @@ let main () =
     List.iter
       (fun (board : Protocol.Types.event_board) ->
         let key = board_key board.board_x board.board_y in
-        match Hashtbl.find_opt boards key with
+        match Board_cache.find cache key with
         | Some state when state.loaded && not state.stale ->
           let revision = board.revision in
           let cmp = Int64.compare revision state.revision in
@@ -1233,13 +1289,13 @@ let main () =
                     (Char.chr change.piece))
               board.changes;
             state.revision <- revision;
+            Board_cache.touch cache key;
             changed := true
           end
           else begin
             (* A revision was skipped: discard the cache and re-snapshot. *)
             state.loaded <- false;
             state.stale <- true;
-            forget_pending state;
             resync := true
           end
         | _ -> ())
@@ -1254,7 +1310,7 @@ let main () =
        set_move_pending false
      | _ -> ());
     if !changed then request_draw ();
-    if !resync then ensure_window ()
+    if !resync then reconcile ~force:true ()
   in
 
   let send_move ~request_id ~expected_piece_id ~src_board ~dst_board src dst =
@@ -1374,7 +1430,8 @@ let main () =
       let dy = (cy -. p.start_cy) /. board_px () in
       view_left := clamp_float (p.start_left -. dx) 0. (max_left ());
       view_top := clamp_float (p.start_top -. dy) 0. (max_top ());
-      ensure_window ();
+      visible_rect := current_visible ();
+      schedule_reconcile ();
       request_draw ()
     | None ->
       (match !drag with
@@ -1389,7 +1446,7 @@ let main () =
     match !panning with
     | Some _ ->
       panning := None;
-      ensure_window ();
+      reconcile ~force:true ();
       request_draw ()
     | None ->
       (match !drag with
@@ -1615,7 +1672,8 @@ let main () =
         clamp_float (wx -. (cx /. board_px ())) 0. (max_left ());
       view_top :=
         clamp_float (wy -. (cy /. board_px ())) 0. (max_top ());
-      ensure_window ();
+      visible_rect := current_visible ();
+      reconcile ~force:true ();
       request_draw ()
     end
   in
@@ -1638,7 +1696,7 @@ let main () =
       Jstr.v
         (scheme ^ "://" ^ Jstr.to_string (Jv.Jstr.get location "host") ^ "/ws")
     in
-    last_subscription := None;
+    useful_rect := Viewport.empty;
     let socket = Brr_io.Websocket.create url in
     Brr_io.Websocket.set_binary_type socket
       Brr_io.Websocket.Binary_type.arraybuffer;
@@ -1662,13 +1720,31 @@ let main () =
                (match Protocol.Types.snapshot_batch_of_wire_bytes bytes with
                 | None -> ()
                 | Some batch ->
-                  (match !pending_batch with
-                   | Some pending
-                     when pending.request_id = batch.request_id ->
-                     pending_batch := None;
-                     batch_expected := 0;
-                     batch_backoff := 500.
-                   | _ -> ());
+                  let reset =
+                    match Request_tracker.find tracker batch.request_id with
+                    | Some request -> request.reset
+                    | None -> false
+                  in
+                  ignore
+                    (Request_tracker.complete tracker batch.request_id);
+                  let count = Array.length batch.boards in
+                  if
+                    batch.width <= 0 || batch.height <= 0 || count = 0
+                    || count <> batch.width * batch.height
+                  then begin
+                    incr batch_failures;
+                    batch_backoff := min 2_000. (!batch_backoff *. 2.);
+                    retry_at :=
+                      Performance.now_ms G.performance +. !batch_backoff
+                  end
+                  else begin
+                    batch_backoff := 250.;
+                    retry_at := 0.;
+                    if reset then begin
+                      window_batch_success := true;
+                      window_batch_failures := 0
+                    end
+                  end;
                   let decode_finished = Performance.now_ms G.performance in
                   apply_snapshot_batch ~bytes:(Bytes.length bytes) batch;
                   let applied = Performance.now_ms G.performance in
@@ -1681,8 +1757,10 @@ let main () =
                   El.set_at (Jstr.v "data-apply-ms")
                     (Some (Jstr.of_float (applied -. decode_finished)))
                     body_el;
-                  (* The camera may have moved while the batch was in flight. *)
-                  ensure_window ())
+                  (* The response may have populated boards for a window the
+                     camera has already left; reconcile requests anything
+                     still missing in the current window. *)
+                  reconcile ~force:true ())
              else if length = Protocol.Types.wire_response_bytes then begin
              if
                Char.code (Bytes.get bytes 0)
@@ -1695,51 +1773,12 @@ let main () =
              match Protocol.Types.wire_response_of_bytes bytes with
              | None -> ()
              | Some (Protocol.Types.Wire_snapshot response) ->
-               let key = board_key response.board_x response.board_y in
-               Hashtbl.remove pending_snapshots response.request_id;
-               (match Hashtbl.find_opt boards key with
-                | Some state ->
-                  let current =
-                    state.pending_request = Some response.request_id
-                  in
-                  (* A watchdog retry can supersede a request whose response
-                     was delayed by the browser. The older response still
-                     describes this board, and revisions are ordered, so it
-                     can safely satisfy a cache that has no data for the board
-                     at all. Resyncs and loaded boards still require the
-                     current request, so newer data is never rolled back. *)
-                  let usable =
-                    current
-                    || ((not state.loaded)
-                       && (not state.stale)
-                       && response.status = Protocol.Types.Snapshot_ok)
-                  in
-                  if usable then begin
-                    (* Any retry still in flight is now redundant. *)
-                    forget_pending state;
-                    if response.status = Protocol.Types.Snapshot_ok then begin
-                      if
-                        Int64.compare response.revision state.revision >= 0
-                      then begin
-                        state.pieces <- response.board;
-                        state.revision <- response.revision;
-                        state.loaded <- true;
-                        state.stale <- false;
-                        state.snapshot_backoff <- 500.
-                      end
-                      else if current && not state.loaded then
-                        (* A resync snapshot was superseded by an event. *)
-                        ensure_window ()
-                    end
-                    else if current then begin
-                      state.loaded <- false;
-                      state.stale <- true;
-                      ensure_window ()
-                    end;
-                    request_draw ()
-                  end
-                | None -> ());
-               pump_snapshots ()
+               (match response.status with
+                | Protocol.Types.Snapshot_ok ->
+                  insert_snapshot ~bx:response.board_x ~by:response.board_y
+                    ~revision:response.revision ~pieces:response.board
+                | Protocol.Types.Snapshot_failed -> ());
+               request_draw ()
              | Some (Protocol.Types.Wire_piece_info info) ->
                (match !pending_piece_info with
                 | Some pending
@@ -1757,6 +1796,22 @@ let main () =
                apply_move_event event
              | Some (Protocol.Types.Wire_move response) ->
                Metrics.received ();
+               (* An older server rejects the 18-byte window batch as an
+                  invalid request with request id 0. Fall back immediately
+                  instead of waiting for three batch timeouts. *)
+               if
+                 Int32.equal response.request_id 0l
+                 && Request_tracker.batch_count tracker > 0
+                 && List.exists
+                      (fun (batch : Request_tracker.batch) -> batch.reset)
+                      (Request_tracker.batches tracker)
+               then begin
+                 window_batch_supported := false;
+                 window_batch_success := false;
+                 window_batch_failures := 0;
+                 Request_tracker.clear tracker;
+                 reconcile ~force:true ()
+               end;
                (match !pending with
                 | Some p when p.request_id = response.request_id ->
                   pending := None;
@@ -1813,19 +1868,31 @@ let main () =
       (Ev.listen Ev.open'
          (fun _ ->
            Console.(log [ Jstr.v "ws: connected" ]);
+           connected := true;
+           Request_tracker.clear tracker;
+           window_batch_supported := true;
+           window_batch_success := false;
+           window_batch_failures := 0;
+           if !ever_connected then Board_cache.mark_all_stale cache;
+           ever_connected := true;
            set_status "Live" "live";
-           ensure_window ())
+           reconcile ~force:true ())
          target);
     ignore
       (Ev.listen Ev.error
          (fun _ ->
            Console.(log [ Jstr.v "ws: connection error" ]);
+           connected := false;
+           Request_tracker.clear tracker;
            set_status "Connection error" "error")
          target);
     ignore
       (Ev.listen Ev.close
          (fun _ ->
            Console.(log [ Jstr.v "ws: disconnected" ]);
+           connected := false;
+           Request_tracker.clear tracker;
+           useful_rect := Viewport.empty;
            set_status "Disconnected" "offline")
          target);
     ignore
