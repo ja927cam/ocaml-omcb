@@ -5,6 +5,16 @@ Server-authoritative world of 1,000 × 1,000 chessboards (64,000,000 squares,
 board snapshot cache, one-byte snapshot pieces, live move broadcasts over a
 binary WebSocket protocol.
 
+## Branches and production
+
+- **`main` is the production branch.** Every push to `main` is tested, built and
+  published to GHCR, then deployed to **https://chess.jamesashwood.com** by the
+  VPS pull agent, normally within five minutes.
+- **`develop` is the development/integration branch.** Push local work here (or
+  to feature branches merged into it). Pushes to `develop` do not build or
+  deploy production.
+- Release by merging `develop` into `main`.
+
 ## Build and run
 
 ```bash

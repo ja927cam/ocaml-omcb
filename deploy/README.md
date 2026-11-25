@@ -21,6 +21,12 @@ GitHub push to main
 
 GitHub Actions never connects to the VPS and no VPS SSH secrets are needed.
 
+**Production URL:** https://chess.jamesashwood.com
+
+**Branch model:** `main` is the only production/deploy branch. `develop` is
+for local development and integration; pushes to `develop` do not build or
+deploy production. Release by merging `develop` into `main`.
+
 The production files are:
 
 | File | Purpose |
@@ -252,8 +258,8 @@ No VPS secrets are required. The workflow uses only the automatic
 `GITHUB_TOKEN` with `packages: write` to publish the image. Only
 `actions/checkout` is used as an external action.
 
-The workflow runs on every push to `main` and can also be started manually.
-It:
+The workflow runs on every push to `main` (not on `develop`) and can also be
+started manually. It:
 
 - runs the pull-agent and Compose-validator tests;
 - validates the production Compose file and Caddyfile;
