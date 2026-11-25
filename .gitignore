@@ -13,3 +13,4 @@ wal-*.log
 /failure-audit-data/
 /memory-profile-data/
 /deployment-smoke-data/
+__pycache__/

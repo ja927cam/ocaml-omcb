@@ -1,0 +1,12 @@
+[Unit]
+Description=Check GHCR for a new sim-map image
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=30s
+Persistent=true
+Unit=sim-map-pull.service
+
+[Install]
+WantedBy=timers.target

@@ -29,11 +29,16 @@ COPY --chown=opam:opam vendor/httpun-ws-wsd.patch vendor/httpun-ws-wsd.patch
 
 RUN opam update \
  && ./scripts/pin-httpun-ws.sh \
- && opam install --deps-only --yes .
+ && opam install --deps-only --with-test --yes .
 
 COPY --chown=opam:opam . .
 
 RUN dune build --profile release
+
+# CI target: run the OCaml unit/integration tests without building the runtime
+# image. The production image still targets the `runtime` stage only.
+FROM build AS test
+RUN dune runtest --profile release
 
 # ---------------------------------------------------------------------------
 # Runtime: only the server binary, its shared libraries and the static client.
@@ -62,6 +67,7 @@ WORKDIR /opt/sim-map
 COPY --from=build /home/opam/sim-map/_build/default/server/server.exe ./server.exe
 COPY --from=build /home/opam/sim-map/server/static ./server/static
 COPY --from=build /home/opam/sim-map/_build/default/client ./_build/default/client
+COPY --from=build /home/opam/sim-map/deploy ./deploy
 
 ENV SIM_MAP_DATA_DIR=/var/lib/sim-map/data \
     SIM_MAP_PORT=8080 \

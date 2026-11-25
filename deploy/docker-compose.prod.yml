@@ -1,0 +1,100 @@
+name: chess
+
+services:
+  app:
+    image: ${APP_IMAGE:-ghcr.io/ja927cam/sim-map}:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 45s
+
+    environment:
+      SIM_MAP_DATA_DIR: /var/lib/sim-map/data
+      SIM_MAP_PORT: "8080"
+      SIM_MAP_INTERFACE: 0.0.0.0
+
+      # Production defaults. Override any of these in /opt/sim-map/.env.
+      SIM_MAP_ADAPTIVE: "${SIM_MAP_ADAPTIVE:-1}"
+      SIM_MAP_ADAPTIVE_MAX: "${SIM_MAP_ADAPTIVE_MAX:-256}"
+      SIM_MAP_WAL_GROUP: "${SIM_MAP_WAL_GROUP:-64}"
+      SIM_MAP_WAL_SYNC: "${SIM_MAP_WAL_SYNC:-1}"
+      SIM_MAP_SNAPSHOT_MOVES: "${SIM_MAP_SNAPSHOT_MOVES:-100000}"
+      SIM_MAP_SNAPSHOT_SECONDS: "${SIM_MAP_SNAPSHOT_SECONDS:-600}"
+      CONNECTION_OUTBOX_CAPACITY: "${CONNECTION_OUTBOX_CAPACITY:-256}"
+      EVENT_BATCHING: "${EVENT_BATCHING:-1}"
+      EVENT_BATCH_WINDOW_MS: "${EVENT_BATCH_WINDOW_MS:-1}"
+
+    volumes:
+      - type: bind
+        source: /srv/chess/data
+        target: /var/lib/sim-map/data
+        bind:
+          create_host_path: false
+
+    # Deliberately no ports: only Caddy publishes to the host.
+    expose:
+      - "8080"
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/readyz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    environment:
+      ACME_EMAIL: "${ACME_EMAIL:-admin@jamesashwood.com}"
+
+    volumes:
+      # Bind the directory, not the file, so an atomic Caddyfile update on
+      # the host is visible to the running container before `caddy reload`.
+      - type: bind
+        source: ./caddy
+        target: /etc/caddy
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/chess/caddy/data
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/chess/caddy/config
+        target: /config
+        bind:
+          create_host_path: false
+
+    depends_on:
+      app:
+        condition: service_healthy
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

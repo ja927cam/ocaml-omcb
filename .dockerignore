@@ -9,3 +9,4 @@ memory-profile-data
 deployment-smoke-data
 *.snap
 wal-*.log
+__pycache__/

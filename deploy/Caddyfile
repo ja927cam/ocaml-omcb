@@ -1,0 +1,31 @@
+{
+	email {$ACME_EMAIL:admin@jamesashwood.com}
+}
+
+chess.jamesashwood.com {
+	encode zstd gzip
+
+	# Operational endpoints stay available only inside the Docker network.
+	# Inspect them with:
+	#   docker compose -f /opt/sim-map/docker-compose.prod.yml exec app \
+	#     curl -fsS http://127.0.0.1:8080/metrics
+	#
+	# route preserves this order: block internals first, proxy the rest.
+	route {
+		@internal path /metrics /state-hash /debug/*
+		respond @internal 404
+
+		# Caddy's reverse_proxy handles WebSocket upgrades (including /ws)
+		# transparently. The app is never published directly to the host.
+		reverse_proxy app:8080 {
+			health_uri /healthz
+			health_interval 30s
+			health_timeout 5s
+		}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

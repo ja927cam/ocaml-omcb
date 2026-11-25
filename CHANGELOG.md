@@ -7,11 +7,36 @@
 - Added a multi-stage `Dockerfile` that builds the OCaml server, the WASM
   client and the piece atlas, then runs them from a slim Debian image as UID
   10001 with a named data volume.
-- Added `docker-compose.yml` with a healthcheck, `init`, a 45-second stop grace
-  period and persistent WAL/snapshot storage.
+- Added a `test` Docker target that runs the OCaml test suite in CI.
+- Added `docker-compose.yml` for local development, with a healthcheck,
+  `init`, a 45-second stop grace period and persistent WAL/snapshot storage.
 - Added `SIM_MAP_INTERFACE` (default `localhost`; the image uses `0.0.0.0`) so
   the container's published port can reach the server.
 - Added `sim_map.opam` dependency metadata for reproducible image builds.
+
+### Production CI/CD
+
+- Added `.github/workflows/deploy.yml`: on every push to `main`, validate the
+  production Compose/Caddyfile, run the OCaml tests, build and smoke-test the
+  image, and publish an immutable full-SHA tag plus `latest` (main pushes
+  only). GitHub Actions has no VPS credentials and never connects to the VPS.
+- Added a root systemd pull agent (`deploy/pull_agent.py` plus
+  `sim-map-pull.service`/`.timer`) that checks the GHCR `latest` manifest
+  digest every five minutes, reads the embedded commit-SHA label, and invokes
+  the existing deploy script. Registry failures are retried safely and failed
+  image digests are backed off.
+- Added `deploy/docker-compose.prod.yml`: one non-root app container, Caddy
+  terminating HTTPS and obtaining/renewing Let's Encrypt certificates, the app
+  data bind-mounted at `/srv/chess/data`, no published app port, restart
+  policies, health checks and a 45-second graceful stop.
+- Added `deploy/Caddyfile` with WebSocket-capable reverse proxying and
+  internal-only metrics/state-hash/debug endpoints.
+- Added `deploy/deploy.sh`: idempotent immutable-SHA deploy, config extraction
+  from the image, data-mount and exposure guards, readiness checks, automatic
+  rollback and explicit rollback to a recorded/previous tag. It is invoked by
+  the root pull agent.
+- Added container, Caddy and WebSocket smoke tests and a comprehensive
+  production runbook in `deploy/README.md`.
 
 ### Durability and operations
 
