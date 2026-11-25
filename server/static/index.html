@@ -3,20 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#14171c">
-  <title>One Million Chessboards</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2314171c'/%3E%3Cpath d='M20 46h24v6H20z' fill='%237bd88f'/%3E%3Cpath d='M24 40c0-8 4-10 4-16l-4 2 6-10 10 10c6 4 6 10 4 14z' fill='%23f2f4f8'/%3E%3C/svg%3E">
+  <meta name="theme-color" content="#101318">
+  <title>One Million Chessboards — a shared living world</title>
+  <meta name="description" content="A single shared world of 1,000 × 1,000 live chessboards. Pan, zoom and play. Every move is permanent.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="One Million Chessboards">
+  <meta property="og:description" content="A single shared world of 1,000 × 1,000 live chessboards. Pan, zoom and play. Every move is permanent.">
+  <meta property="og:url" content="https://chess.jamesashwood.com/">
+  <meta property="og:image" content="https://chess.jamesashwood.com/static/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="One Million Chessboards">
+  <meta name="twitter:description" content="A single shared world of 1,000 × 1,000 live chessboards.">
+  <meta name="twitter:image" content="https://chess.jamesashwood.com/static/og.png">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23101318'/%3E%3Cpath d='M20 46h24v6H20z' fill='%237bd88f'/%3E%3Cpath d='M24 40c0-8 4-10 4-16l-4 2 6-10 10 10c6 4 6 10 4 14z' fill='%23f2f4f8'/%3E%3C/svg%3E">
   <style>
     :root {
       color-scheme: dark;
-      --bg: #14171c;
-      --panel: rgba(20, 23, 28, 0.78);
-      --text: #f2f4f8;
-      --muted: #a8b1c0;
-      --line: rgba(255, 255, 255, 0.12);
-      --ok: #7bd88f;
+      --bg: #101318;
+      --panel: rgba(17, 21, 27, 0.74);
+      --panel-solid: #171c24;
+      --text: #f4f6fa;
+      --muted: #a4afbf;
+      --subtle: #778395;
+      --line: rgba(255, 255, 255, 0.11);
+      --line-strong: rgba(255, 255, 255, 0.2);
+      --accent: #7bd88f;
+      --accent-soft: rgba(123, 216, 143, 0.14);
       --warn: #e5c07b;
       --bad: #e06c75;
+      --radius: 14px;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
     * {
@@ -30,13 +47,26 @@
       height: 100%;
       overflow: hidden;
       background:
-        radial-gradient(1200px 800px at 50% -10%, #232936 0%, transparent 60%),
+        radial-gradient(1100px 760px at 50% -12%, #263040 0%, transparent 62%),
         var(--bg);
-      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
       color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(10, 13, 18, 0.78) 0%, rgba(10, 13, 18, 0) 118px),
+        linear-gradient(0deg, rgba(10, 13, 18, 0.82) 0%, rgba(10, 13, 18, 0) 118px);
     }
 
     canvas#game {
+      position: relative;
+      z-index: 0;
       display: block;
       width: 100vw;
       height: 100vh;
@@ -50,51 +80,131 @@
     }
 
     canvas#game:focus-visible {
-      outline: 2px solid rgba(123, 216, 143, 0.75);
-      outline-offset: -2px;
+      outline: 2px solid rgba(123, 216, 143, 0.8);
+      outline-offset: -3px;
+    }
+
+    #topbar, #bottom-bar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      pointer-events: none;
+    }
+
+    #topbar {
+      top: 0;
+      padding: 18px 22px 34px;
+      align-items: flex-start;
+    }
+
+    #bottom-bar {
+      bottom: 0;
+      padding: 24px 22px 18px;
+      align-items: flex-end;
+    }
+
+    .ui {
+      pointer-events: auto;
+    }
+
+    .glass {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px) saturate(1.1);
+      -webkit-backdrop-filter: blur(14px) saturate(1.1);
+    }
+
+    #brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+      padding: 8px 14px 8px 9px;
+      border-radius: 16px;
+    }
+
+    #brand-mark {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      border-radius: 10px;
+      box-shadow: 0 0 0 1px var(--line), 0 8px 22px rgba(0, 0, 0, 0.3);
+    }
+
+    #brand-copy {
+      min-width: 0;
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    #brand h1 {
+      font: 700 13px/1.05 ui-sans-serif, system-ui, sans-serif;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #brand p {
+      color: var(--muted);
+      font: 11.5px/1.2 ui-sans-serif, system-ui, sans-serif;
+      white-space: nowrap;
+    }
+
+    #player {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 4px;
+      padding-left: 12px;
+      border-left: 1px solid var(--line);
+      white-space: nowrap;
+    }
+
+    #player .eyebrow {
+      color: var(--subtle);
+      font: 600 9.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
     }
 
     .pill {
-      position: fixed;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 7px;
       padding: 6px 10px;
       border: 1px solid var(--line);
       border-radius: 999px;
-      background: var(--panel);
-      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: rgba(17, 21, 27, 0.7);
+      font: 11.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
       color: var(--text);
-      pointer-events: none;
-      user-select: none;
       white-space: nowrap;
-    }
-
-    #coords {
-      top: 12px;
-      right: 14px;
-      letter-spacing: 0.01em;
+      user-select: none;
     }
 
     #colour {
-      top: 12px;
-      left: 14px;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      font-size: 11px;
+      font-size: 10.5px;
     }
 
     #colour::before {
       content: "";
-      width: 10px;
-      height: 10px;
+      width: 9px;
+      height: 9px;
       border-radius: 50%;
       background: #f4f4f8;
       border: 1px solid rgba(0, 0, 0, 0.35);
-      box-shadow: 0 0 8px rgba(255, 255, 255, 0.35);
+      box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
     }
 
     #colour[data-colour="black"]::before {
@@ -103,10 +213,52 @@
       box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
     }
 
-    #status {
-      left: 14px;
-      bottom: 14px;
+    #top-actions {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex: 0 0 auto;
+    }
+
+    #coords {
       color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+
+    #help-toggle {
+      width: 36px;
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: var(--panel);
+      color: var(--muted);
+      font: 600 14px/1 ui-sans-serif, system-ui, sans-serif;
+      cursor: pointer;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    #help-toggle:hover, #help-toggle:focus-visible {
+      color: var(--text);
+      border-color: var(--line-strong);
+      background: rgba(34, 42, 54, 0.9);
+      outline: none;
+    }
+
+    #status {
+      color: var(--muted);
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      font: 11.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      pointer-events: none;
     }
 
     #status::before {
@@ -116,6 +268,9 @@
       border-radius: 50%;
       background: var(--warn);
       box-shadow: 0 0 8px currentColor;
+      display: inline-block;
+      margin-right: 7px;
+      vertical-align: 1px;
     }
 
     #status[data-status="live"] {
@@ -123,8 +278,8 @@
     }
 
     #status[data-status="live"]::before {
-      background: var(--ok);
-      box-shadow: 0 0 10px var(--ok);
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
     }
 
     #status[data-status="error"]::before,
@@ -135,28 +290,103 @@
 
     #hint {
       left: 50%;
-      bottom: 14px;
       transform: translateX(-50%);
       color: var(--muted);
-      font-family: ui-sans-serif, system-ui, sans-serif;
-      font-size: 12px;
-      opacity: 0.9;
+      font: 11.5px/1.4 ui-sans-serif, system-ui, sans-serif;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    #hint b {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    #zoom-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px;
+      border-radius: 13px;
+    }
+
+    #zoom-controls button {
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--muted);
+      font: 500 17px/1 ui-sans-serif, system-ui, sans-serif;
+      cursor: pointer;
+      transition: color 120ms ease, background 120ms ease;
+    }
+
+    #zoom-controls button:hover, #zoom-controls button:focus-visible {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.08);
+      outline: none;
+    }
+
+    #zoom-controls #zoom-value {
+      min-width: 42px;
+      text-align: center;
+      color: var(--subtle);
+      font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    #minimap-wrap {
+      position: fixed;
+      right: 22px;
+      bottom: 70px;
+      z-index: 5;
+      padding: 6px;
+      border-radius: 12px;
+      pointer-events: auto;
+    }
+
+    #minimap {
+      display: block;
+      width: 128px;
+      height: 128px;
+      border-radius: 8px;
+      cursor: crosshair;
+      background: #0d1016;
+    }
+
+    #minimap-label {
+      display: block;
+      margin-top: 4px;
+      color: var(--subtle);
+      font: 600 8.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.14em;
+      text-align: center;
+      text-transform: uppercase;
     }
 
     #piece-info {
       position: fixed;
-      top: 54px;
-      right: 14px;
-      width: min(360px, calc(100vw - 28px));
-      max-height: calc(100vh - 80px);
+      top: 78px;
+      right: 22px;
+      width: min(380px, calc(100vw - 28px));
+      max-height: calc(100vh - 110px);
       overflow: auto;
       border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--panel);
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      z-index: 10;
+      border-radius: var(--radius);
+      background: var(--panel-solid);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      z-index: 15;
     }
 
     #piece-info[hidden] {
@@ -168,7 +398,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 10px 12px;
+      padding: 12px 14px;
       border-bottom: 1px solid var(--line);
     }
 
@@ -183,7 +413,7 @@
       border: 0;
       background: transparent;
       color: var(--muted);
-      font: 18px/1 ui-sans-serif, system-ui, sans-serif;
+      font: 19px/1 ui-sans-serif, system-ui, sans-serif;
       cursor: pointer;
       padding: 0 2px;
     }
@@ -194,36 +424,274 @@
 
     #piece-info-body {
       margin: 0;
-      padding: 12px;
-      font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+      padding: 14px;
+      font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
       color: var(--muted);
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
 
-    @media (max-width: 640px) {
+    #intro {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 22px;
+      background: rgba(7, 9, 13, 0.66);
+      backdrop-filter: blur(10px) saturate(1.1);
+      -webkit-backdrop-filter: blur(10px) saturate(1.1);
+    }
+
+    #intro[hidden] {
+      display: none;
+    }
+
+    #intro-card {
+      width: min(560px, 100%);
+      max-height: min(760px, calc(100vh - 44px));
+      overflow: auto;
+      padding: 30px;
+      border: 1px solid var(--line-strong);
+      border-radius: 22px;
+      background:
+        radial-gradient(600px 280px at 12% 0%, rgba(123, 216, 143, 0.09), transparent 68%),
+        #151a21;
+      box-shadow: 0 30px 100px rgba(0, 0, 0, 0.6);
+    }
+
+    .eyebrow {
+      color: var(--accent);
+      font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    #intro h2 {
+      margin-top: 12px;
+      font: 700 clamp(26px, 5vw, 36px)/1.04 ui-sans-serif, system-ui, sans-serif;
+      letter-spacing: -0.03em;
+    }
+
+    #intro .lede {
+      margin-top: 12px;
+      color: var(--muted);
+      font: 15px/1.55 ui-sans-serif, system-ui, sans-serif;
+      max-width: 46ch;
+    }
+
+    #intro .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin: 22px 0;
+    }
+
+    #intro .control {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.025);
+      color: var(--muted);
+      font: 12px/1.35 ui-sans-serif, system-ui, sans-serif;
+    }
+
+    #intro .control b {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--text);
+      font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    #intro .note {
+      color: var(--subtle);
+      font: 11.5px/1.5 ui-sans-serif, system-ui, sans-serif;
+    }
+
+    #intro .note strong {
+      color: var(--text);
+    }
+
+    #intro-close {
+      margin-top: 22px;
+      width: 100%;
+      padding: 13px 18px;
+      border: 1px solid rgba(123, 216, 143, 0.45);
+      border-radius: 12px;
+      background: var(--accent);
+      color: #0c1510;
+      font: 700 12px/1 ui-sans-serif, system-ui, sans-serif;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: filter 120ms ease, transform 120ms ease;
+    }
+
+    #intro-close:hover, #intro-close:focus-visible {
+      filter: brightness(1.05);
+      transform: translateY(-1px);
+      outline: 2px solid rgba(123, 216, 143, 0.5);
+      outline-offset: 2px;
+    }
+
+    #intro-footer {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 14px;
+      color: var(--subtle);
+      font: 10.5px/1.2 ui-sans-serif, system-ui, sans-serif;
+    }
+
+    #intro-footer a {
+      color: var(--muted);
+      text-decoration: none;
+      border-bottom: 1px solid var(--line);
+    }
+
+    #intro-footer a:hover {
+      color: var(--text);
+    }
+
+    @media (max-width: 760px) {
+      #topbar {
+        padding: 12px 12px 26px;
+      }
+
+      #brand {
+        gap: 9px;
+        padding: 7px 11px 7px 7px;
+      }
+
+      #brand-mark {
+        width: 30px;
+        height: 30px;
+      }
+
+      #brand h1 {
+        font-size: 10px;
+        letter-spacing: 0.07em;
+      }
+
+      #brand p, #player .eyebrow {
+        display: none;
+      }
+
+      #player {
+        margin-left: 0;
+        padding-left: 9px;
+      }
+
+      #bottom-bar {
+        padding: 18px 12px 12px;
+      }
+
       #hint {
         display: none;
       }
 
+      #minimap-wrap {
+        display: none;
+      }
+
       #piece-info {
-        top: 50px;
+        top: 68px;
+        right: 12px;
+      }
+
+      #intro-card {
+        padding: 24px 20px;
+        border-radius: 18px;
+      }
+
+      #intro .controls {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 420px) {
+      #brand h1 {
+        font-size: 9.5px;
+        letter-spacing: 0.055em;
+      }
+
+      #coords {
+        display: none;
+      }
+    }
+
+    @media (max-width: 380px) {
+      #player {
+        display: none;
+      }
+
+      #brand-copy {
+        flex: 1 1 auto;
+      }
+
+      #zoom-value {
+        display: none;
+      }
+
+      #zoom-controls {
+        gap: 2px;
+        padding: 4px;
       }
     }
 
     @media (prefers-reduced-motion: reduce) {
       * {
         scroll-behavior: auto !important;
+        transition: none !important;
       }
     }
   </style>
 </head>
 <body>
   <canvas id="game" tabindex="0" aria-label="One million chessboards grid"></canvas>
-  <div id="colour" class="pill" data-colour="white" title="Your colour is fixed for this device">White</div>
-  <div id="coords" class="pill" aria-live="off">(0, 0)</div>
-  <div id="status" class="pill" data-status="connecting" aria-live="polite">Connecting...</div>
-  <div id="hint" class="pill">Drag a piece to move · drag empty space to pan · scroll to zoom · triple-click a piece for info</div>
+
+  <header id="topbar">
+    <div id="brand" class="glass ui">
+      <svg id="brand-mark" viewBox="0 0 64 64" role="img" aria-label="One Million Chessboards logo">
+        <rect width="64" height="64" rx="14" fill="#101318"/>
+        <path d="M18 50h28v6H18z" fill="#7bd88f"/>
+        <path d="M23 43c0-9 4-11 4-18l-5 3 7-12 11 12c7 5 7 11 5 15z" fill="#f2f4f8"/>
+      </svg>
+      <div id="brand-copy">
+        <h1>One Million Chessboards</h1>
+        <p>A shared world of 1,000 × 1,000 live boards</p>
+      </div>
+      <div id="player">
+        <span class="eyebrow">You play</span>
+        <div id="colour" class="pill" data-colour="white" title="Your colour is fixed for this device">White</div>
+      </div>
+    </div>
+    <div id="top-actions" class="ui">
+      <div id="coords" class="pill" aria-live="off">(0, 0)</div>
+      <button id="help-toggle" type="button" aria-label="How to play" aria-haspopup="dialog">?</button>
+    </div>
+  </header>
+
+  <div id="minimap-wrap" class="glass ui" aria-label="World map">
+    <canvas id="minimap" width="236" height="236"></canvas>
+    <span id="minimap-label">World</span>
+  </div>
+
+  <div id="bottom-bar">
+    <div id="status" data-status="connecting" aria-live="polite">Connecting...</div>
+    <div id="hint" class="ui" aria-hidden="true">
+      <b>Drag</b> to pan · <b>Scroll</b> to zoom · <b>Drag a piece</b> to move · <b>Triple-click</b> for details
+    </div>
+    <div id="zoom-controls" class="glass ui" role="group" aria-label="Zoom controls">
+      <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+      <span id="zoom-value">100%</span>
+      <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+      <button id="zoom-reset" type="button" aria-label="Reset view">⌂</button>
+    </div>
+  </div>
+
   <aside id="piece-info" hidden aria-live="polite">
     <header>
       <span id="piece-info-title">Piece</span>
@@ -231,6 +699,123 @@
     </header>
     <pre id="piece-info-body"></pre>
   </aside>
+
+  <div id="intro" hidden>
+    <section id="intro-card" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+      <div class="eyebrow">A shared world</div>
+      <h2 id="intro-title">One million boards.<br>One living chess world.</h2>
+      <p class="lede">Every board is real, every move is permanent, and you are playing against everyone else exploring at the same time.</p>
+      <div class="controls">
+        <div class="control"><b>Pan</b>Drag empty space to explore the world.</div>
+        <div class="control"><b>Zoom</b>Scroll, pinch, or use the + / − controls.</div>
+        <div class="control"><b>Move</b>Drag one of your pieces to make a move.</div>
+        <div class="control"><b>Inspect</b>Triple-click a piece for its full history.</div>
+      </div>
+      <p class="note">You are playing <strong id="intro-colour">White</strong> on this device. Captures are only allowed on the board a piece started on.</p>
+      <button id="intro-close" type="button">Enter the world</button>
+      <div id="intro-footer">
+        <a href="https://github.com/ja927cam/sim-map" target="_blank" rel="noreferrer">Source</a>
+        <a href="/status">Status</a>
+        <span>1,000 × 1,000 boards</span>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const intro = document.getElementById('intro');
+      const close = document.getElementById('intro-close');
+      const help = document.getElementById('help-toggle');
+      const colour = document.getElementById('colour');
+      const introColour = document.getElementById('intro-colour');
+      const storageKey = 'sim-map.seen-intro';
+      let lastFocus = null;
+
+      function syncColour() {
+        introColour.textContent = colour.textContent.trim() || 'White';
+      }
+
+      function openIntro() {
+        lastFocus = document.activeElement;
+        syncColour();
+        intro.hidden = false;
+        close.focus();
+      }
+
+      function closeIntro() {
+        intro.hidden = true;
+        try { localStorage.setItem(storageKey, '1'); } catch (_) {}
+        if (lastFocus && lastFocus.focus) lastFocus.focus();
+      }
+
+      close.addEventListener('click', closeIntro);
+      help.addEventListener('click', openIntro);
+      intro.addEventListener('click', function (event) {
+        if (event.target === intro) closeIntro();
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && !intro.hidden) closeIntro();
+      });
+
+      // The assignment is made by the WASM client shortly after startup.
+      new MutationObserver(syncColour).observe(colour, { childList: true, characterData: true, subtree: true });
+
+      try {
+        if (localStorage.getItem(storageKey) !== '1') {
+          openIntro();
+        }
+      } catch (_) {}
+
+      // Lightweight world minimap. It reads the viewport attributes that the
+      // client already writes each frame.
+      const minimap = document.getElementById('minimap');
+      if (minimap) {
+        const ctx = minimap.getContext('2d');
+        const size = minimap.width;
+        const scale = size / 1000;
+        function drawMinimap() {
+          const data = document.body.dataset;
+          const left = Number(data.viewLeft || 0);
+          const top = Number(data.viewTop || 0);
+          const width = Number(data.viewWidth || 40);
+          const height = Number(data.viewHeight || 25);
+          ctx.clearRect(0, 0, size, size);
+          ctx.fillStyle = '#0b0e13';
+          ctx.fillRect(0, 0, size, size);
+          for (let i = 1; i < 20; i++) {
+            const p = Math.round(i * size / 20) + 0.5;
+            ctx.strokeStyle = i % 2 === 0 ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.045)';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, size); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(size, p); ctx.stroke();
+          }
+          const centerX = Math.min(size - 14, Math.max(14, (left + width / 2) * scale));
+          const centerY = Math.min(size - 14, Math.max(14, (top + height / 2) * scale));
+          const vw = Math.max(14, Math.min(size - 4, width * scale));
+          const vh = Math.max(14, Math.min(size - 4, height * scale));
+          const vx = Math.min(size - vw - 2, Math.max(2, centerX - vw / 2));
+          const vy = Math.min(size - vh - 2, Math.max(2, centerY - vh / 2));
+          ctx.fillStyle = 'rgba(123,216,143,0.23)';
+          ctx.fillRect(vx, vy, vw, vh);
+          ctx.strokeStyle = '#7bd88f';
+          ctx.lineWidth = 2.5;
+          ctx.strokeRect(vx + 1, vy + 1, vw - 2, vh - 2);
+          ctx.fillStyle = '#d9ffe2';
+          ctx.beginPath();
+          ctx.arc(vx + vw / 2, vy + vh / 2, 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(123,216,143,0.42)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(vx + vw / 2, 0); ctx.lineTo(vx + vw / 2, size);
+          ctx.moveTo(0, vy + vh / 2); ctx.lineTo(size, vy + vh / 2);
+          ctx.stroke();
+        }
+        setInterval(drawMinimap, 150);
+        drawMinimap();
+      }
+    })();
+  </script>
   <script src="/static/main.bc.wasm.js"></script>
 </body>
 </html>

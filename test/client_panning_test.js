@@ -179,6 +179,7 @@ async function main() {
     };
 
     await send("Page.enable");
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}" });
     await send("Runtime.enable");
     await send("Performance.enable");
     await send("Page.addScriptToEvaluateOnNewDocument", {

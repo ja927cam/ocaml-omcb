@@ -218,6 +218,7 @@ async function main() {
     };
 
     await send("Page.enable");
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}" });
     await send("Runtime.enable");
 
     // Record the 9-byte snapshot requests and 14-byte move requests the client

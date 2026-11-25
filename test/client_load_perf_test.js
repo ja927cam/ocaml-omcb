@@ -307,6 +307,7 @@ async function measureBrowser(port) {
     };
 
     await send("Page.enable");
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}" });
     await send("Runtime.enable");
     await send("Network.enable");
     const started = Date.now();

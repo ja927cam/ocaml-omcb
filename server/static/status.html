@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101318">
+  <title>Status — One Million Chessboards</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101318;
+      --panel: #171c24;
+      --line: rgba(255, 255, 255, 0.1);
+      --text: #f4f6fa;
+      --muted: #9aa7b8;
+      --subtle: #6f7c8f;
+      --accent: #7bd88f;
+      --warn: #e5c07b;
+      --bad: #e06c75;
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(900px 600px at 50% -10%, #222b39 0%, transparent 65%), var(--bg);
+      color: var(--text);
+      padding: 28px;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    header {
+      max-width: 1120px;
+      margin: 0 auto 26px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .mark {
+      width: 38px; height: 38px; border-radius: 11px;
+      background: #0b0e13; display: grid; place-items: center;
+      border: 1px solid var(--line);
+    }
+    h1 { margin: 0; font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border: 1px solid var(--line);
+      border-radius: 999px; color: var(--muted);
+      font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: rgba(23, 28, 36, 0.8);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+    .dot.live { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+    .dot.bad { background: var(--bad); box-shadow: 0 0 10px var(--bad); }
+    main { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: 14px; padding: 16px;
+    }
+    .card .label { color: var(--subtle); font: 600 10px/1 ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; }
+    .card .value { margin-top: 9px; font: 600 24px/1 ui-sans-serif, system-ui, sans-serif; }
+    .card .note { margin-top: 7px; color: var(--muted); font-size: 12px; }
+    h2 { margin: 0 0 12px; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font: 12px/1.4 ui-monospace, monospace; }
+    th, td { text-align: right; padding: 9px 8px; border-bottom: 1px solid var(--line); }
+    th:first-child, td:first-child { text-align: left; }
+    th { color: var(--subtle); font-weight: 500; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+    td { color: var(--muted); }
+    td strong { color: var(--text); font-weight: 600; }
+    .empty { color: var(--subtle); padding: 18px 8px; text-align: center; }
+    .bar { height: 5px; border-radius: 99px; background: rgba(255,255,255,.07); overflow: hidden; margin-top: 12px; }
+    .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
+    @media (max-width: 620px) { body { padding: 16px; } .value { font-size: 20px; } th, td { padding: 8px 5px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="mark">
+        <svg width="26" height="26" viewBox="0 0 64 64" aria-hidden="true">
+          <rect width="64" height="64" rx="14" fill="#101318"/>
+          <path d="M18 50h28v6H18z" fill="#7bd88f"/>
+          <path d="M23 43c0-9 4-11 4-18l-5 3 7-12 11 12c7 5 7 11 5 15z" fill="#f2f4f8"/>
+        </svg>
+      </div>
+      <div>
+        <h1>One Million Chessboards</h1>
+        <div class="sub"><a href="/">← Back to the world</a></div>
+      </div>
+    </div>
+    <div class="pill"><span id="status-dot" class="dot"></span><span id="status-text">Connecting…</span></div>
+  </header>
+  <main>
+    <section class="grid">
+      <div class="card"><div class="label">Uptime</div><div class="value" id="uptime">—</div><div class="note">since last deploy</div></div>
+      <div class="card"><div class="label">Players online</div><div class="value" id="clients">—</div><div class="note">live WebSocket connections</div></div>
+      <div class="card"><div class="label">Movements</div><div class="value" id="sequence">—</div><div class="note">committed transitions</div></div>
+      <div class="card"><div class="label">Memory</div><div class="value" id="rss">—</div><div class="note">resident set size</div></div>
+    </section>
+
+    <section class="card">
+      <h2>Board loading</h2>
+      <div class="grid">
+        <div><div class="label">p50</div><div class="value" id="load-p50">—</div></div>
+        <div><div class="label">p95</div><div class="value" id="load-p95">—</div></div>
+        <div><div class="label">Max</div><div class="value" id="load-max">—</div></div>
+        <div><div class="label">Boards served</div><div class="value" id="load-boards">—</div></div>
+        <div><div class="label">Failures</div><div class="value" id="load-failures">—</div></div>
+      </div>
+      <div class="bar"><span id="load-bar"></span></div>
+      <div class="note" id="load-note" style="margin-top:12px"></div>
+    </section>
+
+    <section class="card">
+      <h2>Busiest regions</h2>
+      <table>
+        <thead><tr><th>Region</th><th>Requests</th><th>Boards</th><th>p95</th><th>Last</th></tr></thead>
+        <tbody id="regions"><tr><td colspan="5" class="empty">No board loads yet</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Move pipeline</h2>
+      <table>
+        <thead><tr><th>Stage</th><th>p50</th><th>p95</th><th>Max</th><th>Samples</th></tr></thead>
+        <tbody id="stages"></tbody>
+      </table>
+    </section>
+  </main>
+  <script>
+    const fmtMs = (v) => v === undefined ? '—' : `${Number(v).toFixed(2)} ms`;
+    const fmtInt = (v) => Number(v || 0).toLocaleString();
+    const fmtDuration = (ms) => {
+      const s = Math.floor(ms / 1000);
+      const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+      return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m ${s % 60}s`;
+    };
+    function set(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
+    async function refresh() {
+      try {
+        const response = await fetch('/metrics', { cache: 'no-store' });
+        if (!response.ok) throw new Error(String(response.status));
+        const d = await response.json();
+        document.getElementById('status-dot').className = 'dot live';
+        set('status-text', 'Live');
+        set('uptime', fmtDuration(d.uptime_ms));
+        set('clients', fmtInt(d.connections.clients));
+        set('sequence', fmtInt(d.persistence.sequence));
+        set('rss', `${Math.round(d.memory.rss_kb / 1024)} MB`);
+        const bl = d.board_load || { overall: {}, regions: [] };
+        const o = bl.overall || {};
+        set('load-p50', fmtMs(o.p50_ms));
+        set('load-p95', fmtMs(o.p95_ms));
+        set('load-max', fmtMs(o.max_ms));
+        set('load-boards', fmtInt(o.boards));
+        set('load-failures', fmtInt(o.failures));
+        set('load-note', `${fmtInt(o.requests)} snapshot batches · ${fmtInt(o.samples)} latency samples in the rolling window`);
+        // A 10 ms p95 is a useful visual full-scale for this workload.
+        const p95 = Number(o.p95_ms || 0);
+        document.getElementById('load-bar').style.width = `${Math.min(100, p95 / 10 * 100)}%`;
+        const regions = [...(bl.regions || [])].sort((a, b) => b.metrics.requests - a.metrics.requests).slice(0, 12);
+        document.getElementById('regions').innerHTML = regions.length ? regions.map((r) => `
+          <tr><td><strong>${r.x * 100}–${r.x * 100 + 99}, ${r.y * 100}–${r.y * 100 + 99}</strong></td>
+          <td>${fmtInt(r.metrics.requests)}</td><td>${fmtInt(r.metrics.boards)}</td>
+          <td>${fmtMs(r.metrics.p95_ms)}</td><td>${fmtMs(r.metrics.last_ms)}</td></tr>`).join('')
+          : '<tr><td colspan="5" class="empty">No board loads yet</td></tr>';
+        const stages = Object.entries(d.stages || {});
+        document.getElementById('stages').innerHTML = stages.map(([name, s]) => `
+          <tr><td>${name.replaceAll('_', ' ')}</td><td>${fmtMs(s.p50_ms)}</td><td>${fmtMs(s.p95_ms)}</td>
+          <td>${fmtMs(s.max_ms)}</td><td>${fmtInt(s.n)}</td></tr>`).join('');
+      } catch (error) {
+        document.getElementById('status-dot').className = 'dot bad';
+        set('status-text', 'Unavailable');
+      }
+    }
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>

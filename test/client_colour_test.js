@@ -171,6 +171,7 @@ async function main() {
     };
 
     await send("Page.enable");
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}" });
     await send("Runtime.enable");
 
     // Start from a clean device so the first assertion covers assignment.

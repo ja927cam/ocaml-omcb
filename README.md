@@ -62,6 +62,7 @@ node test/live_update_test.js   # real two-client fan-out and subscriptions
 node test/live_client_test.js   # browser cache apply, duplicate and gap handling
 node test/snapshot_consistency_test.js  # snapshot/move race and concurrent clients
 node test/client_panning_test.js    # rapid panning, cache bound and settle time
+node test/client_ui_test.js         # intro, help, zoom, minimap, mobile, status page
 MODE=bounded node test/subscription_stress_test.js  # subscription/RSS bounds
 MODE=add-only node test/subscription_stress_test.js # before comparison
 node test/subscription_transition_test.js          # moves during window replacement
@@ -252,6 +253,8 @@ curl -s http://localhost:8080/metrics.prom     # Prometheus text format
 ```
 
 Both are public on production (`https://chess.jamesashwood.com/metrics`).
+A human-readable dashboard is at
+[`https://chess.jamesashwood.com/status`](https://chess.jamesashwood.com/status).
 The JSON `board_load` object and the `sim_map_board_region_*` Prometheus
 metrics group snapshot loading by 100 x 100 board regions (request/board
 counts and p50/p95/max/last latency).

@@ -212,6 +212,7 @@ async function main() {
     })();`;
     await send("Page.addScriptToEvaluateOnNewDocument", { source: hook });
     await send("Page.enable");
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}" });
     await send("Runtime.enable");
     await send("Page.navigate", { url: `${SERVER}?x=${board.x}&y=${board.y}` });
 

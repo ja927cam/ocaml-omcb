@@ -1194,6 +1194,8 @@ let () =
   @@ Dream.router [
        Dream.get "/" (fun req ->
           Dream.from_filesystem "server/static" "index.html" req);
+       Dream.get "/status" (fun req ->
+          Dream.from_filesystem "server/static" "status.html" req);
        Dream.get "/metrics" (fun _req ->
          Dream.respond
            ~headers:[ ("Content-Type", "application/json") ]

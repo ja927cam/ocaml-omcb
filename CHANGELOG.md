@@ -48,6 +48,19 @@
   request tracker, plus a headless-browser panning stress test with recorded
   before/after request and cache measurements.
 
+### Client experience
+
+- Added a first-visit introduction and help dialog explaining the shared
+  world, panning, zooming, moves and piece inspection.
+- Added a branded top bar, player colour, coordinate and zoom controls, a
+  world minimap, responsive mobile layout and pinch-to-zoom.
+- Added Open Graph/Twitter metadata and a social preview image.
+- Added a public `/status` dashboard with uptime, players, committed
+  transitions, RSS, board-load percentiles, busiest regions and move-pipeline
+  stages.
+- Static HTML and the stable client entrypoint are revalidated on deploy;
+  content-hashed WASM chunks are cached immutably.
+
 ### Monitoring
 
 - Added per-region board-load metrics. Snapshot batches are grouped into

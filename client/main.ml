@@ -52,6 +52,13 @@ type pan = {
   start_top : float;
 }
 
+type pinch = {
+  start_distance : float;
+  start_zoom : float;
+  world_x : float;
+  world_y : float;
+}
+
 type normal_undo = {
   src_state : board_state;
   dst_state : board_state;
@@ -483,6 +490,8 @@ let main () =
   let view_left = ref 0. and view_top = ref 0. in
   let drag : drag option ref = ref None in
   let panning : pan option ref = ref None in
+  let pinch : pinch option ref = ref None in
+  let pointers : (int, float * float) Hashtbl.t = Hashtbl.create 4 in
   let pending : pending option ref = ref None in
   let ws = ref None in
   let connected = ref false in
@@ -614,7 +623,12 @@ let main () =
       else Board_cache.get_or_create cache ~bx ~by
   in
 
-  let update_stats () =
+  let last_stats_update = ref 0. in
+  let update_stats ?(force = false) () =
+    let now = Performance.now_ms G.performance in
+    if (not force) && now -. !last_stats_update < 100. then ()
+    else begin
+    last_stats_update := now;
     let vis = !visible_rect in
     let use = !useful_rect in
     let visible_loaded, visible_total, visible_missing =
@@ -654,6 +668,7 @@ let main () =
           (Some (Jstr.of_float (!load_finished -. !load_started)))
           body_el
       end
+    end
     end
   in
 
@@ -771,7 +786,7 @@ let main () =
             if !sent < slots && send_batch_rect rect then incr sent)
           rects
       end;
-      update_stats ()
+      update_stats ~force:true ()
     end
   in
 
@@ -909,6 +924,18 @@ let main () =
       (Some
          (Jstr.of_float (max (visible_w ()) (visible_h ()))))
       body_el;
+    El.set_at (Jstr.v "data-view-width")
+      (Some (Jstr.of_float (visible_w ()))) body_el;
+    El.set_at (Jstr.v "data-view-height")
+      (Some (Jstr.of_float (visible_h ()))) body_el;
+    (match Document.find_el_by_id G.document (Jstr.v "zoom-value") with
+     | None -> ()
+     | Some el ->
+       El.set_children el
+         [ El.txt
+             (Jstr.v
+                (Printf.sprintf "%d%%"
+                   (int_of_float (!zoom *. 100.)))) ]);
     C2d.set_fill_style ctx page_bg;
     C2d.fill_rect ctx ~x:0. ~y:0. ~w:(float !canvas_w)
       ~h:(float !canvas_h);
@@ -1020,6 +1047,57 @@ let main () =
     reconcile ~force:true ();
     request_draw ()
   in
+
+  let zoom_by factor =
+    let center_x = !view_left +. (visible_w () /. 2.) in
+    let center_y = !view_top +. (visible_h () /. 2.) in
+    let old_zoom = !zoom in
+    zoom := clamp_float (!zoom *. factor) (min_zoom ()) 3.5;
+    if not (Float.equal !zoom old_zoom) then begin
+      view_left :=
+        clamp_float (center_x -. (visible_w () /. 2.)) 0. (max_left ());
+      view_top :=
+        clamp_float (center_y -. (visible_h () /. 2.)) 0. (max_top ());
+      visible_rect := current_visible ();
+      reconcile ~force:true ();
+      request_draw ()
+    end
+  in
+  let on_button id action =
+    match Document.find_el_by_id G.document (Jstr.v id) with
+    | None -> ()
+    | Some el ->
+      ignore
+        (Ev.listen Ev.click (fun _ -> action ()) (El.as_target el))
+  in
+  on_button "zoom-in" (fun () -> zoom_by 1.18);
+  on_button "zoom-out" (fun () -> zoom_by (1. /. 1.18));
+  on_button "zoom-reset" (fun () ->
+      zoom := max 1. (min_zoom ());
+      select_center 500 500);
+  (match Document.find_el_by_id G.document (Jstr.v "minimap") with
+   | None -> ()
+   | Some minimap ->
+     ignore
+       (Ev.listen Ev.click
+          (fun ev ->
+            let mouse = Ev.as_type ev in
+            let x = Ev.Mouse.client_x mouse -. El.bound_x minimap in
+            let y = Ev.Mouse.client_y mouse -. El.bound_y minimap in
+            let bx =
+              clamp_int
+                (int_of_float
+                   (x /. max 1. (El.bound_w minimap) *. 1000.))
+                0 max_coord
+            in
+            let by =
+              clamp_int
+                (int_of_float
+                   (y /. max 1. (El.bound_h minimap) *. 1000.))
+                0 max_coord
+            in
+            select_center bx by)
+          (El.as_target minimap)));
 
   let on_resize _ =
     let cx, cy = centre_of_view () in
@@ -1377,12 +1455,35 @@ let main () =
 
   let on_pointer_down ev =
     update_layout ();
-    if !pending = None then begin
-      let cx, cy = to_canvas ev in
+    let pointer = Ev.as_type ev in
+    let id = Ev.Pointer.id pointer in
+    let cx, cy = to_canvas ev in
+    Hashtbl.replace pointers id (cx, cy);
+    if Hashtbl.length pointers = 2 then begin
+      (* The second touch turns a potential drag/pan into a pinch. Nothing
+         has been committed yet, so it is safe to cancel the gesture. *)
+      drag := None;
+      panning := None;
+      pointer_down_at := None;
+      let points = Hashtbl.fold (fun _ p acc -> p :: acc) pointers [] in
+      match points with
+      | (x1, y1) :: (x2, y2) :: _ ->
+        let mid_x = (x1 +. x2) /. 2. in
+        let mid_y = (y1 +. y2) /. 2. in
+        pinch :=
+          Some
+            {
+              start_distance =
+                max 1. (sqrt (((x2 -. x1) ** 2.) +. ((y2 -. y1) ** 2.)));
+              start_zoom = !zoom;
+              world_x = !view_left +. (mid_x /. board_px ());
+              world_y = !view_top +. (mid_y /. board_px ());
+            }
+      | _ -> ()
+    end
+    else if !pinch = None && !pending = None then begin
       pointer_down_at := Some (cx, cy);
-      let button =
-        Ev.as_type ev |> Ev.Pointer.as_mouse |> Ev.Mouse.button
-      in
+      let button = Ev.Pointer.as_mouse pointer |> Ev.Mouse.button in
       let target = board_at_canvas cx cy in
       let drag_state =
         match target with
@@ -1423,26 +1524,67 @@ let main () =
   in
 
   let on_pointer_move ev =
-    match !panning with
-    | Some p ->
-      let cx, cy = to_canvas ev in
-      let dx = (cx -. p.start_cx) /. board_px () in
-      let dy = (cy -. p.start_cy) /. board_px () in
-      view_left := clamp_float (p.start_left -. dx) 0. (max_left ());
-      view_top := clamp_float (p.start_top -. dy) 0. (max_top ());
-      visible_rect := current_visible ();
-      schedule_reconcile ();
-      request_draw ()
-    | None ->
-      (match !drag with
-       | None -> ()
-       | Some d ->
-         let cx, cy = to_canvas ev in
-         drag := Some { d with x = cx; y = cy };
-         request_draw ())
+    let pointer = Ev.as_type ev in
+    let id = Ev.Pointer.id pointer in
+    let cx, cy = to_canvas ev in
+    if Hashtbl.mem pointers id then Hashtbl.replace pointers id (cx, cy);
+    match !pinch with
+    | Some p when Hashtbl.length pointers >= 2 ->
+      let points = Hashtbl.fold (fun _ p acc -> p :: acc) pointers [] in
+      (match points with
+       | (x1, y1) :: (x2, y2) :: _ ->
+         let distance =
+           max 1. (sqrt (((x2 -. x1) ** 2.) +. ((y2 -. y1) ** 2.)))
+         in
+         let mid_x = (x1 +. x2) /. 2. in
+         let mid_y = (y1 +. y2) /. 2. in
+         zoom :=
+           clamp_float
+             (p.start_zoom *. distance /. p.start_distance)
+             (min_zoom ()) 3.5;
+         view_left :=
+           clamp_float
+             (p.world_x -. (mid_x /. board_px ()))
+             0. (max_left ());
+         view_top :=
+           clamp_float
+             (p.world_y -. (mid_y /. board_px ()))
+             0. (max_top ());
+         visible_rect := current_visible ();
+         schedule_reconcile ();
+         request_draw ()
+       | _ -> ())
+    | _ ->
+      (match !panning with
+       | Some p ->
+         let dx = (cx -. p.start_cx) /. board_px () in
+         let dy = (cy -. p.start_cy) /. board_px () in
+         view_left := clamp_float (p.start_left -. dx) 0. (max_left ());
+         view_top := clamp_float (p.start_top -. dy) 0. (max_top ());
+         visible_rect := current_visible ();
+         schedule_reconcile ();
+         request_draw ()
+       | None ->
+         (match !drag with
+          | None -> ()
+          | Some d ->
+            drag := Some { d with x = cx; y = cy };
+            request_draw ()))
   in
 
   let on_pointer_up ev =
+    let id = Ev.Pointer.id (Ev.as_type ev) in
+    Hashtbl.remove pointers id;
+    if !pinch <> None then begin
+      if Hashtbl.length pointers < 2 then begin
+        pinch := None;
+        drag := None;
+        panning := None;
+        reconcile ~force:true ();
+        request_draw ()
+      end
+    end
+    else
     match !panning with
     | Some _ ->
       panning := None;
@@ -1645,6 +1787,8 @@ let main () =
   in
 
   let on_pointer_cancel _ =
+    Hashtbl.clear pointers;
+    pinch := None;
     drag := None;
     panning := None;
     request_draw ()

@@ -18,3 +18,8 @@
  (target pieces.png)
  (deps assets/pieces.png)
  (action (copy assets/pieces.png pieces.png)))
+
+(rule
+ (target og.png)
+ (deps ../server/static/og.png)
+ (action (copy ../server/static/og.png og.png)))
