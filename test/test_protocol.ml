@@ -355,4 +355,120 @@ let () =
      Bytes.set b 0 (Char.chr 99);
      Protocol.Types.wire_response_of_bytes b = None);
 
+  (* Batched snapshot codec. *)
+  let batch_request =
+    { request_id = 991l; x0 = 3; y0 = 4; x1 = 27; y1 = 28 }
+  in
+  let request_bytes =
+    Protocol.Types.snapshot_batch_request_to_bytes batch_request
+  in
+  check "batch request length"
+    (Bytes.length request_bytes
+    = Protocol.Types.snapshot_batch_request_bytes);
+  (match Protocol.Types.snapshot_batch_request_of_bytes request_bytes with
+   | Some decoded ->
+     check "batch request id" (decoded.request_id = 991l);
+     check "batch request x0" (decoded.x0 = 3);
+     check "batch request y1" (decoded.y1 = 28)
+   | None -> failwith "batch request decoded to None");
+  expect_invalid "batch request empty region" (fun () ->
+      Protocol.Types.snapshot_batch_request_to_bytes
+        { batch_request with x0 = 5; x1 = 4 });
+  expect_invalid "batch request oversized region" (fun () ->
+      Protocol.Types.snapshot_batch_request_to_bytes
+        { batch_request with x0 = 0; y0 = 0; x1 = 999; y1 = 999 });
+
+  let board_of pieces =
+    let bytes = Bytes.make 64 '\000' in
+    List.iter (fun (square, piece) -> Bytes.set bytes square (Char.chr piece)) pieces;
+    bytes
+  in
+  let batch =
+    {
+      Protocol.Types.request_id = 991l;
+      x0 = 3;
+      y0 = 4;
+      width = 3;
+      height = 2;
+      boards =
+        [|
+          { Protocol.Types.revision = 0L; pieces = board_of [] };
+          { Protocol.Types.revision = 7L;
+            pieces = board_of [ (0, 1); (5, 33); (63, 255) ] };
+          { Protocol.Types.revision = 1L;
+            pieces =
+              board_of
+                (List.init 64 (fun i -> (i, ((i * 3) + 1) land 0xff))) };
+          { Protocol.Types.revision = 2L; pieces = board_of [] };
+          { Protocol.Types.revision = 3L; pieces = board_of [ (31, 17) ] };
+          { Protocol.Types.revision = Int64.max_int;
+            pieces = board_of [ (0, 2); (1, 3) ] };
+        |];
+    }
+  in
+  let encoded = Protocol.Types.snapshot_batch_to_bytes batch in
+  check "batch kind"
+    (Char.code (Bytes.get encoded 0) = Protocol.Types.wire_kind_snapshot_batch);
+  (* 13-byte header + two empty boards (16 each) + three piece bytes + 64
+     bytes + one byte + two bytes. *)
+  check "batch compact length"
+    (Bytes.length encoded
+    = 13 + 16 + 16 + 16 + 3 + 16 + 64 + 16 + 1 + 16 + 2);
+  (match Protocol.Types.snapshot_batch_of_bytes encoded with
+   | None -> failwith "batch decoded to None"
+   | Some decoded ->
+     check "batch width" (decoded.width = 3);
+     check "batch height" (decoded.height = 2);
+     check "batch board count" (Array.length decoded.boards = 6);
+     check "batch first revision" (decoded.boards.(0).revision = 0L);
+     check "batch second revision" (decoded.boards.(1).revision = 7L);
+     check "batch second pieces"
+       (Bytes.get decoded.boards.(1).pieces 0 = Char.chr 1
+       && Bytes.get decoded.boards.(1).pieces 5 = Char.chr 33
+       && Bytes.get decoded.boards.(1).pieces 63 = Char.chr 255
+       && Bytes.get decoded.boards.(1).pieces 6 = '\000');
+     for index = 0 to 5 do
+       check ("batch pieces " ^ string_of_int index)
+         (Bytes.equal decoded.boards.(index).pieces
+            batch.boards.(index).pieces);
+       check ("batch revision " ^ string_of_int index)
+         (decoded.boards.(index).revision
+         = batch.boards.(index).revision)
+     done);
+  check "batch truncated frame rejected"
+    (Protocol.Types.snapshot_batch_of_bytes
+       (Bytes.sub encoded 0 (Bytes.length encoded - 1))
+    = None);
+  check "batch oversized frame rejected"
+    (Protocol.Types.snapshot_batch_of_bytes
+       (Bytes.cat encoded (Bytes.make 1 '\000'))
+    = None);
+
+  (* A full 25 x 25 cache of standard starting boards must stay far below the
+     625 x 4096 = 2.56 MiB fixed-frame baseline. Each board has 32 occupied
+     squares. *)
+  let standard =
+    let pieces = Bytes.make 64 '\000' in
+    for i = 0 to 15 do
+      Bytes.set pieces i (Char.chr 4);
+      Bytes.set pieces (48 + i) (Char.chr 5)
+    done;
+    pieces
+  in
+  let full =
+    {
+      Protocol.Types.request_id = 1l;
+      x0 = 0;
+      y0 = 0;
+      width = 25;
+      height = 25;
+      boards =
+        Array.init 625 (fun _ ->
+            { Protocol.Types.revision = 0L; pieces = standard });
+    }
+  in
+  let full_encoded = Protocol.Types.snapshot_batch_to_bytes full in
+  check "batch 25x25 under 32 KiB"
+    (Bytes.length full_encoded < 32 * 1024);
+
   Printf.printf "All protocol move codec tests passed.\n"

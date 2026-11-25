@@ -24,8 +24,8 @@ const os = require("os");
 const path = require("path");
 
 const CDP_PORT = 9223 + Math.floor(Math.random() * 500);
-const SERVER = "http://localhost:8080/";
-const WS_URL = "ws://localhost:8080/ws";
+const SERVER = process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
+const WS_URL = SERVER.replace(/^http/, "ws").replace(/\/$/, "") + "/ws";
 const WIRE_FRAME = 4096;
 const BOARD_SCALE = 216;
 const CELL = BOARD_SCALE / 8;
@@ -223,11 +223,22 @@ async function main() {
     // puts on the wire, without changing the page itself.
     const hook = `(() => {
       window.__snapshotRequests = [];
+      window.__batchRequests = [];
       window.__moveRequests = [];
       const original = WebSocket.prototype.send;
       WebSocket.prototype.send = function (data) {
         try {
-          if (data instanceof ArrayBuffer && data.byteLength === 9) {
+          if (data instanceof ArrayBuffer && data.byteLength === 13) {
+            const view = new DataView(data);
+            if (view.getUint8(0) === 6) {
+              window.__batchRequests.push([
+                view.getUint16(5, true),
+                view.getUint16(7, true),
+                view.getUint16(9, true),
+                view.getUint16(11, true),
+              ]);
+            }
+          } else if (data instanceof ArrayBuffer && data.byteLength === 9) {
             const view = new DataView(data);
             window.__snapshotRequests.push([view.getUint16(5, true), view.getUint16(7, true)]);
           } else if (data instanceof ArrayBuffer && data.byteLength === 14) {
@@ -349,13 +360,34 @@ async function main() {
       "e2 pawn was not rendered from the initial query centre"
     );
 
-    if ((await evaluate("window.__snapshotRequests.length")) === 0) {
+    if ((await evaluate("window.__snapshotRequests.length + window.__batchRequests.length")) === 0) {
       fail("the client sent no snapshot requests");
+    }
+
+    // The whole 25x25 cache must arrive as a handful of compact batch frames,
+    // not 625 padded 4 KiB replies. This is the regression guard for load
+    // latency: one frame, bounded bytes, and every board present.
+    const load = JSON.parse(
+      await evaluate(
+        "JSON.stringify({loaded: document.body.dataset.loadedBoards, batches: document.body.dataset.snapshotBatches, bytes: document.body.dataset.snapshotBytes, ms: document.body.dataset.loadMs})"
+      )
+    );
+    if (Number(load.loaded) < 625) {
+      fail(`only ${load.loaded} of 625 cached boards loaded`);
+    }
+    if (Number(load.batches) > 4) {
+      fail(`initial load used ${load.batches} snapshot frames`);
+    }
+    if (Number(load.bytes) > 128 * 1024) {
+      fail(`initial load transferred ${load.bytes} bytes (limit 131072)`);
+    }
+    if (!(Number(load.ms) > 0) || Number(load.ms) > 500) {
+      fail(`initial 625-board load took ${load.ms} ms (limit 500)`);
     }
 
     // Ignore the initial window while the camera settles: the cache bound is
     // checked from the moment the requested centre is established.
-    await evaluate("window.__snapshotRequests = []");
+    await evaluate("window.__snapshotRequests = []; window.__batchRequests = []");
 
     // Nine fully visible boards: the centre board and its eight neighbours.
     for (let by = BOARD.y - 1; by <= BOARD.y + 1; by++) {
@@ -484,12 +516,24 @@ async function main() {
     // Every request must fall inside the 25x25 window of a centre the test
     // actually visited: BOARD.x - 1, BOARD.x or BOARD.x + 1.
     const requests = await evaluate("window.__snapshotRequests");
+    const batches = await evaluate("window.__batchRequests");
     const centres = [BOARD.x - 1, BOARD.x, BOARD.x + 1];
     for (const [x, y] of requests) {
       const inside = centres.some(
         (cx) => Math.abs(x - cx) <= 12 && Math.abs(y - BOARD.y) <= 12
       );
       if (!inside) fail(`snapshot request (${x}, ${y}) escaped the 25x25 window`);
+    }
+    if (batches.length === 0) fail("the client sent no batched snapshot requests");
+    for (const [x0, y0, x1, y1] of batches) {
+      const inside = centres.some(
+        (cx) =>
+          x0 >= cx - 12 &&
+          x1 <= cx + 12 &&
+          y0 >= BOARD.y - 12 &&
+          y1 <= BOARD.y + 12
+      );
+      if (!inside) fail(`batch region (${x0},${y0})-(${x1},${y1}) escaped the 25x25 window`);
     }
 
     // Move far enough to evict the centre board, then return. The client must
@@ -543,7 +587,9 @@ async function main() {
 
     if (exceptions !== 0) fail(`browser raised ${exceptions} exception(s)`);
     console.log(
-      `Client grid snapshot test passed: ${new Set(requests.map(([x, y]) => `${x},${y}`)).size} distinct boards requested, ` +
+      `Client snapshot test passed: ${load.loaded} boards loaded in ${load.ms} ms ` +
+      `over ${load.batches} batch frame(s) (${load.bytes} bytes), ` +
+      `${batches.length} batch and ${requests.length} single requests, ` +
       `each within 25x25 of a visited centre near (${BOARD.x}, ${BOARD.y}).`
     );
     await send("Browser.close");

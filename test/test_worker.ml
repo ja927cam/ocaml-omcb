@@ -105,6 +105,54 @@ let () =
   check "metrics rejected" (metrics.requests_rejected = 2L);
   check "metrics queue depth" (metrics.queue_depth = 0);
   check "metrics capacity" (metrics.queue_capacity = 8);
+  (* A batched region is copied atomically in one worker turn and matches the
+     per-board snapshot for every board, including client piece bytes. *)
+  let batch =
+    Lwt_main.run
+      (State_worker.submit_snapshot_batch worker ~x0:0 ~y0:0 ~x1:1 ~y1:0)
+  in
+  (match batch with
+   | Error _ -> failwith "expected batch snapshot"
+   | Ok batch ->
+     check "batch width" (batch.width = 2);
+     check "batch height" (batch.height = 1);
+     check "batch board count" (Array.length batch.boards = 2);
+     for index = 0 to 1 do
+       let board_x = batch.x0 + index and board_y = batch.y0 in
+       let expected, expected_revision =
+         Game_state.snapshot_board_with_revision state ~board_x ~board_y
+       in
+       let revision, pieces = batch.boards.(index) in
+       check "batch revision" (revision = expected_revision);
+       check "batch piece bytes"
+         (Bytes.length pieces = 64
+         && (let ok = ref true in
+             for square = 0 to 63 do
+               if
+                 Char.code (Bytes.get pieces square)
+                 <> Piece.client_byte_at ~board_x ~board_y
+                      expected.(square)
+               then ok := false
+             done;
+             !ok))
+     done);
+  check "batch oversized region rejected"
+    (match
+       Lwt_main.run
+         (State_worker.submit_snapshot_batch worker ~x0:0 ~y0:0 ~x1:999
+            ~y1:999)
+     with
+     | Error State_worker.Invalid_request -> true
+     | _ -> false);
+  check "batch inverted region rejected"
+    (match
+       Lwt_main.run
+         (State_worker.submit_snapshot_batch worker ~x0:5 ~y0:0 ~x1:4 ~y1:0)
+     with
+     | Error State_worker.Invalid_request -> true
+     | _ -> false);
+
+
   Lwt_main.run (State_worker.stop worker);
 
   (* Bounded queue rejects the second request when capacity is one. *)

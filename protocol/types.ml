@@ -668,6 +668,222 @@ let client_byte_of_packed value =
     | _ -> byte
   end
 
+(* {2 Batched board snapshots}
+
+   Loading a 25 x 25 cache one 9-byte request at a time costs 625 network
+   round trips and 625 fixed-size 4096-byte reply frames. Both are dominated by
+   latency and padding rather than by board data. A batch request asks for a
+   rectangular region in a single message and gets a single variable-size frame
+   back.
+
+   Batch request (13 bytes):
+     byte  0      message type 0x06
+     byte  1..4   request ID (int32, little-endian)
+     byte  5..6   x0 (first board x)
+     byte  7..8   y0 (first board y)
+     byte  9..10  x1 (last board x, inclusive)
+     byte 11..12  y1 (last board y, inclusive)
+
+   Batch response (wire kind 5):
+     byte  0      kind 5
+     byte  1..4   request ID (int32, little-endian)
+     byte  5..6   x0
+     byte  7..8   y0
+     byte  9..10  width
+     byte 11..12  height
+     then [width * height] board records, row-major:
+       byte 0..7   per-board revision (int64, little-endian)
+       byte 8..15  occupancy bitmap (int64: bit i set when square i is occupied)
+       byte 16..   one client piece byte per set bit, in increasing square order
+
+   A standard starting board therefore costs 16 + 32 = 48 bytes instead of a
+   4096-byte padded frame, and the whole 625-board cache is one frame of about
+   30 KiB. The format is strictly additive: the original single-board request
+   and response are unchanged and remain the resynchronisation fallback. *)
+
+let snapshot_batch_request_message_type = 0x06
+let snapshot_batch_request_bytes = 13
+let wire_kind_snapshot_batch = 5
+let snapshot_batch_header_bytes = 13
+let snapshot_batch_board_header_bytes = 16
+let snapshot_batch_area_limit = 4096
+
+type snapshot_batch_request = {
+  request_id : int32;
+  x0 : int;
+  y0 : int;
+  x1 : int;
+  y1 : int;
+}
+
+let valid_batch_region x0 y0 x1 y1 =
+  valid_board_coord x0 && valid_board_coord y0 && valid_board_coord x1
+  && valid_board_coord y1 && x0 <= x1 && y0 <= y1
+  && (x1 - x0 + 1) * (y1 - y0 + 1) <= snapshot_batch_area_limit
+
+let snapshot_batch_request_to_bytes (request : snapshot_batch_request) =
+  if
+    not
+      (valid_batch_region request.x0 request.y0 request.x1 request.y1)
+  then
+    invalid_arg
+      "Protocol.Types.snapshot_batch_request_to_bytes: invalid region";
+  let b = Bytes.create snapshot_batch_request_bytes in
+  Bytes.set b 0 (Char.chr snapshot_batch_request_message_type);
+  set_i32_le b 1 request.request_id;
+  set_u16_le b 5 request.x0;
+  set_u16_le b 7 request.y0;
+  set_u16_le b 9 request.x1;
+  set_u16_le b 11 request.y1;
+  b
+
+let snapshot_batch_request_of_bytes b : snapshot_batch_request option =
+  if Bytes.length b <> snapshot_batch_request_bytes then None
+  else if
+    Char.code (Bytes.get b 0) <> snapshot_batch_request_message_type
+  then None
+  else
+    let x0 = get_u16_le b 5
+    and y0 = get_u16_le b 7
+    and x1 = get_u16_le b 9
+    and y1 = get_u16_le b 11 in
+    if not (valid_batch_region x0 y0 x1 y1) then None
+    else Some { request_id = get_i32_le b 1; x0; y0; x1; y1 }
+
+type snapshot_batch_board = {
+  revision : int64;
+  pieces : Bytes.t; (* 64 dense client piece bytes, row-major *)
+}
+
+type snapshot_batch = {
+  request_id : int32;
+  x0 : int;
+  y0 : int;
+  width : int;
+  height : int;
+  boards : snapshot_batch_board array;
+}
+
+let populated_bits pieces =
+  if Bytes.length pieces <> 64 then
+    invalid_arg "Protocol.Types.populated_bits: expected 64 pieces";
+  let bits = ref 0L in
+  for i = 0 to 63 do
+    if Char.code (Bytes.unsafe_get pieces i) <> 0 then
+      bits := Int64.logor !bits (Int64.shift_left 1L i)
+  done;
+  !bits
+
+let bit_count value =
+  let value = ref value and count = ref 0 in
+  while not (Int64.equal !value 0L) do
+    value := Int64.logand !value (Int64.pred !value);
+    incr count
+  done;
+  !count
+
+let snapshot_batch_encoded_length (batch : snapshot_batch) =
+  let total = ref snapshot_batch_header_bytes in
+  Array.iter
+    (fun (board : snapshot_batch_board) ->
+      total :=
+        !total + snapshot_batch_board_header_bytes
+        + bit_count (populated_bits board.pieces))
+    batch.boards;
+  !total
+
+let snapshot_batch_to_bytes (batch : snapshot_batch) =
+  let count = Array.length batch.boards in
+  if
+    batch.width <= 0 || batch.height <= 0
+    || count <> batch.width * batch.height
+  then
+    invalid_arg
+      "Protocol.Types.snapshot_batch_to_bytes: board count does not match \
+       width * height";
+  if not (valid_batch_region batch.x0 batch.y0
+            (batch.x0 + batch.width - 1) (batch.y0 + batch.height - 1))
+  then
+    invalid_arg
+      "Protocol.Types.snapshot_batch_to_bytes: invalid region";
+  let b = Bytes.create (snapshot_batch_encoded_length batch) in
+  Bytes.set b 0 (Char.chr wire_kind_snapshot_batch);
+  set_i32_le b 1 batch.request_id;
+  set_u16_le b 5 batch.x0;
+  set_u16_le b 7 batch.y0;
+  set_u16_le b 9 batch.width;
+  set_u16_le b 11 batch.height;
+  let offset = ref snapshot_batch_header_bytes in
+  Array.iter
+    (fun (board : snapshot_batch_board) ->
+      if Bytes.length board.pieces <> 64 then
+        invalid_arg
+          "Protocol.Types.snapshot_batch_to_bytes: expected 64 pieces";
+      let bits = populated_bits board.pieces in
+      set_i64_le b !offset board.revision;
+      set_i64_le b (!offset + 8) bits;
+      offset := !offset + snapshot_batch_board_header_bytes;
+      for i = 0 to 63 do
+        let piece = Char.code (Bytes.unsafe_get board.pieces i) in
+        if piece <> 0 then begin
+          Bytes.unsafe_set b !offset (Char.chr piece);
+          incr offset
+        end
+      done)
+    batch.boards;
+  if !offset <> Bytes.length b then
+    invalid_arg
+      "Protocol.Types.snapshot_batch_to_bytes: encoded length mismatch";
+  b
+
+let snapshot_batch_of_bytes b : snapshot_batch option =
+  let length = Bytes.length b in
+  if length < snapshot_batch_header_bytes then None
+  else if Char.code (Bytes.unsafe_get b 0) <> wire_kind_snapshot_batch then
+    None
+  else
+    let x0 = get_u16_le b 5
+    and y0 = get_u16_le b 7
+    and width = get_u16_le b 9
+    and height = get_u16_le b 11 in
+    if
+      width <= 0 || height <= 0
+      || not
+           (valid_batch_region x0 y0 (x0 + width - 1) (y0 + height - 1))
+    then None
+    else
+      let count = width * height in
+      let boards = Array.make count { revision = 0L; pieces = Bytes.empty } in
+      let offset = ref snapshot_batch_header_bytes in
+      let ok = ref true in
+      for index = 0 to count - 1 do
+        if (not !ok) || !offset + snapshot_batch_board_header_bytes > length
+        then ok := false
+        else begin
+          let revision = get_i64_le b !offset in
+          let bits = get_i64_le b (!offset + 8) in
+          offset := !offset + snapshot_batch_board_header_bytes;
+          let populated = bit_count bits in
+          if !offset + populated > length then ok := false
+          else begin
+            let pieces = Bytes.make 64 '\000' in
+            for square = 0 to 63 do
+              if
+                Int64.logand bits (Int64.shift_left 1L square) <> 0L
+                && !ok
+              then begin
+                Bytes.unsafe_set pieces square
+                  (Bytes.unsafe_get b !offset);
+                incr offset
+              end
+            done;
+            boards.(index) <- { revision; pieces }
+          end
+        end
+      done;
+      if (not !ok) || !offset <> length then None
+      else Some { request_id = get_i32_le b 1; x0; y0; width; height; boards }
+
 (* {2 Board subscriptions}
 
    Clients announce the 25 x 25 (or arbitrary radius) window they cache with a

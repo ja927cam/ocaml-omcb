@@ -23,6 +23,14 @@ type snapshot = {
   revision : int64;
 }
 
+type snapshot_batch = {
+  x0 : int;
+  y0 : int;
+  width : int;
+  height : int;
+  boards : (int64 * Bytes.t) array;
+}
+
 type event_board = {
   board_x : int;
   board_y : int;
@@ -102,6 +110,19 @@ val submit_snapshot :
 (** Snapshot a board through the same FIFO queue. Returns a 64-element copy in
     row-major order plus the board revision. Invalid coordinates return
     [Invalid_request]. *)
+
+val submit_snapshot_batch :
+  ?timing:Metrics.move_timing ->
+  t ->
+  x0:int ->
+  y0:int ->
+  x1:int ->
+  y1:int ->
+  (snapshot_batch, submit_error) result Lwt.t
+(** Snapshot every board in an inclusive rectangle in one worker turn. Each
+    board is returned as its revision and 64 client piece bytes. The area is
+    capped by {!Protocol.Types.snapshot_batch_area_limit}; invalid or
+    oversized regions return [Invalid_request]. *)
 
 val request_snapshot : t -> (unit, submit_error) result Lwt.t
 (** Queue a consistent world-snapshot boundary. Resolves after [on_snapshot]

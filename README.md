@@ -20,7 +20,12 @@ With the server running, the browser grid integration test can be run with:
 
 ```bash
 node test/client_snapshot_test.js
+node test/client_load_perf_test.js   # isolated-server initial-load budget
 ```
+
+The load performance test asserts that a full 25 x 25 cache arrives in at most
+a few compact batch frames, under 128 KiB and under 500 ms in a headless
+browser. It also compares the batched frame with the legacy 625-frame path.
 
 Live update tests:
 

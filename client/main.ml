@@ -93,6 +93,14 @@ type pending = {
   mutable last_probe : float;
 }
 
+(* One in-flight request for a whole rectangular region. A 25 x 25 cache is a
+   single round trip instead of 625, and the reply is one compact frame rather
+   than 625 padded 4 KiB frames. *)
+type batch_request = {
+  request_id : int32;
+  sent_at : float;
+}
+
 let board_key bx by = (by * 1000) + bx
 let clamp_int v lo hi = max lo (min hi v)
 let clamp_float v lo hi = max lo (min hi v)
@@ -317,9 +325,19 @@ let main () =
   let snapshot_queue = Queue.create () in
   let queued_snapshots : (int, unit) Hashtbl.t = Hashtbl.create 1024 in
   (* Dream's stream pipe can lose a write acknowledgement when many responses
-     are queued. One snapshot at a time is still fast over loopback and keeps
-     the request/response path deterministic. *)
+     are queued. One request at a time keeps the request/response path
+     deterministic; the batch request now carries the whole cache. *)
   let max_snapshot_outstanding = 1 in
+  let pending_batch : batch_request option ref = ref None in
+  let batch_expected = ref 0 in
+  let batch_backoff = ref 500. in
+  (* Load telemetry. The browser test asserts both the board count and the
+     bytes transferred, so a regression back to per-board padded frames is
+     caught rather than merely feeling slow. *)
+  let snapshot_batches = ref 0 in
+  let snapshot_bytes = ref 0 in
+  let load_started = ref 0. in
+  let load_finished = ref 0. in
 
   let view_left = ref 0. and view_top = ref 0. in
   let drag : drag option ref = ref None in
@@ -385,6 +403,22 @@ let main () =
       Brr_io.Websocket.send_array_buffer socket buffer;
       true
     | _ -> false
+  in
+
+  let send_batch_request x0 y0 x1 y1 =
+    if !pending_batch = None then begin
+      let request_id = alloc_request_id () in
+      let request : Protocol.Types.snapshot_batch_request =
+        { request_id; x0; y0; x1; y1 }
+      in
+      if send_binary (Protocol.Types.snapshot_batch_request_to_bytes request)
+      then begin
+        let now = Performance.now_ms G.performance in
+        if !load_started = 0. then load_started := now;
+        pending_batch := Some { request_id; sent_at = now };
+        batch_expected := (x1 - x0 + 1) * (y1 - y0 + 1)
+      end
+    end
   in
 
   let bytes_of_buffer data =
@@ -516,60 +550,30 @@ let main () =
 
     Queue.clear snapshot_queue;
     Hashtbl.clear queued_snapshots;
-    let enqueue bx by =
-      let key = board_key bx by in
-      if not (Hashtbl.mem queued_snapshots key) then begin
-        let state = state_of bx by in
-        if (not state.loaded) && state.pending_request = None then begin
-          Hashtbl.add queued_snapshots key ();
-          Queue.add key snapshot_queue
-        end
-      end
-    in
-    (* Visible boards are requested first; the rest of the 25 x 25 window is
-       background-loaded with bounded concurrency so moves are not stuck behind
-       hundreds of snapshot requests. *)
-    let visible_x0 = max 0 (int_of_float (floor !view_left)) in
-    let visible_x1 =
-      min max_coord
-        (int_of_float (floor (!view_left +. visible_w ())))
-    in
-    let visible_y0 = max 0 (int_of_float (floor !view_top)) in
-    let visible_y1 =
-      min max_coord
-        (int_of_float (floor (!view_top +. visible_h ())))
-    in
-    (* Eagerly load the visible boards plus a one-board margin. The cache
-       window is 25 x 25 around the centre, so panning reuses nearby snapshots
-       without loading the entire world or flooding the worker with hundreds
-       of requests before the first move. *)
-    let load_x0 = max x0 (visible_x0 - 1) in
-    let load_x1 = min x1 (visible_x1 + 1) in
-    let load_y0 = max y0 (visible_y0 - 1) in
-    let load_y1 = min y1 (visible_y1 + 1) in
-    (* The centre board is the one most likely to be observed or moved on;
-       request it first so a large window rebuild cannot starve it. *)
-    enqueue center_x center_y;
-    for by = load_y0 to load_y1 do
-      for bx = load_x0 to load_x1 do
-        if bx <> center_x || by <> center_y then enqueue bx by
-      done
-    done;
-    (* Prefetch the rest of the 25 x 25 cache in the background. Requests stay
-       strictly single-flight, so a move submitted while this is running waits
-       for at most one 64-piece snapshot. This is what makes nearby panning
-       instant instead of starting a fresh 63-board load every time. *)
+    (* Load the whole cache with one batch request. The reply is a single
+       variable-size frame, so latency and padding no longer dominate. Boards
+       that are already loaded are left alone; the single-board path remains
+       available for liveness probes and older clients. *)
+    let missing = ref false in
     for by = y0 to y1 do
       for bx = x0 to x1 do
-        enqueue bx by
+        if not (state_of bx by).loaded then missing := true
       done
     done;
+    if !missing then send_batch_request x0 y0 x1 y1;
     pump_snapshots ();
   in
   retry_snapshot_hook := ensure_window;
   ignore
     (G.set_interval ~ms:250 (fun () ->
          let now = Performance.now_ms G.performance in
+         (match !pending_batch with
+          | Some batch when now -. batch.sent_at > !batch_backoff ->
+            pending_batch := None;
+            batch_expected := 0;
+            batch_backoff := min 4_000. (!batch_backoff *. 2.);
+            ensure_window ()
+          | _ -> ());
          (* Reconcile the request-id map with the board table. Eviction or a
             stale response can otherwise leave an orphan request id that keeps
             the single-flight snapshot pump permanently at its limit. *)
@@ -658,7 +662,8 @@ let main () =
       El.set_children coords_el [ El.txt (Jstr.v coords) ]
     end;
     let remaining =
-      Hashtbl.length pending_snapshots + Queue.length snapshot_queue
+      !batch_expected + Hashtbl.length pending_snapshots
+      + Queue.length snapshot_queue
     in
     if remaining > 0 && !ws <> None then begin
       let label = Printf.sprintf "Loading %d" remaining in
@@ -794,6 +799,58 @@ let main () =
     select_center cx cy
   in
   ignore (Ev.listen Ev.resize on_resize (Window.as_target G.window));
+
+  let update_load_stats ~bytes =
+    incr snapshot_batches;
+    snapshot_bytes := !snapshot_bytes + bytes;
+    let loaded =
+      Hashtbl.fold
+        (fun _ state total -> if state.loaded then total + 1 else total)
+        boards 0
+    in
+    El.set_at (Jstr.v "data-loaded-boards")
+      (Some (Jstr.v (string_of_int loaded)))
+      body_el;
+    El.set_at (Jstr.v "data-snapshot-batches")
+      (Some (Jstr.v (string_of_int !snapshot_batches)))
+      body_el;
+    El.set_at (Jstr.v "data-snapshot-bytes")
+      (Some (Jstr.v (string_of_int !snapshot_bytes)))
+      body_el;
+    if !load_started > 0. && !load_finished = 0. && loaded >= 625 then begin
+      load_finished := Performance.now_ms G.performance;
+      El.set_at (Jstr.v "data-load-ms")
+        (Some (Jstr.of_float (!load_finished -. !load_started)))
+        body_el
+    end
+  in
+
+  let apply_snapshot_batch ~bytes (batch : Protocol.Types.snapshot_batch) =
+    let count = Array.length batch.boards in
+    if batch.width > 0 && batch.height > 0 && count = batch.width * batch.height
+    then begin
+      for index = 0 to count - 1 do
+        let bx = batch.x0 + (index mod batch.width) in
+        let by = batch.y0 + (index / batch.width) in
+        match Hashtbl.find_opt boards (board_key bx by) with
+        | None -> ()
+        | Some state ->
+          let board = batch.boards.(index) in
+          (* A move event can race the batch. Revisions are monotonic per
+             board, so never replace a newer cache entry with older data. *)
+          if Int64.compare board.revision state.revision >= 0 then begin
+            forget_pending state;
+            state.pieces <- board.pieces;
+            state.revision <- board.revision;
+            state.loaded <- true;
+            state.stale <- false;
+            state.snapshot_backoff <- 500.
+          end
+      done;
+      update_load_stats ~bytes;
+      request_draw ()
+    end
+  in
 
   let apply_move_event (event : Protocol.Types.move_event) =
     let resync = ref false in
@@ -1232,8 +1289,39 @@ let main () =
              Ev.as_type ev |> Brr_io.Message.Ev.data
            in
            let length = Tarray.Buffer.byte_length data in
-           if length = Protocol.Types.wire_response_bytes then begin
+           if length >= Protocol.Types.snapshot_batch_header_bytes then begin
+             let copy_started = Performance.now_ms G.performance in
              let bytes = bytes_of_buffer data in
+             let copy_finished = Performance.now_ms G.performance in
+             if
+               Char.code (Bytes.unsafe_get bytes 0)
+               = Protocol.Types.wire_kind_snapshot_batch
+             then
+               (match Protocol.Types.snapshot_batch_of_bytes bytes with
+                | None -> ()
+                | Some batch ->
+                  (match !pending_batch with
+                   | Some pending
+                     when pending.request_id = batch.request_id ->
+                     pending_batch := None;
+                     batch_expected := 0;
+                     batch_backoff := 500.
+                   | _ -> ());
+                  let decode_finished = Performance.now_ms G.performance in
+                  apply_snapshot_batch ~bytes:(Bytes.length bytes) batch;
+                  let applied = Performance.now_ms G.performance in
+                  El.set_at (Jstr.v "data-copy-ms")
+                    (Some (Jstr.of_float (copy_finished -. copy_started)))
+                    body_el;
+                  El.set_at (Jstr.v "data-decode-ms")
+                    (Some (Jstr.of_float (decode_finished -. copy_finished)))
+                    body_el;
+                  El.set_at (Jstr.v "data-apply-ms")
+                    (Some (Jstr.of_float (applied -. decode_finished)))
+                    body_el;
+                  (* The camera may have moved while the batch was in flight. *)
+                  ensure_window ())
+             else if length = Protocol.Types.wire_response_bytes then begin
              if
                Char.code (Bytes.get bytes 0)
                = Protocol.Types.wire_kind_event_batch
@@ -1343,6 +1431,7 @@ let main () =
                           (if accepted then "ws: move accepted"
                            else "ws: move rejected") ])
                 | _ -> ())
+             end
            end)
          target);
     ignore

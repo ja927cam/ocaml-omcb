@@ -181,6 +181,12 @@ async function main() {
         try {
           if (data instanceof ArrayBuffer && data.byteLength === 9) {
             window.__snapshotRequestCount++;
+          } else if (
+            data instanceof ArrayBuffer &&
+            data.byteLength === 13 &&
+            new Uint8Array(data)[0] === 6
+          ) {
+            window.__snapshotRequestCount++;
           }
         } catch (_) {}
         return send.call(this, data);

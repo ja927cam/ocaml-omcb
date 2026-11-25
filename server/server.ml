@@ -399,7 +399,25 @@ let snapshot_success (request : Protocol.Types.snapshot_request)
 
 type socket_response =
   [ `Move of Protocol.Types.response
-  | `Snapshot of Protocol.Types.snapshot_response * Protocol.Types.move_event list ]
+  | `Snapshot of Protocol.Types.snapshot_response * Protocol.Types.move_event list
+  | `Snapshot_batch of Protocol.Types.snapshot_batch
+                      * Protocol.Types.move_event list ]
+
+let snapshot_batch_response
+    (request : Protocol.Types.snapshot_batch_request)
+    (batch : State_worker.snapshot_batch) : Protocol.Types.snapshot_batch =
+  {
+    Protocol.Types.request_id = request.request_id;
+    x0 = batch.x0;
+    y0 = batch.y0;
+    width = batch.width;
+    height = batch.height;
+    boards =
+      Array.map
+        (fun (revision, pieces) ->
+          Protocol.Types.{ revision; pieces })
+        batch.boards;
+  }
 
 let handle_socket manager worker socket =
   let conn =
@@ -501,6 +519,54 @@ let handle_socket manager worker socket =
                           [] )))
                (State_worker.submit_snapshot worker
                   ~board_x:request.board_x ~board_y:request.board_y))
+        | 13 ->
+          (match Protocol.Types.snapshot_batch_request_of_bytes bytes with
+           | None -> Lwt.return_none
+           | Some request ->
+             let width = request.x1 - request.x0 + 1 in
+             let height = request.y1 - request.y0 + 1 in
+             let tokens =
+               Array.init (width * height) (fun index ->
+                   let board_x = request.x0 + (index mod width) in
+                   let board_y = request.y0 + (index / width) in
+                   ( board_x,
+                     board_y,
+                     Connection_manager.begin_snapshot conn ~board_x ~board_y ))
+             in
+             Lwt.map
+               (fun result ->
+                 match result with
+                 | Ok (batch : State_worker.snapshot_batch) ->
+                   let released = ref [] in
+                   Array.iter
+                     (fun (board_x, board_y, token) ->
+                       let revision =
+                         let index =
+                           ((board_y - request.y0) * width)
+                           + (board_x - request.x0)
+                         in
+                         fst batch.boards.(index)
+                       in
+                       match
+                         Connection_manager.complete_snapshot conn ~board_x
+                           ~board_y ~token ~revision
+                       with
+                       | Some events -> released := events @ !released
+                       | None -> ())
+                     tokens;
+                   Some
+                     (`Snapshot_batch
+                        ( snapshot_batch_response request batch,
+                          !released ))
+                 | Error _ ->
+                   Array.iter
+                     (fun (board_x, board_y, token) ->
+                       Connection_manager.abort_snapshot conn ~board_x
+                         ~board_y token)
+                     tokens;
+                   None)
+               (State_worker.submit_snapshot_batch worker ~x0:request.x0
+                  ~y0:request.y0 ~x1:request.x1 ~y1:request.y1))
         | _ ->
           Lwt.return_some
             (`Move
@@ -511,15 +577,21 @@ let handle_socket manager worker socket =
        | Some response ->
          let released =
            match response with
-           | `Snapshot (_, released) -> released
+           | `Snapshot (_, released) | `Snapshot_batch (_, released) ->
+             released
            | `Move _ -> []
          in
-         let wire_response =
+         let bytes =
            match response with
-           | `Move response -> Protocol.Types.Wire_move response
-           | `Snapshot (response, _) -> Protocol.Types.Wire_snapshot response
+           | `Move response ->
+             Protocol.Types.wire_response_to_bytes
+               (Protocol.Types.Wire_move response)
+           | `Snapshot (response, _) ->
+             Protocol.Types.wire_response_to_bytes
+               (Protocol.Types.Wire_snapshot response)
+           | `Snapshot_batch (batch, _) ->
+             Protocol.Types.snapshot_batch_to_bytes batch
          in
-         let bytes = Protocol.Types.wire_response_to_bytes wire_response in
          Connection_manager.flush_conn_events conn;
          let send = Connection_manager.send conn bytes in
          Connection_manager.release_snapshot_events conn released;

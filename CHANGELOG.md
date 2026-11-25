@@ -50,3 +50,21 @@
   atlas (512 px cells, attribution in `client/assets/README.md`), rendered
   from SVGs and loaded with a fallback.
 - Disabled per-move browser RTT logging by default.
+- Fixed scroll-wheel zoom-out: the zoom factor clamp was receiving its bounds
+  in the wrong order, so every wheel event selected the zoom-in factor.
+
+### Snapshot loading
+
+- Added an additive batched snapshot protocol (message `0x06`, wire kind `5`):
+  one request covers a rectangle and one variable-size frame carries every
+  board with an occupancy bitmap and per-board revisions.
+- The client now loads the full 25 x 25 cache with one batch request instead of
+  625 sequential single-board requests. A 625-board load fell from 625 padded
+  4096-byte frames (2.56 MiB, about a second) to one ~30 KiB frame in roughly
+  10 ms in a headless browser; nearby panning needs no further requests because
+  the whole window is already resident.
+- The status pill reports the number of boards still loading instead of
+  claiming `Live` while the cache is incomplete.
+- Added `test/client_load_perf_test.js`, which spawns an isolated server and
+  fails if a full cache exceeds four frames, 128 KiB or 500 ms. Protocol codec,
+  compact-size and worker batch-snapshot unit tests were added.

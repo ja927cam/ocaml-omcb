@@ -950,6 +950,56 @@ Codec functions: `snapshot_request_to_bytes`, `snapshot_request_of_bytes`,
 `snapshot_response_to_bytes`, `snapshot_response_of_bytes`. They depend only on
 `Protocol.Types`, not `Game_state` or `Board`.
 
+### 13.6.1a Batched snapshot request and response
+
+Loading a 25 x 25 cache through the single-board codec costs 625 request
+round trips and 625 fixed 4096-byte frames (2.56 MiB), even though the useful
+payload is under 50 KiB. The client therefore asks for a rectangle in one
+message and receives one variable-size frame.
+
+Batch request, 13 bytes:
+
+| Bytes | Field |
+|---|---|
+| 0 | Message type `0x06` |
+| 1–4 | Request ID, int32 little-endian |
+| 5–6 | First board X, uint16 |
+| 7–8 | First board Y, uint16 |
+| 9–10 | Last board X (inclusive), uint16 |
+| 11–12 | Last board Y (inclusive), uint16 |
+
+The region must satisfy `x0 <= x1`, `y0 <= y1` and at most 4096 boards.
+
+Batch response, wire kind `5`:
+
+| Bytes | Field |
+|---|---|
+| 0 | Wire kind `5` |
+| 1–4 | Request ID, int32 |
+| 5–6 | First board X, uint16 |
+| 7–8 | First board Y, uint16 |
+| 9–10 | Width, uint16 |
+| 11–12 | Height, uint16 |
+| 13+ | `width * height` board records, row-major |
+
+Each board record is:
+
+| Bytes | Field |
+|---|---|
+| 0–7 | Board revision, int64 |
+| 8–15 | Occupancy bitmap, int64 (bit `i` set when square `i` is occupied) |
+| 16+ | One client piece byte per set bit, in increasing square order |
+
+An empty board costs 16 bytes and a standard starting board (32 pieces) costs
+48 bytes, so a 25 x 25 cache is about 30 KiB in one frame. Revisions are
+included per board so subsequent live events can still detect gaps. The format
+is additive: the single-board request and response remain in use for
+resynchronisation and probes.
+
+Codec functions: `snapshot_batch_request_to_bytes`,
+`snapshot_batch_request_of_bytes`, `snapshot_batch_to_bytes`,
+`snapshot_batch_of_bytes`.
+
 ### 13.6.2 Subscription messages
 
 | Bytes | Message | Layout |
@@ -1016,7 +1066,7 @@ in a fixed 4096-byte binary frame:
 
 | Bytes | Field |
 |---|---|
-| 0 | Kind: `1` move response, `2` snapshot response, `3` live event, `4` event batch |
+| 0 | Kind: `1` move response, `2` snapshot response, `3` live event, `4` event batch, `5` batched snapshot |
 | 1..26, 1..77, or 1.. | The encoded response/event/batch |
 | Rest | Zero padding |
 
@@ -1025,9 +1075,16 @@ and validate these frames. Each send crosses the 4096-byte threshold, so Dream
 flushes it immediately. The 81-byte snapshot payload and 26-byte move payload
 remain unchanged for codec tests and benchmarks.
 
-The client keeps at most **one** snapshot request in flight. This bounds
-memory and makes retry/backoff simple while still loading a 25 x 25 cache
-quickly over a loopback connection.
+Kind `5` is variable-size and is not padded: a batched snapshot is larger than
+Dream's 4096-byte flush threshold by construction, so it flushes immediately
+without wasting padding. The single-board, move and event frames retain their
+fixed 4096-byte framing.
+
+The client keeps at most **one** batch request in flight. A full 25 x 25 cache
+arrives in one frame and one round trip; the per-board path is reserved for a
+board that missed a revision and for liveness probes. One 625-board load
+transfers about 30 KiB instead of 2.56 MiB and completes in single-digit
+milliseconds on loopback.
 
 The legacy JSON `client_msg` type has been removed; the protocol library no
 longer depends on `ppx_deriving_yojson`.
