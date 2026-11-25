@@ -14,6 +14,45 @@ dune build --profile release
 The binary is `_build/default/server/server.exe`. Install it at
 `/opt/sim-map/server.exe` (or adjust `ExecStart`).
 
+## Docker
+
+The supplied multi-stage `Dockerfile` builds the server, the WASM client and
+the piece atlas, then copies only the runtime artifacts into a slim Debian
+image. The container runs as UID/GID `10001` and persists WAL and snapshots in
+`/var/lib/sim-map/data`.
+
+```bash
+# Build and run with Compose (named volume, healthcheck, graceful stop):
+docker compose up --build -d
+docker compose logs -f
+curl -fsS http://localhost:8080/healthz
+docker compose down
+
+# Or without Compose:
+docker build -t sim-map .
+docker run --rm --init -p 8080:8080 \
+  -v sim-map-data:/var/lib/sim-map/data sim-map
+```
+
+The image sets `SIM_MAP_INTERFACE=0.0.0.0`, `SIM_MAP_PORT=8080` and
+`SIM_MAP_DATA_DIR=/var/lib/sim-map/data`. The Compose service
+waits 45 seconds on `SIGTERM` so the server can drain the worker and finish an
+in-flight snapshot. `docker stop` therefore returns after the drain completes.
+
+For a host bind mount instead of a named volume, make the directory writable by
+UID/GID `10001`:
+
+```bash
+sudo install -d -o 10001 -g 10001 /srv/sim-map/data
+docker run --rm --init -p 8080:8080 \
+  -v /srv/sim-map/data:/var/lib/sim-map/data sim-map
+```
+
+The first start initialises the full world and creates an empty WAL. The
+healthcheck uses `/healthz`; readiness is available at `/readyz` once the
+listener is accepting. The container does not include a TLS proxy; terminate
+TLS in front of it as described below.
+
 ## First install
 
 ```bash

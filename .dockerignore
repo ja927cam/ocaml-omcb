@@ -1,0 +1,11 @@
+.git
+.gitignore
+_build
+_opam
+data
+soak-data
+failure-audit-data
+memory-profile-data
+deployment-smoke-data
+*.snap
+wal-*.log

@@ -1,0 +1,27 @@
+opam-version: "2.0"
+version: "0.1.0"
+synopsis: "One million chessboards"
+description: """
+A server-authoritative world of 1,000 x 1,000 chessboards with a WASM grid
+client, binary WebSocket protocol, batched snapshots and durable WAL/snapshot
+persistence.
+"""
+maintainer: "James Ashwood"
+authors: ["James Ashwood"]
+depends: [
+  "ocaml" {>= "5.1"}
+  "dune" {>= "3.17"}
+  "dream" {= "1.0.0~alpha8"}
+  "lwt" {>= "5.7"}
+  "lwt_ppx"
+  "mtime" {>= "2.0"}
+  "yojson" {>= "2.0"}
+  "brr" {>= "0.0.7"}
+  "js_of_ocaml" {>= "6.0"}
+  "wasm_of_ocaml-compiler" {>= "6.0"}
+  "httpun-ws" {= "0.2.0"}
+  "bigstringaf" {with-test}
+]
+build: [
+  ["dune" "build" "-j" jobs]
+]

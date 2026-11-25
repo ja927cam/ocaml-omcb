@@ -16,6 +16,19 @@ dune runtest
 _build/default/server/server.exe
 ```
 
+## Docker
+
+```bash
+docker compose up --build -d
+# open http://localhost:8080/
+docker compose logs -f
+docker compose down
+```
+
+The multi-stage image builds the OCaml server, the WASM client and the piece
+atlas, then runs them as UID 10001 with a named volume for WAL/snapshot data.
+See `deploy/README.md` for bind mounts and production notes.
+
 With the server running, the browser grid integration test can be run with:
 
 ```bash

@@ -680,6 +680,11 @@ let () =
   let adaptive_enabled = int_env "SIM_MAP_ADAPTIVE" 1 <> 0 in
   let debug_gc_enabled = int_env "SIM_MAP_DEBUG_GC" 0 <> 0 in
   let port = max 1 (int_env "SIM_MAP_PORT" 8080) in
+  let interface =
+    match Sys.getenv_opt "SIM_MAP_INTERFACE" with
+    | Some interface when String.length interface > 0 -> interface
+    | _ -> "localhost"
+  in
   let fixed_group = max 1 (int_env "SIM_MAP_WAL_GROUP" 64) in
   let fixed_delay_us = max 0 (int_env "SIM_MAP_WAL_GROUP_DELAY_US" 0) in
   let wal_sync = int_env "SIM_MAP_WAL_SYNC" 1 <> 0 in
@@ -878,7 +883,7 @@ let () =
   log_phase "total startup" total_started;
   start_memprof ();
 
-  Dream.run ~port
+  Dream.run ~interface ~port
   @@ Dream.logger
   @@ cross_origin_isolation
   @@ Dream.router [

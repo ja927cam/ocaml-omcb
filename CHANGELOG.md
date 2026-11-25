@@ -2,6 +2,17 @@
 
 ## Unreleased — production hardening
 
+### Docker
+
+- Added a multi-stage `Dockerfile` that builds the OCaml server, the WASM
+  client and the piece atlas, then runs them from a slim Debian image as UID
+  10001 with a named data volume.
+- Added `docker-compose.yml` with a healthcheck, `init`, a 45-second stop grace
+  period and persistent WAL/snapshot storage.
+- Added `SIM_MAP_INTERFACE` (default `localhost`; the image uses `0.0.0.0`) so
+  the container's published port can reach the server.
+- Added `sim_map.opam` dependency metadata for reproducible image builds.
+
 ### Durability and operations
 
 - Commit/fsync failures now fail-stop the process with exit status 70 instead

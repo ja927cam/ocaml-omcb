@@ -1223,6 +1223,7 @@ The default durability settings are:
 | --- | --- | --- |
 | `SIM_MAP_DATA_DIR` | `data` | WAL and snapshot directory |
 | `SIM_MAP_PORT` | `8080` | HTTP/WebSocket listen port |
+| `SIM_MAP_INTERFACE` | `localhost` | HTTP/WebSocket bind address (`0.0.0.0` in Docker) |
 | `SIM_MAP_WAL_GROUP` | `64` | Fallback maximum per commit when adaptive is off |
 | `SIM_MAP_WAL_SYNC` | `1` | Enable WAL `fsync` |
 | `SIM_MAP_ADAPTIVE` | `1` | Adaptive commit controller (`0` = fixed fallback) |
@@ -1393,7 +1394,7 @@ snapshot is pending, and the last snapshot write duration.
 6. Start the one-second snapshot timer and the first WAL segment.
 7. Build the Dream router (`/`, `/metrics`, `/state-hash`, `/static`, `/ws`).
 8. Install SIGTERM/SIGINT drain handlers.
-9. `Dream.run` on `SIM_MAP_PORT` (default 8080).
+9. `Dream.run` on `SIM_MAP_INTERFACE`/`SIM_MAP_PORT` (defaults `localhost:8080`).
 
 Startup timings are logged for allocation, persistence recovery, verification,
 worker startup, and total startup. Recovery logs the restored sequence, the
