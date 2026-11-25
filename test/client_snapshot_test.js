@@ -526,6 +526,20 @@ async function main() {
     if (!(zoomAfter > zoomBefore + 0.05)) {
       fail(`scroll wheel did not zoom in: ${zoomBefore} -> ${zoomAfter}`);
     }
+    await send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: 400,
+      y: 350,
+      deltaX: 0,
+      deltaY: 240,
+    });
+    await sleep(300);
+    const zoomBack = await evaluate(
+      "parseFloat(document.body.dataset.zoom || '1')"
+    );
+    if (!(zoomBack < zoomAfter - 0.05)) {
+      fail(`scroll wheel did not zoom out: ${zoomAfter} -> ${zoomBack}`);
+    }
 
     if (exceptions !== 0) fail(`browser raised ${exceptions} exception(s)`);
     console.log(

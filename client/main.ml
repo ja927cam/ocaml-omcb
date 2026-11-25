@@ -1159,7 +1159,7 @@ let main () =
       let cx, cy = to_canvas_of_mouse (Ev.Wheel.as_mouse wheel) in
       let wx = !view_left +. (cx /. board_px ()) in
       let wy = !view_top +. (cy /. board_px ()) in
-      let factor = exp (-.dy /. 420.) |> clamp_float 0.78 1.28 in
+      let factor = clamp_float (exp (-.dy /. 420.)) 0.78 1.28 in
       zoom := clamp_float (!zoom *. factor) 0.35 3.5;
       view_left :=
         clamp_float (wx -. (cx /. board_px ())) 0. (max_left ());
