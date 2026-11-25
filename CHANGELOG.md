@@ -22,9 +22,17 @@
   only). GitHub Actions has no VPS credentials and never connects to the VPS.
 - Added a root systemd pull agent (`deploy/pull_agent.py` plus
   `sim-map-pull.service`/`.timer`) that checks the GHCR `latest` manifest
-  digest every five minutes, reads the embedded commit-SHA label, and invokes
-  the existing deploy script. Registry failures are retried safely and failed
-  image digests are backed off.
+  digest every five minutes, verifies manifest/config digests, the exact
+  `ghcr.io/ja927cam/sim-map` repository and OCI source label, reads the
+  embedded commit-SHA label, and invokes the existing deploy script. Registry
+  failures are retried safely and failed image digests are backed off.
+- `latest` is published only when the run is still the current `main` head;
+  re-runs of older commits cannot move it backwards.
+- Added `deploy/validate_compose.py` and its tests: the deploy path rejects
+  changed app images/data mounts/ports, extra services or volumes, privileged
+  services, added capabilities, host networking and Docker-socket mounts.
+- Automatic rollback now also restores the previous compose/Caddyfile
+  backups, not just the previous image.
 - Added `deploy/docker-compose.prod.yml`: one non-root app container, Caddy
   terminating HTTPS and obtaining/renewing Let's Encrypt certificates, the app
   data bind-mounted at `/srv/chess/data`, no published app port, restart

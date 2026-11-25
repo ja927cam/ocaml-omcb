@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import fcntl
 import hashlib
+import http.client
 import json
 import os
 import platform
@@ -29,10 +30,16 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_IMAGE = "ghcr.io/ja927cam/sim-map"
+EXPECTED_IMAGE = "ghcr.io/ja927cam/sim-map"
+EXPECTED_REPOSITORY = "ja927cam/sim-map"
+EXPECTED_SOURCE = "https://github.com/ja927cam/sim-map"
+GHCR_BASE = "https://ghcr.io"
+DEFAULT_IMAGE = EXPECTED_IMAGE
 DEFAULT_STATE_DIR = "/var/lib/sim-map-pull"
 DEPLOY_SCRIPT = "/opt/sim-map/deploy.sh"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 ACCEPT_ALL = ", ".join(
     [
         "application/vnd.oci.image.index.v1+json",
@@ -56,8 +63,7 @@ def log(message: str, *, error: bool = False) -> None:
 
 
 def registry_base() -> str:
-    # REGISTRY_BASE is a test seam; production uses the GHCR default.
-    return os.environ.get("REGISTRY_BASE", "https://ghcr.io").rstrip("/")
+    return GHCR_BASE
 
 
 def parse_image(image: str) -> tuple[str, str]:
@@ -65,13 +71,11 @@ def parse_image(image: str) -> tuple[str, str]:
     last = image.rsplit("/", 1)[-1]
     if ":" in last:
         image = image.rsplit(":", 1)[0]
-    parts = image.split("/", 1)
-    if len(parts) != 2 or not parts[1]:
-        raise ValueError(f"APP_IMAGE is not a registry/repository: {image!r}")
-    registry, repository = parts
-    if registry != "ghcr.io":
-        raise ValueError(f"only ghcr.io images are supported, got {registry!r}")
-    return registry, repository
+    if image != EXPECTED_IMAGE:
+        raise ValueError(
+            f"APP_IMAGE must be exactly {EXPECTED_IMAGE!r}, got {image!r}"
+        )
+    return "ghcr.io", EXPECTED_REPOSITORY
 
 
 def basic_auth_header() -> str | None:
@@ -86,7 +90,10 @@ def basic_auth_header() -> str | None:
 def http_get(url: str, headers: dict[str, str]) -> tuple[bytes, dict[str, str]]:
     request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=20) as response:
-        return response.read(), dict(response.headers)
+        body = response.read(MAX_RESPONSE_BYTES + 1)
+        if len(body) > MAX_RESPONSE_BYTES:
+            raise RuntimeError("registry response is too large")
+        return body, dict(response.headers)
 
 
 def get_token(base: str, repository: str) -> str:
@@ -100,8 +107,10 @@ def get_token(base: str, repository: str) -> str:
         headers["Authorization"] = auth
     body, _ = http_get(url, headers)
     data = json.loads(body)
+    if not isinstance(data, dict):
+        raise RuntimeError("registry token response is not an object")
     token = data.get("token") or data.get("access_token")
-    if not token:
+    if not isinstance(token, str) or not token:
         raise RuntimeError("registry token response has no token")
     return token
 
@@ -117,10 +126,25 @@ def get_manifest(
     body, headers = http_get(
         url, {"Authorization": f"Bearer {token}", "Accept": accept}
     )
+    computed = "sha256:" + hashlib.sha256(body).hexdigest()
+    header = next(
+        (
+            value
+            for name, value in headers.items()
+            if name.lower() == "docker-content-digest"
+        ),
+        "",
+    ).strip()
+    if header and header != computed:
+        raise RuntimeError("manifest digest does not match its content")
+    digest = header or computed
+    if not DIGEST_RE.match(digest):
+        raise RuntimeError(f"invalid manifest digest: {digest!r}")
+    if reference.startswith("sha256:") and reference != digest:
+        raise RuntimeError("manifest digest does not match the requested digest")
     manifest = json.loads(body)
-    digest = headers.get("Docker-Content-Digest")
-    if not digest:
-        digest = "sha256:" + hashlib.sha256(body).hexdigest()
+    if not isinstance(manifest, dict):
+        raise RuntimeError("manifest is not an object")
     return digest, manifest
 
 
@@ -136,24 +160,45 @@ def host_arch() -> str:
 
 def select_platform_manifest(index: dict, arch: str) -> str:
     for entry in index.get("manifests") or []:
+        if not isinstance(entry, dict):
+            continue
         platform = entry.get("platform") or {}
+        if not isinstance(platform, dict):
+            continue
         if (
             platform.get("os") == "linux"
             and platform.get("architecture") == arch
         ):
-            digest = entry.get("digest")
-            if digest:
-                return digest
+            platform_digest = entry.get("digest")
+            if isinstance(platform_digest, str) and DIGEST_RE.match(
+                platform_digest
+            ):
+                return platform_digest
     raise RuntimeError(f"latest image index has no linux/{arch} manifest")
 
 
 def get_config_labels(
     base: str, repository: str, config_digest: str, token: str
 ) -> dict[str, str]:
+    if not DIGEST_RE.match(config_digest):
+        raise RuntimeError(f"invalid config digest: {config_digest!r}")
     url = f"{base}/v2/{repository}/blobs/{config_digest}"
     body, _ = http_get(url, {"Authorization": f"Bearer {token}"})
+    computed = "sha256:" + hashlib.sha256(body).hexdigest()
+    if computed != config_digest:
+        raise RuntimeError("config blob digest does not match its content")
     config = json.loads(body)
-    return (config.get("config") or {}).get("Labels") or {}
+    if not isinstance(config, dict):
+        raise RuntimeError("image config is not an object")
+    inner = config.get("config")
+    if not isinstance(inner, dict):
+        raise RuntimeError("image config has no config object")
+    labels = inner.get("Labels")
+    if labels is None:
+        return {}
+    if not isinstance(labels, dict):
+        raise RuntimeError("image config labels are not an object")
+    return labels
 
 
 def fetch_latest(base: str, repository: str) -> tuple[str, str]:
@@ -161,17 +206,28 @@ def fetch_latest(base: str, repository: str) -> tuple[str, str]:
     token = get_token(base, repository)
     digest, manifest = get_manifest(base, repository, "latest", token)
 
-    if manifest.get("manifests") is not None:
+    manifests = manifest.get("manifests")
+    if manifests is not None:
+        if not isinstance(manifests, list):
+            raise RuntimeError("image index manifests is not a list")
         platform_digest = select_platform_manifest(manifest, host_arch())
         _, manifest = get_manifest(
             base, repository, platform_digest, token, ACCEPT_IMAGE
         )
 
-    config_digest = (manifest.get("config") or {}).get("digest")
-    if not config_digest:
-        raise RuntimeError("image manifest has no config digest")
+    config = manifest.get("config")
+    if not isinstance(config, dict):
+        raise RuntimeError("image manifest has no config object")
+    config_digest = config.get("digest")
+    if not isinstance(config_digest, str) or not DIGEST_RE.match(config_digest):
+        raise RuntimeError("image manifest has an invalid config digest")
 
     labels = get_config_labels(base, repository, config_digest, token)
+    source = labels.get("org.opencontainers.image.source", "").strip()
+    if source != EXPECTED_SOURCE:
+        raise RuntimeError(
+            f"latest image source label must be {EXPECTED_SOURCE!r}"
+        )
     revision = labels.get("org.opencontainers.image.revision", "").strip()
     if not SHA_RE.match(revision):
         raise RuntimeError(
@@ -201,6 +257,18 @@ def read_json(path: Path) -> dict | None:
         return None
 
 
+def within_backoff(
+    failure: dict | None, *, now: float | None = None, backoff: int = 1800
+) -> bool:
+    if not failure or not isinstance(failure, dict):
+        return False
+    try:
+        failed_at = float(failure.get("failed_at", 0))
+    except (TypeError, ValueError):
+        failed_at = 0
+    return (time.time() if now is None else now) - failed_at < backoff
+
+
 def main(argv: list[str]) -> int:
     check_only = "--check-only" in argv
     os.umask(0o077)
@@ -217,6 +285,7 @@ def main(argv: list[str]) -> int:
         RuntimeError,
         urllib.error.URLError,
         urllib.error.HTTPError,
+        http.client.HTTPException,
         TimeoutError,
         json.JSONDecodeError,
         OSError,
@@ -251,11 +320,13 @@ def main(argv: list[str]) -> int:
 
     failure_path = state_dir / "failure.json"
     failure = read_json(failure_path)
+    if failure is not None and not isinstance(failure, dict):
+        failure = None
     backoff = int(os.environ.get("FAILURE_BACKOFF_SECONDS", "1800"))
     if (
         failure
         and failure.get("digest") == digest
-        and time.time() - float(failure.get("failed_at", 0)) < backoff
+        and within_backoff(failure, backoff=backoff)
     ):
         log(f"same digest failed recently; backing off for {backoff}s")
         return 0

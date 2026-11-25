@@ -12,7 +12,7 @@ GitHub push to main
   -> GitHub Actions tests, builds and smoke-tests the image
   -> image published to GHCR as :latest and :<full-git-sha>
   -> VPS systemd timer reads the GHCR latest manifest digest about every 5 minutes
-  -> if the digest changed, the pull agent reads the embedded commit SHA label
+  -> if the digest changed, the pull agent verifies/reads the embedded commit SHA label
   -> agent runs /opt/sim-map/deploy.sh --tag <sha> as root
   -> deploy.sh pulls the SHA image, validates its embedded compose/Caddyfile,
      replaces only the app container, checks /readyz, reloads Caddy
@@ -29,6 +29,7 @@ The production files are:
 | `deploy/Caddyfile` | HTTPS, ACME, reverse proxy and WebSocket upgrades |
 | `deploy/deploy.sh` | idempotent root-owned deploy/rollback implementation |
 | `deploy/pull_agent.py` | GHCR digest/label check and deploy invocation |
+| `deploy/validate_compose.py` | root-owned resolved-Compose security guard |
 | `deploy/sim-map-pull.service` | systemd oneshot service (runs as root) |
 | `deploy/sim-map-pull.timer` | 5-minute systemd timer |
 | `deploy/pull-agent.env.example` | `/etc/sim-map/pull-agent.env` template |
@@ -134,8 +135,8 @@ From your admin machine, copy the files to a temporary location:
 ```bash
 scp deploy/deploy.sh deploy/docker-compose.prod.yml deploy/Caddyfile \
   deploy/production.env.example deploy/pull_agent.py \
-  deploy/pull-agent.env.example deploy/sim-map-pull.service \
-  deploy/sim-map-pull.timer \
+  deploy/validate_compose.py deploy/pull-agent.env.example \
+  deploy/sim-map-pull.service deploy/sim-map-pull.timer \
   admin@<VPS_IP>:/tmp/sim-map-bootstrap/
 ```
 
@@ -145,6 +146,8 @@ On the VPS, install them as root:
 sudo install -m 0755 /tmp/sim-map-bootstrap/deploy.sh /opt/sim-map/deploy.sh
 sudo install -m 0755 /tmp/sim-map-bootstrap/pull_agent.py \
   /opt/sim-map/pull_agent.py
+sudo install -m 0755 /tmp/sim-map-bootstrap/validate_compose.py \
+  /opt/sim-map/validate_compose.py
 sudo install -m 0644 /tmp/sim-map-bootstrap/docker-compose.prod.yml \
   /opt/sim-map/docker-compose.prod.yml
 sudo install -m 0644 /tmp/sim-map-bootstrap/Caddyfile \
@@ -174,15 +177,22 @@ APP_IMAGE=ghcr.io/ja927cam/sim-map
 STATE_DIR=/var/lib/sim-map-pull
 ```
 
+The agent enforces this exact repository and the image's
+`org.opencontainers.image.source=https://github.com/ja927cam/sim-map` label.
+It rejects images from any other repository or source, even if `APP_IMAGE` is
+edited.
+
 Ensure ownership:
 
 ```bash
 sudo chown root:root /opt/sim-map/deploy.sh /opt/sim-map/pull_agent.py \
+  /opt/sim-map/validate_compose.py \
   /opt/sim-map/docker-compose.prod.yml /opt/sim-map/caddy/Caddyfile \
   /opt/sim-map/.env /etc/sim-map/pull-agent.env \
   /etc/systemd/system/sim-map-pull.service \
   /etc/systemd/system/sim-map-pull.timer
-sudo chmod 0755 /opt/sim-map/deploy.sh /opt/sim-map/pull_agent.py
+sudo chmod 0755 /opt/sim-map/deploy.sh /opt/sim-map/pull_agent.py \
+  /opt/sim-map/validate_compose.py
 sudo chmod 0644 /opt/sim-map/docker-compose.prod.yml /opt/sim-map/caddy/Caddyfile \
   /etc/systemd/system/sim-map-pull.service /etc/systemd/system/sim-map-pull.timer
 sudo chmod 0600 /opt/sim-map/.env /etc/sim-map/pull-agent.env
@@ -200,9 +210,9 @@ The service itself is `oneshot`, runs as root, and is triggered by the timer.
 
 After the bootstrap, application images carry their own copy of the production
 compose and Caddyfile. `deploy.sh` extracts and installs them automatically, so
-normal configuration changes deploy with the image. A changed `deploy.sh` or
-`pull_agent.py` is staged as `/opt/sim-map/deploy.sh.next` /
-`/opt/sim-map/pull_agent.py.next`; install it manually when prompted.
+normal configuration changes deploy with the image. A changed `deploy.sh`,
+`pull_agent.py` or `validate_compose.py` is staged as
+`/opt/sim-map/<name>.next`; install it manually when prompted.
 
 ### 6. GHCR package visibility and authentication
 
@@ -245,18 +255,19 @@ No VPS secrets are required. The workflow uses only the automatic
 The workflow runs on every push to `main` and can also be started manually.
 It:
 
-- runs the pull-agent unit tests;
+- runs the pull-agent and Compose-validator tests;
 - validates the production Compose file and Caddyfile;
 - builds the Docker `test` stage and runs `dune runtest`;
-- builds the runtime image with the `org.opencontainers.image.revision`
-  label set to the full Git SHA;
+- builds the runtime image with `org.opencontainers.image.revision` set to the
+  full Git SHA and `org.opencontainers.image.source` set to the repository;
 - runs container/WAL and Caddy/WebSocket smoke tests;
 - pushes the immutable `<full-sha>` tag;
 - pushes `latest` **only** for a successful `push` to `refs/heads/main`.
 
 A manual `workflow_dispatch` publishes only its immutable SHA tag; it never
-moves `latest`. This guarantees the VPS only deploys images produced by a
-successful main-branch push.
+moves `latest`. Before moving `latest`, the workflow confirms that the run's
+SHA is still the current `main` head. A re-run of an older commit therefore
+cannot move `latest` backwards after a newer successful build.
 
 ## Initial deployment
 
@@ -294,12 +305,16 @@ The timer runs 2 minutes after boot and then 5 minutes after each run
 The agent:
 
 1. Obtains an anonymous or read-only GHCR token.
-2. Reads the `latest` manifest and its `Docker-Content-Digest`.
-3. Compares the digest with `/var/lib/sim-map-pull/last-digest`.
-4. If unchanged, exits without touching Docker.
-5. If changed, reads the image config blob and extracts
-   `org.opencontainers.image.revision` (the full Git SHA).
-6. Runs `/opt/sim-map/deploy.sh --tag <sha>` as root.
+2. Reads the `latest` manifest and its `Docker-Content-Digest`, verifying the
+   digest against the response body.
+3. Handles both Docker manifest lists and OCI image indexes, selecting the
+   `linux/<host-arch>` manifest.
+4. Compares the digest with `/var/lib/sim-map-pull/last-digest`.
+5. If unchanged, exits without touching Docker.
+6. If changed, reads the selected image's config blob, verifies its digest,
+   and requires the exact `ghcr.io/ja927cam/sim-map` source and a valid
+   `org.opencontainers.image.revision` full Git SHA.
+7. Runs `/opt/sim-map/deploy.sh --tag <sha>` as root.
 
 `deploy.sh` then:
 
@@ -493,9 +508,13 @@ script uses `up`/`stop` only.
 - If the GHCR package is public, the VPS stores no registry credential. If it
   is private, use a read-only `read:packages` token in
   `/etc/sim-map/ghcr.env`.
-- `deploy.sh` validates the image's Compose config before applying it and
-  refuses configs that publish the app, change the data bind mount, scale the
-  app, or mount the Docker socket.
+- `deploy.sh` validates the image's resolved Compose config before applying
+  it and refuses configs that publish the app, change the data bind mount,
+  change the app image/port/interface, add services or capabilities, run the
+  app as root, or mount the Docker socket.
+- The pull agent verifies registry manifest/config digests, the exact image
+  repository and source label, and the full commit SHA before invoking
+  `deploy.sh`.
 
 ## Local Docker development
 

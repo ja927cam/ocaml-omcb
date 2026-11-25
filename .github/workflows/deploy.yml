@@ -9,11 +9,11 @@ permissions:
   contents: read
   packages: write
 
-# Only the newest main-branch run may publish latest. A superseded run is
-# cancelled before it can move latest backwards.
+# Serialise publication. The current-main-head check on the latest step stops
+# a re-run of an older commit from moving latest backwards.
 concurrency:
   group: main-image-publish
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-test-push:
@@ -29,6 +29,12 @@ jobs:
 
       - name: Test pull agent registry logic
         run: python3 deploy/test_pull_agent.py
+
+      - name: Test production Compose validator
+        run: python3 deploy/test_validate_compose.py
+
+      - name: Test deployment policy invariants
+        run: python3 deploy/test_deployment_policy.py
 
       - name: Validate production Compose file
         run: |
@@ -74,11 +80,25 @@ jobs:
       - name: Publish immutable SHA tag
         run: docker push "$IMAGE:$GITHUB_SHA"
 
-      # latest is only moved by a successful push to main. Manual
-      # workflow_dispatch runs publish only their immutable SHA tag.
-      - name: Publish latest (main pushes only)
+      # latest is only moved by a successful push to main, and only if this
+      # run is still the current head of main. Manual workflow_dispatch runs
+      # publish only their immutable SHA tag.
+      - name: Publish latest (current main head only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: docker push "$IMAGE:latest"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          current="$(curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/git/ref/heads/main" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["object"]["sha"])')"
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo "Not publishing latest: main is $current, this build is $GITHUB_SHA"
+            exit 0
+          fi
+          docker push "$IMAGE:latest"
 
       - name: Log out of GHCR
         if: always()

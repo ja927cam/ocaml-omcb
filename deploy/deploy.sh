@@ -81,6 +81,8 @@ done
 
 [[ -f "${COMPOSE_FILE}" ]] || die "missing ${COMPOSE_FILE}"
 [[ -f "${CADDYFILE_DIR}/Caddyfile" ]] || die "missing ${CADDYFILE_DIR}/Caddyfile"
+[[ -f "${ROOT}/validate_compose.py" ]] \
+  || die "missing ${ROOT}/validate_compose.py"
 
 install -d -m 0755 "${STATE_DIR}" "${CADDYFILE_DIR}"
 
@@ -120,43 +122,9 @@ guard_compose() {
   if [[ -f "${ROOT}/.env" ]]; then
     args+=(--env-file "${ROOT}/.env")
   fi
-  IMAGE_TAG="${TAG}" "${args[@]}" config --format json | python3 -c '
-import json
-import sys
-
-config = json.load(sys.stdin)
-services = config.get("services", {})
-app = services.get("app")
-caddy = services.get("caddy")
-if app is None:
-    raise SystemExit("compose is missing the app service")
-if app.get("ports"):
-    raise SystemExit("app must not publish host ports")
-if app.get("deploy", {}).get("replicas", 1) != 1:
-    raise SystemExit("app must have exactly one replica")
-mounts = app.get("volumes") or []
-if not any(
-    mount.get("source") == "/srv/chess/data"
-    and mount.get("target") == "/var/lib/sim-map/data"
-    for mount in mounts
-):
-    raise SystemExit("app is missing the /srv/chess/data bind mount")
-if caddy is None:
-    raise SystemExit("compose is missing the caddy service")
-published = {
-    str(port.get("published"))
-    for port in (caddy.get("ports") or [])
-    if isinstance(port, dict)
-}
-if published != {"80", "443"}:
-    raise SystemExit("caddy must publish exactly ports 80 and 443")
-for name, service in services.items():
-    if name != "caddy" and service.get("ports"):
-        raise SystemExit(f"service {name} must not publish host ports")
-    for mount in service.get("volumes") or []:
-        if mount.get("source") == "/var/run/docker.sock":
-            raise SystemExit(f"service {name} must not mount the Docker socket")
-'
+  IMAGE_TAG="${TAG}" "${args[@]}" config --format json \
+    | python3 "${ROOT}/validate_compose.py" "${project_dir}" "${TAG}" \
+        "ghcr.io/ja927cam/sim-map"
 }
 
 extract_config() {
@@ -169,7 +137,7 @@ extract_config() {
     return 1
   fi
   local file
-  for file in docker-compose.prod.yml Caddyfile deploy.sh pull_agent.py; do
+  for file in docker-compose.prod.yml Caddyfile deploy.sh pull_agent.py validate_compose.py; do
     if ! docker cp "${CONFIG_CONTAINER}:/opt/sim-map/deploy/${file}" \
         "${STAGING}/${file}" >/dev/null 2>&1; then
       docker rm -f -v "${CONFIG_CONTAINER}" >/dev/null 2>&1 || true
@@ -224,7 +192,8 @@ image="$(compose config --format json \
 
 # The image carries the deploy/ directory from its commit. Extract and
 # validate the production compose/Caddyfile so configuration changes deploy
-# with the image, without trusting files uploaded by the SSH account.
+# with the image, without trusting files supplied out of band.
+config_installed=0
 if extract_config "${image}"; then
   if guard_compose "${STAGING}" "${STAGING}/docker-compose.prod.yml"; then
     cp -p "${COMPOSE_FILE}" "${STATE_DIR}/docker-compose.prod.yml.prev"
@@ -233,6 +202,7 @@ if extract_config "${image}"; then
     mv "${COMPOSE_FILE}.new" "${COMPOSE_FILE}"
     install -m 0644 "${STAGING}/Caddyfile" "${CADDYFILE_DIR}/Caddyfile.new"
     mv "${CADDYFILE_DIR}/Caddyfile.new" "${CADDYFILE_DIR}/Caddyfile"
+    config_installed=1
     if ! cmp -s "${STAGING}/deploy.sh" "${ROOT}/deploy.sh"; then
       install -m 0755 "${STAGING}/deploy.sh" "${ROOT}/deploy.sh.next"
       log "new deploy.sh staged at ${ROOT}/deploy.sh.next; install it manually"
@@ -240,6 +210,10 @@ if extract_config "${image}"; then
     if ! cmp -s "${STAGING}/pull_agent.py" "${ROOT}/pull_agent.py"; then
       install -m 0755 "${STAGING}/pull_agent.py" "${ROOT}/pull_agent.py.next"
       log "new pull_agent.py staged at ${ROOT}/pull_agent.py.next; install it manually"
+    fi
+    if ! cmp -s "${STAGING}/validate_compose.py" "${ROOT}/validate_compose.py"; then
+      install -m 0755 "${STAGING}/validate_compose.py" "${ROOT}/validate_compose.py.next"
+      log "new validate_compose.py staged at ${ROOT}/validate_compose.py.next; install it manually"
     fi
     compose config -q
     guard_compose "${ROOT}" "${COMPOSE_FILE}"
@@ -280,6 +254,25 @@ reload_caddy() {
   done
   log "Caddy reload did not succeed; restarting Caddy"
   compose restart caddy
+}
+
+restore_previous_config() {
+  local compose_backup="${STATE_DIR}/docker-compose.prod.yml.prev"
+  local caddy_backup="${STATE_DIR}/Caddyfile.prev"
+  if [[ ! -f "${compose_backup}" || ! -f "${caddy_backup}" ]]; then
+    log "no previous config backup is available"
+    return 1
+  fi
+  install -m 0644 "${compose_backup}" "${COMPOSE_FILE}.restore"
+  install -m 0644 "${caddy_backup}" "${CADDYFILE_DIR}/Caddyfile.restore"
+  mv "${COMPOSE_FILE}.restore" "${COMPOSE_FILE}"
+  mv "${CADDYFILE_DIR}/Caddyfile.restore" "${CADDYFILE_DIR}/Caddyfile"
+  if ! compose config -q || ! guard_compose "${ROOT}" "${COMPOSE_FILE}"; then
+    log "previous config backup failed validation"
+    return 1
+  fi
+  log "restored the previous compose/Caddyfile"
+  return 0
 }
 
 apply_tag() {
@@ -327,6 +320,9 @@ compose logs --tail=120 app >&2 || true
 
 if [[ -n "${previous}" && "${previous}" != "${failed_tag}" ]]; then
   log "rolling back to ${previous}"
+  if [[ "${config_installed}" -eq 1 ]]; then
+    restore_previous_config || log "continuing rollback with the current config"
+  fi
   if apply_tag "${previous}"; then
     printf '%s\n' "${previous}" > "${STATE_DIR}/current-tag.tmp"
     mv "${STATE_DIR}/current-tag.tmp" "${STATE_DIR}/current-tag"
