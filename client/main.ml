@@ -315,6 +315,7 @@ let main () =
   let boards : (int, board_state) Hashtbl.t = Hashtbl.create 1024 in
   let pending_snapshots : (int32, int) Hashtbl.t = Hashtbl.create 1024 in
   let snapshot_queue = Queue.create () in
+  let queued_snapshots : (int, unit) Hashtbl.t = Hashtbl.create 1024 in
   (* Dream's stream pipe can lose a write acknowledgement when many responses
      are queued. One snapshot at a time is still fast over loopback and keeps
      the request/response path deterministic. *)
@@ -342,6 +343,7 @@ let main () =
   let needs_draw = ref true in
   let frame_pending = ref false in
   let last_coords = ref "" in
+  let last_loading = ref "" in
 
   let origin_x = ref 0. and origin_y = ref 0. in
   let scale_x = ref 1. and scale_y = ref 1. in
@@ -469,6 +471,7 @@ let main () =
       && not (Queue.is_empty snapshot_queue)
     then begin
       let key = Queue.take snapshot_queue in
+      Hashtbl.remove queued_snapshots key;
       match Hashtbl.find_opt boards key with
       | None -> pump_snapshots ()
       | Some state ->
@@ -512,10 +515,16 @@ let main () =
       out_of_window;
 
     Queue.clear snapshot_queue;
+    Hashtbl.clear queued_snapshots;
     let enqueue bx by =
-      let state = state_of bx by in
-      if (not state.loaded) && state.pending_request = None then
-        Queue.add (board_key bx by) snapshot_queue
+      let key = board_key bx by in
+      if not (Hashtbl.mem queued_snapshots key) then begin
+        let state = state_of bx by in
+        if (not state.loaded) && state.pending_request = None then begin
+          Hashtbl.add queued_snapshots key ();
+          Queue.add key snapshot_queue
+        end
+      end
     in
     (* Visible boards are requested first; the rest of the 25 x 25 window is
        background-loaded with bounded concurrency so moves are not stuck behind
@@ -544,6 +553,15 @@ let main () =
     for by = load_y0 to load_y1 do
       for bx = load_x0 to load_x1 do
         if bx <> center_x || by <> center_y then enqueue bx by
+      done
+    done;
+    (* Prefetch the rest of the 25 x 25 cache in the background. Requests stay
+       strictly single-flight, so a move submitted while this is running waits
+       for at most one 64-piece snapshot. This is what makes nearby panning
+       instant instead of starting a fresh 63-board load every time. *)
+    for by = y0 to y1 do
+      for bx = x0 to x1 do
+        enqueue bx by
       done
     done;
     pump_snapshots ();
@@ -638,6 +656,20 @@ let main () =
     if coords <> !last_coords then begin
       last_coords := coords;
       El.set_children coords_el [ El.txt (Jstr.v coords) ]
+    end;
+    let remaining =
+      Hashtbl.length pending_snapshots + Queue.length snapshot_queue
+    in
+    if remaining > 0 && !ws <> None then begin
+      let label = Printf.sprintf "Loading %d" remaining in
+      if label <> !last_loading then begin
+        last_loading := label;
+        set_status label "connecting"
+      end
+    end
+    else if !last_loading <> "" then begin
+      last_loading := "";
+      set_status "Live" "live"
     end;
     El.set_at (Jstr.v "data-view-left")
       (Some (Jstr.of_float !view_left)) body_el;
