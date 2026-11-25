@@ -6,6 +6,7 @@ let cross_origin_isolation inner request =
   Lwt.return response
 
 let now_ns () = Int64.of_float (Unix.gettimeofday () *. 1_000_000_000.)
+let board_load = Board_load_metrics.create ()
 
 let int_env name default =
   match Sys.getenv_opt name with
@@ -278,6 +279,7 @@ let metrics_json manager worker persistence adaptive ~fixed_group ~fixed_delay_u
         ("persistence", Persistence.metrics_json persistence);
         ("memory", memory_json ());
         ("adaptive", adaptive_json adaptive ~fixed_group ~fixed_delay_us);
+        ("board_load", Board_load_metrics.json board_load);
       ]
     ()
 
@@ -470,6 +472,80 @@ let prometheus_metrics_body manager worker persistence adaptive ~fixed_group
     "End-to-end broadcast p95 latency";
   prometheus_metric buffer "sim_map_end_to_end_p95_seconds"
     (json_float "end_to_end_p95_ms" json /. 1000.);
+  let board_load_summary = Board_load_metrics.overall board_load in
+  prometheus_header buffer "sim_map_board_load_requests_total" "counter"
+    "Snapshot batch requests by 100x100 board region";
+  prometheus_metric buffer "sim_map_board_load_requests_total"
+    (Int64.to_float board_load_summary.requests);
+  prometheus_header buffer "sim_map_board_load_boards_total" "counter"
+    "Boards requested in snapshot batches";
+  prometheus_metric buffer "sim_map_board_load_boards_total"
+    (Int64.to_float board_load_summary.boards);
+  prometheus_header buffer "sim_map_board_load_failures_total" "counter"
+    "Snapshot batch requests that failed";
+  prometheus_metric buffer "sim_map_board_load_failures_total"
+    (Int64.to_float board_load_summary.failures);
+  List.iter
+    (fun (suffix, value) ->
+      prometheus_header buffer
+        (Printf.sprintf "sim_map_board_load_%s_seconds" suffix)
+        "gauge" "Snapshot batch latency";
+      prometheus_metric buffer
+        (Printf.sprintf "sim_map_board_load_%s_seconds" suffix)
+        (value /. 1000.))
+    [
+      ("overall_p50", board_load_summary.p50_ms);
+      ("overall_p95", board_load_summary.p95_ms);
+      ("overall_max", board_load_summary.max_ms);
+      ("overall_last", board_load_summary.last_ms);
+    ];
+  List.iter
+    (fun (name, kind, help) -> prometheus_header buffer name kind help)
+    [
+      ("sim_map_board_region_p50_seconds", "gauge",
+       "Snapshot batch p50 latency by board region");
+      ("sim_map_board_region_p95_seconds", "gauge",
+       "Snapshot batch p95 latency by board region");
+      ("sim_map_board_region_max_seconds", "gauge",
+       "Snapshot batch max latency by board region");
+      ("sim_map_board_region_last_seconds", "gauge",
+       "Snapshot batch last latency by board region");
+      ("sim_map_board_region_requests_total", "counter",
+       "Snapshot batch requests in a board region");
+      ("sim_map_board_region_boards_total", "counter",
+       "Boards loaded in a board region");
+      ("sim_map_board_region_last_boards", "gauge",
+       "Boards in the last batch for a region");
+    ];
+  Board_load_metrics.iter_regions board_load (fun x y region ->
+      if Int64.compare region.requests 0L > 0 then begin
+        let label = Printf.sprintf "%d,%d" x y in
+        List.iter
+          (fun (suffix, value) ->
+            prometheus_metric buffer
+              (Printf.sprintf
+                 "sim_map_board_region_%s_seconds{region=\"%s\"}" suffix
+                 label)
+              (value /. 1000.))
+          [
+            ("p50", region.p50_ms);
+            ("p95", region.p95_ms);
+            ("max", region.max_ms);
+            ("last", region.last_ms);
+          ];
+        prometheus_metric buffer
+          (Printf.sprintf
+             "sim_map_board_region_requests_total{region=\"%s\"}" label)
+          (Int64.to_float region.requests);
+        prometheus_metric buffer
+          (Printf.sprintf
+             "sim_map_board_region_boards_total{region=\"%s\"}" label)
+          (Int64.to_float region.boards);
+        prometheus_metric buffer
+          (Printf.sprintf
+             "sim_map_board_region_last_boards{region=\"%s\"}" label)
+          (float_of_int region.last_boards)
+      end);
   Buffer.contents buffer
 
 let log_phase name started =
@@ -660,8 +736,24 @@ let handle_socket manager worker socket =
   in
   let handle_snapshot_batch
       (request : Protocol.Types.snapshot_batch_request) =
+    let started_ns = Metrics.now () in
     let width = request.x1 - request.x0 + 1 in
     let height = request.y1 - request.y0 + 1 in
+    let region_x =
+      ((request.x0 + request.x1) / 2) / Board_load_metrics.region_size
+    in
+    let region_y =
+      ((request.y0 + request.y1) / 2) / Board_load_metrics.region_size
+    in
+    let record success =
+      let elapsed_ms =
+        Int64.to_float
+          (Int64.sub (Metrics.now ()) started_ns)
+        /. 1_000_000.
+      in
+      Board_load_metrics.record board_load ~region_x ~region_y
+        ~boards:(width * height) ~elapsed_ms ~success
+    in
     let tokens =
       Array.init (width * height) (fun index ->
           let board_x = request.x0 + (index mod width) in
@@ -674,6 +766,7 @@ let handle_socket manager worker socket =
       (fun result ->
         match result with
         | Ok (batch : State_worker.snapshot_batch) ->
+          record true;
           let released = ref [] in
           Array.iter
             (fun (board_x, board_y, token) ->
@@ -696,6 +789,7 @@ let handle_socket manager worker socket =
                ( snapshot_batch_response request batch,
                  !released ))
         | Error _ ->
+          record false;
           Array.iter
             (fun (board_x, board_y, token) ->
               Connection_manager.abort_snapshot conn ~board_x ~board_y

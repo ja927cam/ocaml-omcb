@@ -252,6 +252,9 @@ curl -s http://localhost:8080/metrics.prom     # Prometheus text format
 ```
 
 Both are public on production (`https://chess.jamesashwood.com/metrics`).
+The JSON `board_load` object and the `sim_map_board_region_*` Prometheus
+metrics group snapshot loading by 100 x 100 board regions (request/board
+counts and p50/p95/max/last latency).
 
 Live events are batched into kind-4 4 KiB frames by default, with the origin
 connection flushed before its response and other clients batched on a 1 ms

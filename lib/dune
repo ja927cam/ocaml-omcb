@@ -19,5 +19,6 @@
   move_request
   move_engine
   metrics
+  board_load_metrics
   state_worker
   connection_manager))

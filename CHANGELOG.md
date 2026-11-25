@@ -50,6 +50,12 @@
 
 ### Monitoring
 
+- Added per-region board-load metrics. Snapshot batches are grouped into
+  10 x 10 world regions (100 x 100 boards each), with request/board/failure
+  counters and p50/p95/max/last server batch latency in `/metrics` under
+  `board_load` and in `/metrics.prom` as `sim_map_board_load_*` and
+  `sim_map_board_region_*`.
+
 - Added a public Prometheus text endpoint at `/metrics.prom` (in addition to
   the existing JSON `/metrics`) covering pipeline stage latency, worker,
   connection, persistence and adaptive-commit metrics. `/state-hash` and

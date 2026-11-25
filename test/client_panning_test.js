@@ -480,6 +480,15 @@ async function main() {
     // response is legitimate, so it is not a hard failure.
 
     const serverMetrics = await (await fetch(`http://127.0.0.1:${port}/metrics`)).json();
+    if (
+      !BASELINE
+      && (!serverMetrics.board_load
+        || serverMetrics.board_load.overall.samples < 1
+        || serverMetrics.board_load.regions.length < 1)
+    ) {
+      fail("server board-load section metrics were not populated");
+    }
+
     const heap = await send("Runtime.getHeapUsage").catch(() => null);
     const net = finalState.net;
     const result = {
@@ -519,6 +528,7 @@ async function main() {
       server: {
         subscriptions: serverMetrics.connections.subscriptions,
         rss_kb: serverMetrics.memory.rss_kb,
+        board_load: serverMetrics.board_load || null,
       },
       return: {
         snapshot_requests: returnRequests,
@@ -553,6 +563,7 @@ async function main() {
         `- Subscription window resets: ${result.subscriptions.windows}`,
         `- Cache occupancy/peak/evictions: ${result.cache.occupancy}/${result.cache.peak}/${result.cache.evictions} (limit ${result.cache.limit})`,
         `- Server subscriptions/RSS: ${result.server.subscriptions} / ${result.server.rss_kb} KiB`,
+        `- Board-load regions/samples: ${result.server.board_load ? result.server.board_load.regions.length : "n/a"} / ${result.server.board_load ? result.server.board_load.overall.samples : "n/a"}`,
         `- Return snapshot requests: ${result.return.snapshot_requests}`,
         `- Browser JS heap used: ${heap ? Math.round(heap.usedSize / 1024) : "n/a"} KiB`,
         "",
