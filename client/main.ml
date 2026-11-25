@@ -330,6 +330,7 @@ let main () =
   let max_snapshot_outstanding = 1 in
   let pending_batch : batch_request option ref = ref None in
   let batch_expected = ref 0 in
+  let batch_area = ref 0 in
   let batch_backoff = ref 500. in
   (* Load telemetry. The browser test asserts both the board count and the
      bytes transferred, so a regression back to per-board padded frames is
@@ -416,7 +417,9 @@ let main () =
         let now = Performance.now_ms G.performance in
         if !load_started = 0. then load_started := now;
         pending_batch := Some { request_id; sent_at = now };
-        batch_expected := (x1 - x0 + 1) * (y1 - y0 + 1)
+        let area = (x1 - x0 + 1) * (y1 - y0 + 1) in
+        batch_expected := area;
+        batch_area := area
       end
     end
   in
@@ -817,7 +820,10 @@ let main () =
     El.set_at (Jstr.v "data-snapshot-bytes")
       (Some (Jstr.v (string_of_int !snapshot_bytes)))
       body_el;
-    if !load_started > 0. && !load_finished = 0. && loaded >= 625 then begin
+    if
+      !load_started > 0. && !load_finished = 0. && !batch_area > 0
+      && loaded >= !batch_area
+    then begin
       load_finished := Performance.now_ms G.performance;
       El.set_at (Jstr.v "data-load-ms")
         (Some (Jstr.of_float (!load_finished -. !load_started)))
