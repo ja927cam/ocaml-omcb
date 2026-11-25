@@ -65,6 +65,15 @@ class DeploymentPolicyTests(unittest.TestCase):
         self.assertIn("GITHUB_SHA", workflow)
         self.assertIn("Publish latest (current main head only)", workflow)
 
+    def test_builder_provides_compatible_binaryen(self) -> None:
+        dockerfile = text("Dockerfile")
+        self.assertIn("BINARYEN_VERSION=119", dockerfile)
+        self.assertIn("BINARYEN_SHA256", dockerfile)
+        self.assertIn("binaryen", dockerfile)
+        self.assertIn("/usr/local/bin/wasm-opt", dockerfile)
+        self.assertIn("wasm-opt --version", dockerfile)
+        self.assertIn('ENV PATH="/usr/local/bin:${PATH}"', dockerfile)
+
     def test_runtime_image_contains_deploy_files(self) -> None:
         dockerfile = text("Dockerfile")
         self.assertIn("FROM build AS test", dockerfile)

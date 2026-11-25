@@ -13,6 +13,10 @@
 - Added `SIM_MAP_INTERFACE` (default `localhost`; the image uses `0.0.0.0`) so
   the container's published port can reach the server.
 - Added `sim_map.opam` dependency metadata for reproducible image builds.
+- The Docker builder now provides binaryen 119 for `wasm_of_ocaml-compiler`
+  6.4 (Debian 12 only ships binaryen 108). The distro binaryen package
+  satisfies opam's depext check; a pinned, checksummed static release is the
+  `wasm-opt` used by the build.
 
 ### Production CI/CD
 
