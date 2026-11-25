@@ -496,6 +496,10 @@ let main () =
   let ws = ref None in
   let connected = ref false in
   let ever_connected = ref false in
+  let reconnect_hook = ref (fun () -> ()) in
+  let reconnect_attempt = ref 0 in
+  let reconnect_scheduled = ref false in
+  let unloading = ref false in
   let next_request_id = ref (random_request_id ()) in
   let expire_move_hook = ref (fun () -> ()) in
   let visible_rect = ref Viewport.empty in
@@ -2013,6 +2017,8 @@ let main () =
          (fun _ ->
            Console.(log [ Jstr.v "ws: connected" ]);
            connected := true;
+           reconnect_attempt := 0;
+           reconnect_scheduled := false;
            Request_tracker.clear tracker;
            window_batch_supported := true;
            window_batch_success := false;
@@ -2035,16 +2041,35 @@ let main () =
          (fun _ ->
            Console.(log [ Jstr.v "ws: disconnected" ]);
            connected := false;
+           ws := None;
            Request_tracker.clear tracker;
            useful_rect := Viewport.empty;
-           set_status "Disconnected" "offline")
+           if not !unloading then begin
+             set_status "Reconnecting…" "connecting";
+             !reconnect_hook ()
+           end
+           else set_status "Disconnected" "offline")
          target);
     ignore
       (Ev.listen Ev.beforeunload
-         (fun _ -> Brr_io.Websocket.close socket)
+         (fun _ ->
+           unloading := true;
+           Brr_io.Websocket.close socket)
          (Window.as_target G.window));
     ws := Some socket
   in
+  reconnect_hook :=
+    (fun () ->
+      if not !reconnect_scheduled then begin
+        reconnect_scheduled := true;
+        let attempt = !reconnect_attempt in
+        reconnect_attempt := min 5 (attempt + 1);
+        let delay = min 5_000 (500 * (1 lsl attempt)) in
+        ignore
+          (G.set_timeout ~ms:delay (fun () ->
+               reconnect_scheduled := false;
+               if not !unloading then connect_ws ()))
+      end);
 
   select_center (query_coord "x" 0) (query_coord "y" 0);
   Metrics.init ();

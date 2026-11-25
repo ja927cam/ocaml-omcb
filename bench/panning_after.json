@@ -1,5 +1,5 @@
 {
-  "generated": "2026-11-25T22:42:17.188Z",
+  "generated": "2026-11-25T22:57:53.226Z",
   "baseline": false,
   "initial": {
     "loaded": 841,
@@ -7,7 +7,7 @@
     "visibleBoards": 15
   },
   "rapidPan": {
-    "settle_ms": 1,
+    "settle_ms": 63,
     "peak_visible_missing": 0,
     "peak_blank_boards": 0,
     "final_blank_after_timeout": null,
@@ -34,18 +34,18 @@
   },
   "server": {
     "subscriptions": 841,
-    "rss_kb": 552600,
+    "rss_kb": 550396,
     "board_load": {
       "overall": {
         "samples": 70,
         "requests": 70,
         "boards": 9667,
         "failures": 0,
-        "p50_ms": 0.320545,
-        "p95_ms": 0.978177,
-        "max_ms": 2.033149,
-        "mean_ms": 0.4230542571428571,
-        "last_ms": 0.754785,
+        "p50_ms": 0.269449,
+        "p95_ms": 0.963199,
+        "max_ms": 1.633245,
+        "mean_ms": 0.37413384285714274,
+        "last_ms": 0.350181,
         "last_boards": 145
       },
       "regions": [
@@ -57,11 +57,11 @@
             "requests": 3,
             "boards": 406,
             "failures": 0,
-            "p50_ms": 0.375689,
-            "p95_ms": 0.89522,
-            "max_ms": 0.89522,
-            "mean_ms": 0.5215743333333333,
-            "last_ms": 0.375689,
+            "p50_ms": 0.269449,
+            "p95_ms": 0.636242,
+            "max_ms": 0.636242,
+            "mean_ms": 0.3842023333333333,
+            "last_ms": 0.246916,
             "last_boards": 116
           }
         },
@@ -73,11 +73,11 @@
             "requests": 4,
             "boards": 435,
             "failures": 0,
-            "p50_ms": 0.393814,
-            "p95_ms": 0.627114,
-            "max_ms": 0.627114,
-            "mean_ms": 0.36837074999999997,
-            "last_ms": 0.627114,
+            "p50_ms": 0.538537,
+            "p95_ms": 0.5561,
+            "max_ms": 0.5561,
+            "mean_ms": 0.38134275,
+            "last_ms": 0.538537,
             "last_boards": 116
           }
         },
@@ -89,11 +89,11 @@
             "requests": 50,
             "boards": 6941,
             "failures": 0,
-            "p50_ms": 0.323711,
-            "p95_ms": 1.048981,
-            "max_ms": 2.033149,
-            "mean_ms": 0.4370248000000001,
-            "last_ms": 0.271652,
+            "p50_ms": 0.226939,
+            "p95_ms": 0.977206,
+            "max_ms": 1.633245,
+            "mean_ms": 0.36584385999999997,
+            "last_ms": 0.271984,
             "last_boards": 145
           }
         },
@@ -105,11 +105,11 @@
             "requests": 13,
             "boards": 1885,
             "failures": 0,
-            "p50_ms": 0.28618,
-            "p95_ms": 0.839605,
-            "max_ms": 0.839605,
-            "mean_ms": 0.36341169230769227,
-            "last_ms": 0.754785,
+            "p50_ms": 0.350181,
+            "p95_ms": 0.636352,
+            "max_ms": 0.636352,
+            "mean_ms": 0.40147676923076925,
+            "last_ms": 0.350181,
             "last_boards": 145
           }
         }
@@ -121,9 +121,9 @@
     "blank_boards": 0
   },
   "heap": {
-    "used_size": 11705328,
-    "total_size": 22544384,
-    "embedder_heap_used": 10931280
+    "used_size": 9603432,
+    "total_size": 21495808,
+    "embedder_heap_used": 10541784
   },
   "exceptions": 0
 }

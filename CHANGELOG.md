@@ -60,6 +60,8 @@
   stages.
 - Static HTML and the stable client entrypoint are revalidated on deploy;
   content-hashed WASM chunks are cached immutably.
+- The client automatically reconnects with bounded exponential backoff after a
+  WebSocket drop, then reloads its visible window.
 
 ### Monitoring
 

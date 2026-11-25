@@ -63,6 +63,7 @@ node test/live_client_test.js   # browser cache apply, duplicate and gap handlin
 node test/snapshot_consistency_test.js  # snapshot/move race and concurrent clients
 node test/client_panning_test.js    # rapid panning, cache bound and settle time
 node test/client_ui_test.js         # intro, help, zoom, minimap, mobile, status page
+node test/client_reconnect_test.js  # server restart / automatic reconnect
 MODE=bounded node test/subscription_stress_test.js  # subscription/RSS bounds
 MODE=add-only node test/subscription_stress_test.js # before comparison
 node test/subscription_transition_test.js          # moves during window replacement
