@@ -21,6 +21,7 @@ With the server running, the browser grid integration test can be run with:
 ```bash
 node test/client_snapshot_test.js
 node test/client_load_perf_test.js   # isolated-server initial-load budget
+node test/client_colour_test.js      # per-device colour assignment/persistence
 ```
 
 The load performance test asserts that a full 25 x 25 cache arrives in at most

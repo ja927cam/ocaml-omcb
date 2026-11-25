@@ -56,6 +56,10 @@
   boards along the longer viewport axis (10 x 10 on a square viewport). The
   initial zoom is raised on very large screens so the same bound holds before
   any wheel input.
+- Each device is assigned an immutable white or black colour on first load.
+  The assignment is kept in `localStorage` and mirrored to a ten-year cookie,
+  so reloads and clearing either store alone do not change it. A status pill
+  shows the device colour.
 
 ### Snapshot loading
 

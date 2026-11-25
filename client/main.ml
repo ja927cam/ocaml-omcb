@@ -156,6 +156,102 @@ let draw_piece ctx atlas piece x y size =
     ~sw:cell ~sh:cell ~x ~y ~w:size ~h:size
 
 (* ------------------------------------------------------------------------- *)
+(* Persistent player colour                                                  *)
+(* ------------------------------------------------------------------------- *)
+
+type player_colour = White | Black
+
+let colour_key = "sim-map.player-colour"
+let colour_cookie = "sim-map-colour"
+let colour_name = function White -> "white" | Black -> "black"
+
+let colour_of_string = function
+  | "white" -> Some White
+  | "black" -> Some Black
+  | _ -> None
+
+let random_colour () =
+  let math = Jv.get Jv.global "Math" in
+  let value = Jv.call' math (Jstr.v "random") [||] in
+  if Jv.to_float value < 0.5 then White else Black
+
+let storage_get key =
+  try
+    let storage = Jv.get Jv.global "localStorage" in
+    let value : Jv.t =
+      Jv.call' storage (Jstr.v "getItem") [| Jv.of_string key |]
+    in
+    if Jv.is_none value then None else Some (Jv.to_string value)
+  with _ -> None
+
+let storage_set key value =
+  try
+    let storage = Jv.get Jv.global "localStorage" in
+    ignore
+      (Jv.call' storage (Jstr.v "setItem")
+         [| Jv.of_string key; Jv.of_string value |])
+  with _ -> ()
+
+let cookie_get name =
+  try
+    let document = Jv.get Jv.global "document" in
+    let cookie = Jv.to_string (Jv.get document "cookie") in
+    let prefix = name ^ "=" in
+    let rec find = function
+      | [] -> None
+      | part :: rest ->
+        let part = String.trim part in
+        if
+          String.length part >= String.length prefix
+          && String.sub part 0 (String.length prefix) = prefix
+        then
+          Some
+            (String.sub part (String.length prefix)
+               (String.length part - String.length prefix))
+        else find rest
+    in
+    find (String.split_on_char ';' cookie)
+  with _ -> None
+
+let cookie_set name value =
+  try
+    let document = Jv.get Jv.global "document" in
+    let cookie =
+      Printf.sprintf "%s=%s; Max-Age=315360000; Path=/; SameSite=Lax" name
+        value
+    in
+    Jv.set document "cookie" (Jv.of_string cookie)
+  with _ -> ()
+
+(* Assign once and never re-roll. The first valid value in local storage wins;
+   the cookie is the backup so clearing one store does not change the colour.
+   Both stores are reconciled to the chosen value. *)
+let assigned_colour () =
+  let from_storage =
+    match storage_get colour_key with
+    | Some value -> colour_of_string value
+    | None -> None
+  in
+  let stored =
+    match from_storage with
+    | Some _ -> from_storage
+    | None ->
+      (match cookie_get colour_cookie with
+       | Some value -> colour_of_string value
+       | None -> None)
+  in
+  let colour =
+    match stored with Some colour -> colour | None -> random_colour ()
+  in
+  (match storage_get colour_key with
+   | Some value when colour_of_string value = Some colour -> ()
+   | _ -> storage_set colour_key (colour_name colour));
+  (match cookie_get colour_cookie with
+   | Some value when colour_of_string value = Some colour -> ()
+   | _ -> cookie_set colour_cookie (colour_name colour));
+  colour
+
+(* ------------------------------------------------------------------------- *)
 (* Main                                                                      *)
 (* ------------------------------------------------------------------------- *)
 
@@ -213,8 +309,20 @@ let main () =
     | Some el -> el
     | None -> failwith ("Could not find #" ^ id)
   in
+  let colour_el = find_el "colour" in
   let coords_el = find_el "coords" in
   let status_el = find_el "status" in
+  let colour = assigned_colour () in
+  let colour_label =
+    match colour with White -> "White" | Black -> "Black"
+  in
+  El.set_children colour_el [ El.txt (Jstr.v colour_label) ];
+  El.set_at (Jstr.v "data-colour")
+    (Some (Jstr.v (colour_name colour)))
+    colour_el;
+  El.set_at (Jstr.v "data-colour")
+    (Some (Jstr.v (colour_name colour)))
+    body_el;
   let set_status label kind =
     El.set_children status_el [ El.txt (Jstr.v label) ];
     El.set_at (Jstr.v "data-status") (Some (Jstr.v kind)) status_el
