@@ -133,7 +133,7 @@ let piece_index = function
   | 'q' | 'Q' -> 4
   | _ -> 5
 
-let atlas_cell_px = 256
+let atlas_cell_px = 512
 
 let draw_piece ctx atlas piece x y size =
   let i = piece_index piece in
@@ -273,7 +273,7 @@ let main () =
   C2d.set_text_baseline atlas_ctx C2d.Text_baseline.alphabetic;
   C2d.set_font atlas_ctx
     (Jstr.v
-       "200px 'Noto Sans Symbols 2', 'DejaVu Sans', 'Segoe UI Symbol', serif");
+       "400px 'Noto Sans Symbols 2', 'DejaVu Sans', 'Segoe UI Symbol', serif");
   let white_fill = C2d.color (Jstr.v "#ffffff") in
   let black_fill = C2d.color (Jstr.v "#101114") in
   let white_stroke = C2d.color (Jstr.v "#24262b") in
@@ -292,21 +292,25 @@ let main () =
     if row = 0 then begin
       C2d.set_fill_style atlas_ctx white_fill;
       C2d.set_stroke_style atlas_ctx white_stroke;
-      C2d.set_line_width atlas_ctx 7.;
+      C2d.set_line_width atlas_ctx 14.;
       C2d.fill_text atlas_ctx key ~x:cx ~y;
       C2d.stroke_text atlas_ctx key ~x:cx ~y
     end
     else begin
       C2d.set_fill_style atlas_ctx black_fill;
       C2d.set_stroke_style atlas_ctx black_stroke;
-      C2d.set_line_width atlas_ctx 3.;
+      C2d.set_line_width atlas_ctx 6.;
       C2d.fill_text atlas_ctx key ~x:cx ~y;
       C2d.stroke_text atlas_ctx key ~x:cx ~y
     end
   in
   Array.iteri (fun i glyph -> draw_glyph 0 glyph i) piece_glyphs;
   Array.iteri (fun i glyph -> draw_glyph 1 glyph i) piece_glyphs;
-  let atlas = C2d.image_src_of_el (Canvas.to_el atlas_canvas) in
+  let fallback_atlas = C2d.image_src_of_el (Canvas.to_el atlas_canvas) in
+  let atlas = ref fallback_atlas in
+  let atlas_image =
+    El.img ~at:[ At.src (Jstr.v "/static/pieces.png") ] ()
+  in
 
   let boards : (int, board_state) Hashtbl.t = Hashtbl.create 1024 in
   let pending_snapshots : (int32, int) Hashtbl.t = Hashtbl.create 1024 in
@@ -711,7 +715,7 @@ let main () =
                 match !drag with
                 | Some d when d.state == state && d.from = i -> ()
                 | _ ->
-                  draw_piece ctx atlas (glyph_of_byte piece)
+                  draw_piece ctx !atlas (glyph_of_byte piece)
                     (ox +. (float (i mod 8) *. cell_px ()))
                     (oy +. (float (i / 8) *. cell_px ()))
                     (cell_px ())
@@ -723,9 +727,16 @@ let main () =
     match !drag with
     | None -> ()
     | Some d ->
-      draw_piece ctx atlas d.piece (d.x -. (cell_px () /. 2.))
+      draw_piece ctx !atlas d.piece (d.x -. (cell_px () /. 2.))
         (d.y -. (cell_px () /. 2.)) (cell_px ())
   in
+
+  ignore
+    (Ev.listen Ev.load
+       (fun _ ->
+         atlas := C2d.image_src_of_el atlas_image;
+         request_draw ())
+       (El.as_target atlas_image));
 
   let select_center bx by =
     let left =

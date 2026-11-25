@@ -46,6 +46,7 @@
   a cleaner dark visual style.
 - Added scroll-wheel zoom around the pointer, with a high-resolution board
   tile and 256 px piece atlas rendered from a symbol font.
-- Rebuilt the piece atlas with measured glyph centering, crisp white/black
-  outlines and high-quality image smoothing.
+- Replaced the font-glyph pieces with a high-resolution Cburnett vector piece
+  atlas (512 px cells, attribution in `client/assets/README.md`), rendered
+  from SVGs and loaded with a fallback.
 - Disabled per-move browser RTT logging by default.

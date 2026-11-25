@@ -6,3 +6,7 @@
   protocol
   )
 )
+(rule
+ (target pieces.png)
+ (deps assets/pieces.png)
+ (action (copy assets/pieces.png pieces.png)))

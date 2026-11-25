@@ -1019,11 +1019,12 @@ boards, not a single board:
   and adjacent borders separate boards. Pieces are drawn only for loaded
   boards. A dirty flag coalesces redraws into one `requestAnimationFrame`; there
   is no continuous render loop.
-- All 12 piece sprites are rendered once into a 6 x 2 atlas at 256 x 256 per
-  cell. Glyphs are centred from their measured bounding boxes, filled with
-  high-contrast outlines and drawn with high-quality image smoothing, so they
-  stay crisp at the maximum zoom. A redraw is one tile blit per visible board
-  plus at most 64 sprite blits per loaded board.
+- All 12 piece sprites come from a 6 x 2 atlas at 512 x 512 per cell, rendered
+  from the Cburnett SVG set on a transparent background and loaded as a
+  static asset. A font-glyph atlas is kept as a fallback until the image
+  loads. Pieces are drawn with high-quality image smoothing, so they stay
+  crisp at the maximum zoom. A redraw is one tile blit per visible board plus
+  at most 64 sprite blits per loaded board.
 
 ### Snapshot cache
 

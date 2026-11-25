@@ -156,6 +156,7 @@ The board grid fills the whole window.
 - `docs/FAILURE_AUDIT.md` — production-hardening and failure-injection audit.
 - `CHANGELOG.md` — recent release and hardening notes.
 - `deploy/README.md` — systemd, reverse proxy, health, backups and capacity.
+- `client/assets/README.md` — piece artwork source and attribution.
 
 ## Benchmarks
 
