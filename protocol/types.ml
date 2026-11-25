@@ -884,6 +884,270 @@ let snapshot_batch_of_bytes b : snapshot_batch option =
       if (not !ok) || !offset <> length then None
       else Some { request_id = get_i32_le b 1; x0; y0; width; height; boards }
 
+(* {2 Compact batched snapshots}
+
+   The batch format above already removes per-board padding, but a freshly
+   started world is overwhelmingly either the standard starting position or an
+   empty board. Repeating 40 pieces for every one of 625 boards is still
+   wasteful. Wire kind 6 is an additive compact variant of kind 5:
+
+     byte 0      kind 6
+     byte 1..4   request ID
+     byte 5..6   x0
+     byte 7..8   y0
+     byte 9..10  width
+     byte 11..12 height
+     then one record per board, row-major:
+       byte 0      board tag:
+                     0 empty, 1 standard starting position,
+                     2 occupancy bitmap, 3 full 64-byte board
+       byte 1..    revision as an unsigned LEB128 varint
+       tag 2:      8-byte occupancy bitmap, then one piece byte per set bit
+       tag 3:      64 dense piece bytes
+       tags 0,1:   no further bytes
+
+   A standard board is therefore two bytes (tag plus revision 0), and a whole
+   25 x 25 cache of them is about 1.3 KiB. The client reconstructs standard and
+   empty boards from a shared template. *)
+
+let wire_kind_compact_snapshot_batch = 6
+
+let standard_board_bytes =
+  let board = Bytes.make 64 '\000' in
+  let back_rank = [| 56; 22; 20; 26; 60; 20; 22; 56 |] in
+  Array.iteri
+    (fun file black ->
+      Bytes.set board file (Char.chr black);
+      Bytes.set board (56 + file) (Char.chr (black + 1)))
+    back_rank;
+  for file = 0 to 7 do
+    Bytes.set board (8 + file) (Char.chr 18);
+    Bytes.set board (48 + file) (Char.chr 19)
+  done;
+  board
+
+let uvarint_length value =
+  let rec go value length =
+    if Int64.compare value 0x80L < 0 then length
+    else go (Int64.shift_right_logical value 7) (length + 1)
+  in
+  go value 1
+
+let set_uvarint b offset value =
+  let rec go value offset =
+    let byte = Int64.to_int (Int64.logand value 0x7fL) in
+    let rest = Int64.shift_right_logical value 7 in
+    if Int64.equal rest 0L then begin
+      Bytes.unsafe_set b offset (Char.chr byte);
+      offset + 1
+    end
+    else begin
+      Bytes.unsafe_set b offset (Char.chr (byte lor 0x80));
+      go rest (offset + 1)
+    end
+  in
+  go value offset
+
+let get_uvarint b offset =
+  let rec go shift value offset =
+    if offset >= Bytes.length b then None
+    else
+      let byte = Char.code (Bytes.unsafe_get b offset) in
+      let value =
+        Int64.logor value
+          (Int64.shift_left (Int64.of_int (byte land 0x7f)) shift)
+      in
+      if byte land 0x80 = 0 then Some (value, offset + 1)
+      else if shift >= 63 then None
+      else go (shift + 7) value (offset + 1)
+  in
+  go 0 0L offset
+
+type compact_board_tag =
+  | Compact_empty
+  | Compact_standard
+  | Compact_bitmap
+  | Compact_full
+
+let compact_board_tag_code = function
+  | Compact_empty -> 0
+  | Compact_standard -> 1
+  | Compact_bitmap -> 2
+  | Compact_full -> 3
+
+let populated_count pieces =
+  let count = ref 0 in
+  for i = 0 to 63 do
+    if Char.code (Bytes.unsafe_get pieces i) <> 0 then incr count
+  done;
+  !count
+
+let is_empty_board pieces =
+  let empty = ref true in
+  for i = 0 to 63 do
+    if Char.code (Bytes.unsafe_get pieces i) <> 0 then empty := false
+  done;
+  !empty
+
+let classify_compact_board pieces =
+  if Bytes.length pieces <> 64 then
+    invalid_arg
+      "Protocol.Types.classify_compact_board: expected 64 pieces";
+  if Bytes.equal pieces standard_board_bytes then Compact_standard
+  else if is_empty_board pieces then Compact_empty
+  else
+    let count = populated_count pieces in
+    if count < 56 then Compact_bitmap else Compact_full
+
+let compact_snapshot_batch_to_bytes (batch : snapshot_batch) =
+  let count = Array.length batch.boards in
+  if
+    batch.width <= 0 || batch.height <= 0
+    || count <> batch.width * batch.height
+  then
+    invalid_arg
+      "Protocol.Types.compact_snapshot_batch_to_bytes: board count does not \
+       match width * height";
+  if
+    not
+      (valid_batch_region batch.x0 batch.y0
+         (batch.x0 + batch.width - 1) (batch.y0 + batch.height - 1))
+  then
+    invalid_arg
+      "Protocol.Types.compact_snapshot_batch_to_bytes: invalid region";
+  let tags = Array.map (fun (board : snapshot_batch_board) ->
+      classify_compact_board board.pieces) batch.boards
+  in
+  let total = ref snapshot_batch_header_bytes in
+  for index = 0 to count - 1 do
+    let board = batch.boards.(index) in
+    total := !total + 1 + uvarint_length board.revision;
+    total :=
+      !total
+      +
+      match tags.(index) with
+      | Compact_empty | Compact_standard -> 0
+      | Compact_bitmap -> 8 + populated_count board.pieces
+      | Compact_full -> 64
+  done;
+  let b = Bytes.create !total in
+  Bytes.set b 0 (Char.chr wire_kind_compact_snapshot_batch);
+  set_i32_le b 1 batch.request_id;
+  set_u16_le b 5 batch.x0;
+  set_u16_le b 7 batch.y0;
+  set_u16_le b 9 batch.width;
+  set_u16_le b 11 batch.height;
+  let offset = ref snapshot_batch_header_bytes in
+  for index = 0 to count - 1 do
+    let board = batch.boards.(index) in
+    let tag = tags.(index) in
+    Bytes.unsafe_set b !offset (Char.chr (compact_board_tag_code tag));
+    incr offset;
+    offset := set_uvarint b !offset board.revision;
+    match tag with
+    | Compact_empty | Compact_standard -> ()
+    | Compact_bitmap ->
+      set_i64_le b !offset (populated_bits board.pieces);
+      offset := !offset + 8;
+      for square = 0 to 63 do
+        let piece = Char.code (Bytes.unsafe_get board.pieces square) in
+        if piece <> 0 then begin
+          Bytes.unsafe_set b !offset (Char.chr piece);
+          incr offset
+        end
+      done
+    | Compact_full ->
+      Bytes.blit board.pieces 0 b !offset 64;
+      offset := !offset + 64
+  done;
+  if !offset <> Bytes.length b then
+    invalid_arg
+      "Protocol.Types.compact_snapshot_batch_to_bytes: encoded length \
+       mismatch";
+  b
+
+let compact_snapshot_batch_of_bytes b : snapshot_batch option =
+  let length = Bytes.length b in
+  if length < snapshot_batch_header_bytes then None
+  else if
+    Char.code (Bytes.unsafe_get b 0) <> wire_kind_compact_snapshot_batch
+  then None
+  else
+    let x0 = get_u16_le b 5
+    and y0 = get_u16_le b 7
+    and width = get_u16_le b 9
+    and height = get_u16_le b 11 in
+    if
+      width <= 0 || height <= 0
+      || not
+           (valid_batch_region x0 y0 (x0 + width - 1) (y0 + height - 1))
+    then None
+    else
+      let count = width * height in
+      let boards =
+        Array.make count { revision = 0L; pieces = Bytes.empty }
+      in
+      let offset = ref snapshot_batch_header_bytes in
+      let ok = ref true in
+      for index = 0 to count - 1 do
+        if (not !ok) || !offset >= length then ok := false
+        else begin
+          let tag = Char.code (Bytes.unsafe_get b !offset) in
+          incr offset;
+          match get_uvarint b !offset with
+          | None -> ok := false
+          | Some (revision, next) ->
+            offset := next;
+            (match tag with
+             | 0 -> boards.(index) <- { revision; pieces = Bytes.make 64 '\000' }
+             | 1 ->
+               boards.(index) <-
+                 { revision; pieces = Bytes.copy standard_board_bytes }
+             | 2 ->
+               if !offset + 8 > length then ok := false
+               else begin
+                 let bits = get_i64_le b !offset in
+                 offset := !offset + 8;
+                 let populated = bit_count bits in
+                 if !offset + populated > length then ok := false
+                 else begin
+                   let pieces = Bytes.make 64 '\000' in
+                   for square = 0 to 63 do
+                     if
+                       Int64.logand bits (Int64.shift_left 1L square) <> 0L
+                       && !ok
+                     then begin
+                       Bytes.unsafe_set pieces square
+                         (Bytes.unsafe_get b !offset);
+                       incr offset
+                     end
+                   done;
+                   boards.(index) <- { revision; pieces }
+                 end
+               end
+             | 3 ->
+               if !offset + 64 > length then ok := false
+               else begin
+                 let pieces = Bytes.sub b !offset 64 in
+                 offset := !offset + 64;
+                 boards.(index) <- { revision; pieces }
+               end
+             | _ -> ok := false)
+        end
+      done;
+      if (not !ok) || !offset <> length then None
+      else Some { request_id = get_i32_le b 1; x0; y0; width; height; boards }
+
+let snapshot_batch_of_wire_bytes b : snapshot_batch option =
+  if Bytes.length b = 0 then None
+  else
+    match Char.code (Bytes.unsafe_get b 0) with
+    | kind when kind = wire_kind_snapshot_batch ->
+      snapshot_batch_of_bytes b
+    | kind when kind = wire_kind_compact_snapshot_batch ->
+      compact_snapshot_batch_of_bytes b
+    | _ -> None
+
 (* {2 Board subscriptions}
 
    Clients announce the 25 x 25 (or arbitrary radius) window they cache with a

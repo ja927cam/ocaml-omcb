@@ -590,7 +590,7 @@ let handle_socket manager worker socket =
              Protocol.Types.wire_response_to_bytes
                (Protocol.Types.Wire_snapshot response)
            | `Snapshot_batch (batch, _) ->
-             Protocol.Types.snapshot_batch_to_bytes batch
+             Protocol.Types.compact_snapshot_batch_to_bytes batch
          in
          Connection_manager.flush_conn_events conn;
          let send = Connection_manager.send conn bytes in

@@ -55,16 +55,18 @@
 
 ### Snapshot loading
 
-- Added an additive batched snapshot protocol (message `0x06`, wire kind `5`):
-  one request covers a rectangle and one variable-size frame carries every
-  board with an occupancy bitmap and per-board revisions.
+- Added an additive batched snapshot protocol (message `0x06`): wire kind `5`
+  carries a rectangle of boards with per-board revisions and an occupancy
+  bitmap, and wire kind `6` tags empty and standard starting boards so they
+  need no piece payload.
 - The client now loads the full 25 x 25 cache with one batch request instead of
   625 sequential single-board requests. A 625-board load fell from 625 padded
-  4096-byte frames (2.56 MiB, about a second) to one ~30 KiB frame in roughly
-  10 ms in a headless browser; nearby panning needs no further requests because
-  the whole window is already resident.
+  4096-byte frames (2.56 MiB, about a second) to one 1,263-byte compact frame
+  in roughly 4 ms in a headless browser; nearby panning needs no further
+  requests because the whole window is already resident.
 - The status pill reports the number of boards still loading instead of
   claiming `Live` while the cache is incomplete.
 - Added `test/client_load_perf_test.js`, which spawns an isolated server and
-  fails if a full cache exceeds four frames, 128 KiB or 500 ms. Protocol codec,
-  compact-size and worker batch-snapshot unit tests were added.
+  fails if a full cache exceeds four frames, 16 KiB, 500 ms, or an 8 KiB wire
+  frame. Protocol codec, compact-size and worker batch-snapshot unit tests were
+  added.

@@ -36,6 +36,20 @@ let () =
   check "32m occupied" (Board.occupied_count board = 32_000_000);
   check "sequence still zero" (Game_state.sequence state = 0L);
 
+  (* The compact batch encoding reconstructs standard boards from a shared
+     template, so verify the template against the real piece projection for a
+     board in the corner and one in the middle of the world. *)
+  let encoded_board bx by =
+    Bytes.init 64 (fun i ->
+        Char.chr
+          (Piece.client_byte_at ~board_x:bx ~board_y:by
+             (Board.get board (pos bx by (i mod 8) (i / 8)))))
+  in
+  check "standard template matches board (0,0)"
+    (Bytes.equal (encoded_board 0 0) Protocol.Types.standard_board_bytes);
+  check "standard template matches board (499,500)"
+    (Bytes.equal (encoded_board 499 500) Protocol.Types.standard_board_bytes);
+
   let corners =
     [ { Board.board_x = 0; board_y = 0 };
       { Board.board_x = 999; board_y = 0 };

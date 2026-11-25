@@ -996,9 +996,30 @@ included per board so subsequent live events can still detect gaps. The format
 is additive: the single-board request and response remain in use for
 resynchronisation and probes.
 
+### 13.6.1b Compact batched snapshot response
+
+Wire kind `6` is an additive compact variant of kind `5`. It keeps the same
+13-byte header and per-board revisions, but tags each board record so the two
+overwhelmingly common cases carry no piece payload:
+
+| Tag | Meaning | Record size |
+|---|---|---|
+| 0 | Empty board | 1 + varint revision |
+| 1 | Standard starting position | 1 + varint revision |
+| 2 | Occupancy bitmap | 1 + varint + 8 + occupied squares |
+| 3 | Full dense board | 1 + varint + 64 |
+
+The revision is an unsigned LEB128 varint. Tag 1 reconstructs the standard
+board from `Protocol.Types.standard_board_bytes`; the server only emits it when
+the board's 64 client bytes exactly match that template. A full 25 x 25 cache of
+standard boards is therefore about 1.3 KiB in one frame, versus 30 KiB for
+kind `5` and 2.56 MiB for the padded single-board path. The server emits kind
+`6`; the client accepts both kinds.
+
 Codec functions: `snapshot_batch_request_to_bytes`,
 `snapshot_batch_request_of_bytes`, `snapshot_batch_to_bytes`,
-`snapshot_batch_of_bytes`.
+`snapshot_batch_of_bytes`, `compact_snapshot_batch_to_bytes`,
+`compact_snapshot_batch_of_bytes`, `snapshot_batch_of_wire_bytes`.
 
 ### 13.6.2 Subscription messages
 
@@ -1066,7 +1087,7 @@ in a fixed 4096-byte binary frame:
 
 | Bytes | Field |
 |---|---|
-| 0 | Kind: `1` move response, `2` snapshot response, `3` live event, `4` event batch, `5` batched snapshot |
+| 0 | Kind: `1` move response, `2` snapshot response, `3` live event, `4` event batch, `5` batched snapshot, `6` compact batched snapshot |
 | 1..26, 1..77, or 1.. | The encoded response/event/batch |
 | Rest | Zero padding |
 
@@ -1075,16 +1096,15 @@ and validate these frames. Each send crosses the 4096-byte threshold, so Dream
 flushes it immediately. The 81-byte snapshot payload and 26-byte move payload
 remain unchanged for codec tests and benchmarks.
 
-Kind `5` is variable-size and is not padded: a batched snapshot is larger than
-Dream's 4096-byte flush threshold by construction, so it flushes immediately
-without wasting padding. The single-board, move and event frames retain their
-fixed 4096-byte framing.
+Kinds `5` and `6` are variable-size and are not padded. A compact batch frame
+is larger than Dream's 4096-byte flush threshold by construction, so it flushes
+immediately without wasting padding. The single-board, move and event frames
+retain their fixed 4096-byte framing.
 
 The client keeps at most **one** batch request in flight. A full 25 x 25 cache
-arrives in one frame and one round trip; the per-board path is reserved for a
-board that missed a revision and for liveness probes. One 625-board load
-transfers about 30 KiB instead of 2.56 MiB and completes in single-digit
-milliseconds on loopback.
+arrives in one compact frame and one round trip; the per-board path is reserved
+for liveness probes and older clients. A fresh 625-board load transfers about
+1.3 KiB instead of 2.56 MiB and completes in a few milliseconds on loopback.
 
 The legacy JSON `client_msg` type has been removed; the protocol library no
 longer depends on `ppx_deriving_yojson`.

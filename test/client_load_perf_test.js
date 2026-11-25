@@ -29,7 +29,8 @@ const WIRE_FRAME = 4096;
 const BOARD_SCALE = 216;
 const WINDOW_BOARDS = 25;
 const WINDOW_COUNT = WINDOW_BOARDS * WINDOW_BOARDS;
-const BATCH_LIMIT_BYTES = 128 * 1024;
+const BATCH_LIMIT_BYTES = 16 * 1024;
+const WIRE_LIMIT_BYTES = 8 * 1024;
 const BATCH_LIMIT_MS = 500;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -111,7 +112,7 @@ function wsClient(url) {
   const singlePending = new Map();
   socket.onmessage = (message) => {
     const bytes = Buffer.from(message.data);
-    if (bytes.length >= 13 && bytes[0] === 5) {
+    if (bytes.length >= 13 && (bytes[0] === 5 || bytes[0] === 6)) {
       const id = bytes.readInt32LE(1);
       const resolve = batchPending.get(id);
       if (resolve) {
@@ -204,6 +205,9 @@ async function measureWire(port) {
     const legacyMs = Number(process.hrtime.bigint() - started) / 1e6;
     const legacyBytes = WINDOW_COUNT * WIRE_FRAME;
 
+    if (batchBytes > WIRE_LIMIT_BYTES) {
+      fail(`compact batch frame is ${batchBytes} bytes, limit ${WIRE_LIMIT_BYTES}`);
+    }
     if (!(legacyBytes >= batchBytes * 50)) {
       fail(
         `batched frame is not compact enough: ${batchBytes} vs ${legacyBytes} bytes`
@@ -332,7 +336,7 @@ async function measureBrowser(port) {
       (bytes) => bytes.length === WIRE_FRAME && bytes[0] === 2
     ).length;
     const batchFrames = received.filter(
-      (bytes) => bytes.length >= 13 && bytes[0] === 5
+      (bytes) => bytes.length >= 13 && (bytes[0] === 5 || bytes[0] === 6)
     );
     if (paddedSnapshots !== 0) {
       fail(`initial load used ${paddedSnapshots} padded single-board frames`);

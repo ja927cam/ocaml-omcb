@@ -1293,11 +1293,12 @@ let main () =
              let copy_started = Performance.now_ms G.performance in
              let bytes = bytes_of_buffer data in
              let copy_finished = Performance.now_ms G.performance in
+             let kind = Char.code (Bytes.unsafe_get bytes 0) in
              if
-               Char.code (Bytes.unsafe_get bytes 0)
-               = Protocol.Types.wire_kind_snapshot_batch
+               kind = Protocol.Types.wire_kind_snapshot_batch
+               || kind = Protocol.Types.wire_kind_compact_snapshot_batch
              then
-               (match Protocol.Types.snapshot_batch_of_bytes bytes with
+               (match Protocol.Types.snapshot_batch_of_wire_bytes bytes with
                 | None -> ()
                 | Some batch ->
                   (match !pending_batch with

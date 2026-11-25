@@ -24,8 +24,9 @@ node test/client_load_perf_test.js   # isolated-server initial-load budget
 ```
 
 The load performance test asserts that a full 25 x 25 cache arrives in at most
-a few compact batch frames, under 128 KiB and under 500 ms in a headless
-browser. It also compares the batched frame with the legacy 625-frame path.
+a few compact batch frames, under 16 KiB and under 500 ms in a headless
+browser. A fresh standard window is one ~1.3 KiB frame. It also compares the
+batched frame with the legacy 625-frame / 2.56 MiB path.
 
 Live update tests:
 

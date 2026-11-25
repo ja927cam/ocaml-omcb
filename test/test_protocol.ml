@@ -471,4 +471,75 @@ let () =
   check "batch 25x25 under 32 KiB"
     (Bytes.length full_encoded < 32 * 1024);
 
+  (* Compact batch codec: empty, standard, bitmap and full board tags,
+     including multi-byte revisions. *)
+  let compact_standard = Bytes.copy Protocol.Types.standard_board_bytes in
+  let compact_empty = Bytes.make 64 '\000' in
+  let compact_bitmap = board_of [ (0, 4); (31, 77); (63, 255) ] in
+  let compact_full =
+    board_of (List.init 64 (fun i -> (i, ((i * 7) + 1) land 0xff)))
+  in
+  let compact =
+    {
+      Protocol.Types.request_id = 4242l;
+      x0 = 10;
+      y0 = 20;
+      width = 2;
+      height = 2;
+      boards =
+        [|
+          { Protocol.Types.revision = 0L; pieces = compact_empty };
+          { Protocol.Types.revision = 127L; pieces = compact_standard };
+          { Protocol.Types.revision = 128L; pieces = compact_bitmap };
+          { Protocol.Types.revision = Int64.max_int; pieces = compact_full };
+        |];
+    }
+  in
+  let compact_bytes = Protocol.Types.compact_snapshot_batch_to_bytes compact in
+  check "compact kind"
+    (Char.code (Bytes.get compact_bytes 0)
+    = Protocol.Types.wire_kind_compact_snapshot_batch);
+  (match Protocol.Types.compact_snapshot_batch_of_bytes compact_bytes with
+   | None -> failwith "compact batch decoded to None"
+   | Some decoded ->
+     check "compact board count" (Array.length decoded.boards = 4);
+     for index = 0 to 3 do
+       check ("compact revision " ^ string_of_int index)
+         (decoded.boards.(index).revision = compact.boards.(index).revision);
+       check ("compact pieces " ^ string_of_int index)
+         (Bytes.equal decoded.boards.(index).pieces
+            compact.boards.(index).pieces)
+     done);
+  check "compact wire dispatch"
+    (match Protocol.Types.snapshot_batch_of_wire_bytes compact_bytes with
+     | Some batch -> Bool.equal true (batch.request_id = 4242l)
+     | None -> false);
+  check "compact truncated frame rejected"
+    (Protocol.Types.compact_snapshot_batch_of_bytes
+       (Bytes.sub compact_bytes 0 (Bytes.length compact_bytes - 1))
+    = None);
+  check "compact bad tag rejected"
+    (let bad = Bytes.copy compact_bytes in
+     (* The first board tag is the byte immediately after the header. *)
+     Bytes.set bad 13 (Char.chr 99);
+     Protocol.Types.compact_snapshot_batch_of_bytes bad = None);
+
+  let compact_standard_full =
+    {
+      Protocol.Types.request_id = 7l;
+      x0 = 0;
+      y0 = 0;
+      width = 25;
+      height = 25;
+      boards =
+        Array.init 625 (fun _ ->
+            { Protocol.Types.revision = 0L; pieces = compact_standard });
+    }
+  in
+  let compact_full_bytes =
+    Protocol.Types.compact_snapshot_batch_to_bytes compact_standard_full
+  in
+  check "compact 25x25 standard under 2 KiB"
+    (Bytes.length compact_full_bytes < 2048);
+
   Printf.printf "All protocol move codec tests passed.\n"
