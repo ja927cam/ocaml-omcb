@@ -3,8 +3,10 @@ open Brr_canvas
 
 (* 216 px boards are a comfortable zoom: three fit vertically in a 700 px
    window, while larger screens show more context. *)
-let board_px = 216.
-let cell_px = board_px /. 8.
+let base_board_px = 216.
+let zoom = ref 1.
+let board_px () = base_board_px *. !zoom
+let cell_px () = board_px () /. 8.
 let max_coord = 999
 let empty = '\000'
 
@@ -130,12 +132,15 @@ let piece_index = function
   | 'q' | 'Q' -> 4
   | _ -> 5
 
+let atlas_cell_px = 256
+
 let draw_piece ctx atlas piece x y size =
   let i = piece_index piece in
   let row = if Char.uppercase_ascii piece = piece then 0 else 1 in
+  let cell = float atlas_cell_px in
   C2d.draw_sub_image_in_rect ctx atlas
-    ~sx:(float (i * 64)) ~sy:(float (row * 64))
-    ~sw:64. ~sh:64. ~x ~y ~w:size ~h:size
+    ~sx:(float (i * atlas_cell_px)) ~sy:(float (row * atlas_cell_px))
+    ~sw:cell ~sh:cell ~x ~y ~w:size ~h:size
 
 (* ------------------------------------------------------------------------- *)
 (* Main                                                                      *)
@@ -156,8 +161,8 @@ let main () =
   let canvas = Canvas.of_el canvas_el in
   let ctx = C2d.get_context canvas in
   let canvas_w = ref 1 and canvas_h = ref 1 in
-  let visible_w () = float !canvas_w /. board_px in
-  let visible_h () = float !canvas_h /. board_px in
+  let visible_w () = float !canvas_w /. board_px () in
+  let visible_h () = float !canvas_h /. board_px () in
   let max_left () = max 0. (1000. -. visible_w ()) in
   let max_top () = max 0. (1000. -. visible_h ()) in
   let set_canvas_size () =
@@ -220,51 +225,78 @@ let main () =
   let src_hl = C2d.color (Jstr.v "rgba(255, 235, 59, 0.45)") in
   let dst_hl = C2d.color (Jstr.v "rgba(20, 85, 30, 0.45)") in
 
-  (* One board tile blit replaces 64 per-square fills on every frame. *)
-  let board_canvas =
-    Canvas.create ~w:(int_of_float board_px) ~h:(int_of_float board_px) []
-  in
+  (* One board tile blit replaces 64 per-square fills on every frame. Render
+     the tile at 3x so it stays crisp when the user zooms in. *)
+  let tile_px = int_of_float (base_board_px *. 3.) in
+  let tile_cell = float tile_px /. 8. in
+  let board_canvas = Canvas.create ~w:tile_px ~h:tile_px [] in
   let board_ctx = C2d.get_context board_canvas in
+  C2d.set_image_smoothing_enabled board_ctx true;
+  C2d.set_image_smoothing_quality board_ctx
+    C2d.Image_smoothing_quality.high;
   for row = 0 to 7 do
     for col = 0 to 7 do
       C2d.set_fill_style board_ctx
         (if (row + col) land 1 = 0 then light else dark);
       C2d.fill_rect board_ctx
-        ~x:(float col *. cell_px) ~y:(float row *. cell_px)
-        ~w:cell_px ~h:cell_px
+        ~x:(float col *. tile_cell) ~y:(float row *. tile_cell)
+        ~w:tile_cell ~h:tile_cell
     done
   done;
-  (* A one-pixel inner border makes adjacent boards visually distinct. *)
-  let border = C2d.color (Jstr.v "rgba(25, 18, 12, 0.65)") in
+  (* A 3-pixel inner border becomes one CSS pixel at the default zoom. *)
+  let border = C2d.color (Jstr.v "rgba(25, 18, 12, 0.72)") in
   C2d.set_fill_style board_ctx border;
-  let edge = float (int_of_float board_px) in
-  C2d.fill_rect board_ctx ~x:0. ~y:0. ~w:edge ~h:1.;
-  C2d.fill_rect board_ctx ~x:0. ~y:(edge -. 1.) ~w:edge ~h:1.;
-  C2d.fill_rect board_ctx ~x:0. ~y:0. ~w:1. ~h:edge;
-  C2d.fill_rect board_ctx ~x:(edge -. 1.) ~y:0. ~w:1. ~h:edge;
+  let edge = float tile_px in
+  C2d.fill_rect board_ctx ~x:0. ~y:0. ~w:edge ~h:3.;
+  C2d.fill_rect board_ctx ~x:0. ~y:(edge -. 3.) ~w:edge ~h:3.;
+  C2d.fill_rect board_ctx ~x:0. ~y:0. ~w:3. ~h:edge;
+  C2d.fill_rect board_ctx ~x:(edge -. 3.) ~y:0. ~w:3. ~h:edge;
   let board_tile = C2d.image_src_of_el (Canvas.to_el board_canvas) in
 
-  let atlas_canvas = Canvas.create ~w:(6 * 64) ~h:(2 * 64) [] in
+  let atlas_canvas =
+    Canvas.create ~w:(6 * atlas_cell_px) ~h:(2 * atlas_cell_px) []
+  in
   let atlas_ctx = C2d.get_context atlas_canvas in
+  C2d.set_image_smoothing_enabled atlas_ctx true;
+  C2d.set_image_smoothing_quality atlas_ctx
+    C2d.Image_smoothing_quality.high;
   C2d.set_text_align atlas_ctx C2d.Text_align.center;
-  C2d.set_text_baseline atlas_ctx C2d.Text_baseline.middle;
+  C2d.set_text_baseline atlas_ctx C2d.Text_baseline.alphabetic;
   C2d.set_font atlas_ctx
-    (Jstr.v "50px 'Noto Sans Symbols 2', 'DejaVu Sans', sans-serif");
-  C2d.set_line_width atlas_ctx 2.;
+    (Jstr.v
+       "200px 'Noto Sans Symbols 2', 'DejaVu Sans', 'Segoe UI Symbol', serif");
   let white_fill = C2d.color (Jstr.v "#ffffff") in
-  let black_fill = C2d.color (Jstr.v "#141414") in
-  let white_stroke = C2d.color (Jstr.v "#2b2b2b") in
-  Array.iteri
-    (fun i glyph ->
-      let x = float ((i * 64) + 32) and y = 32. in
-      let glyph = Jstr.v glyph in
+  let black_fill = C2d.color (Jstr.v "#101114") in
+  let white_stroke = C2d.color (Jstr.v "#24262b") in
+  let black_stroke = C2d.color (Jstr.v "#f4f4f4") in
+  let draw_glyph row glyph i =
+    let m = C2d.measure_text atlas_ctx (Jstr.v glyph) in
+    let ascent =
+      max 0. (C2d.Text_metrics.actual_bounding_box_ascent m)
+    and descent =
+      max 0. (C2d.Text_metrics.actual_bounding_box_descent m)
+    in
+    let cx = (float (i * atlas_cell_px)) +. (float atlas_cell_px /. 2.)
+    and cy = (float (row * atlas_cell_px)) +. (float atlas_cell_px /. 2.) in
+    let y = cy +. ((ascent -. descent) /. 2.) +. (float atlas_cell_px *. 0.03) in
+    let key = Jstr.v glyph in
+    if row = 0 then begin
       C2d.set_fill_style atlas_ctx white_fill;
       C2d.set_stroke_style atlas_ctx white_stroke;
-      C2d.fill_text atlas_ctx glyph ~x ~y;
-      C2d.stroke_text atlas_ctx glyph ~x ~y;
+      C2d.set_line_width atlas_ctx 7.;
+      C2d.fill_text atlas_ctx key ~x:cx ~y;
+      C2d.stroke_text atlas_ctx key ~x:cx ~y
+    end
+    else begin
       C2d.set_fill_style atlas_ctx black_fill;
-      C2d.fill_text atlas_ctx glyph ~x ~y:(y +. 64.))
-    piece_glyphs;
+      C2d.set_stroke_style atlas_ctx black_stroke;
+      C2d.set_line_width atlas_ctx 3.;
+      C2d.fill_text atlas_ctx key ~x:cx ~y;
+      C2d.stroke_text atlas_ctx key ~x:cx ~y
+    end
+  in
+  Array.iteri (fun i glyph -> draw_glyph 0 glyph i) piece_glyphs;
+  Array.iteri (fun i glyph -> draw_glyph 1 glyph i) piece_glyphs;
   let atlas = C2d.image_src_of_el (Canvas.to_el atlas_canvas) in
 
   let boards : (int, board_state) Hashtbl.t = Hashtbl.create 1024 in
@@ -307,10 +339,13 @@ let main () =
     scale_y := float !canvas_h /. max 1. (El.bound_h canvas_el)
   in
 
-  let to_canvas ev =
-    let m = Ev.as_type ev |> Ev.Pointer.as_mouse in
+  let to_canvas_of_mouse m =
     ( (Ev.Mouse.client_x m -. !origin_x) *. !scale_x,
       (Ev.Mouse.client_y m -. !origin_y) *. !scale_y )
+  in
+
+  let to_canvas ev =
+    to_canvas_of_mouse (Ev.as_type ev |> Ev.Pointer.as_mouse)
   in
 
   let alloc_request_id () =
@@ -555,8 +590,8 @@ let main () =
          if orphan_ids <> [] || !stale <> [] then !retry_snapshot_hook ()));
 
   let board_at_canvas x y =
-    let wx = !view_left +. (x /. board_px) in
-    let wy = !view_top +. (y /. board_px) in
+    let wx = !view_left +. (x /. board_px ()) in
+    let wy = !view_top +. (y /. board_px ()) in
     if wx < 0. || wy < 0. || wx >= 1000. || wy >= 1000. then None
     else
       let bx = int_of_float (floor wx) in
@@ -594,6 +629,8 @@ let main () =
       (Some (Jstr.of_float !view_left)) body_el;
     El.set_at (Jstr.v "data-view-top")
       (Some (Jstr.of_float !view_top)) body_el;
+    El.set_at (Jstr.v "data-zoom")
+      (Some (Jstr.of_float !zoom)) body_el;
     C2d.set_fill_style ctx page_bg;
     C2d.fill_rect ctx ~x:0. ~y:0. ~w:(float !canvas_w)
       ~h:(float !canvas_h);
@@ -612,9 +649,10 @@ let main () =
     (* Board tiles first: one blit per board. *)
     for by = y_first to y_last do
       for bx = x_first to x_last do
-        let ox = (float bx -. !view_left) *. board_px in
-        let oy = (float by -. !view_top) *. board_px in
-        C2d.draw_image ctx board_tile ~x:ox ~y:oy
+        let ox = (float bx -. !view_left) *. board_px () in
+        let oy = (float by -. !view_top) *. board_px () in
+        C2d.draw_image_in_rect ctx board_tile ~x:ox ~y:oy
+          ~w:(board_px ()) ~h:(board_px ())
       done
     done;
 
@@ -622,14 +660,14 @@ let main () =
     (match !drag with
      | None -> ()
      | Some d ->
-       let ox = (float d.state.bx -. !view_left) *. board_px in
-       let oy = (float d.state.by -. !view_top) *. board_px in
+       let ox = (float d.state.bx -. !view_left) *. board_px () in
+       let oy = (float d.state.by -. !view_top) *. board_px () in
        let col = d.from mod 8 and row = d.from / 8 in
        C2d.set_fill_style ctx src_hl;
        C2d.fill_rect ctx
-         ~x:(ox +. (float col *. cell_px))
-         ~y:(oy +. (float row *. cell_px))
-         ~w:cell_px ~h:cell_px;
+         ~x:(ox +. (float col *. cell_px ()))
+         ~y:(oy +. (float row *. cell_px ()))
+         ~w:(cell_px ()) ~h:(cell_px ());
        (match board_at_canvas d.x d.y with
         | Some (bx, by, col, row) ->
           let target = state_of bx by in
@@ -638,13 +676,13 @@ let main () =
             target.loaded
             && (bx <> d.state.bx || by <> d.state.by || dst <> d.from)
           then begin
-            let ox = (float bx -. !view_left) *. board_px in
-            let oy = (float by -. !view_top) *. board_px in
+            let ox = (float bx -. !view_left) *. board_px () in
+            let oy = (float by -. !view_top) *. board_px () in
             C2d.set_fill_style ctx dst_hl;
             C2d.fill_rect ctx
-              ~x:(ox +. (float col *. cell_px))
-              ~y:(oy +. (float row *. cell_px))
-              ~w:cell_px ~h:cell_px
+              ~x:(ox +. (float col *. cell_px ()))
+              ~y:(oy +. (float row *. cell_px ()))
+              ~w:(cell_px ()) ~h:(cell_px ())
           end
         | None -> ()));
 
@@ -655,8 +693,8 @@ let main () =
         | None -> ()
         | Some state ->
           if state.loaded then begin
-            let ox = (float bx -. !view_left) *. board_px in
-            let oy = (float by -. !view_top) *. board_px in
+            let ox = (float bx -. !view_left) *. board_px () in
+            let oy = (float by -. !view_top) *. board_px () in
             for i = 0 to 63 do
               let piece = Bytes.unsafe_get state.pieces i in
               if piece <> empty then
@@ -664,9 +702,9 @@ let main () =
                 | Some d when d.state == state && d.from = i -> ()
                 | _ ->
                   draw_piece ctx atlas (glyph_of_byte piece)
-                    (ox +. (float (i mod 8) *. cell_px))
-                    (oy +. (float (i / 8) *. cell_px))
-                    cell_px
+                    (ox +. (float (i mod 8) *. cell_px ()))
+                    (oy +. (float (i / 8) *. cell_px ()))
+                    (cell_px ())
             done
           end
       done
@@ -675,8 +713,8 @@ let main () =
     match !drag with
     | None -> ()
     | Some d ->
-      draw_piece ctx atlas d.piece (d.x -. (cell_px /. 2.))
-        (d.y -. (cell_px /. 2.)) cell_px
+      draw_piece ctx atlas d.piece (d.x -. (cell_px () /. 2.))
+        (d.y -. (cell_px () /. 2.)) (cell_px ())
   in
 
   let select_center bx by =
@@ -861,8 +899,8 @@ let main () =
     match !panning with
     | Some p ->
       let cx, cy = to_canvas ev in
-      let dx = (cx -. p.start_cx) /. board_px in
-      let dy = (cy -. p.start_cy) /. board_px in
+      let dx = (cx -. p.start_cx) /. board_px () in
+      let dy = (cy -. p.start_cy) /. board_px () in
       view_left := clamp_float (p.start_left -. dx) 0. (max_left ());
       view_top := clamp_float (p.start_top -. dy) 0. (max_top ());
       ensure_window ();
@@ -1084,11 +1122,41 @@ let main () =
     request_draw ()
   in
 
+  let on_wheel ev =
+    let wheel = Ev.as_type ev in
+    let dy =
+      match Ev.Wheel.delta_mode wheel with
+      | mode when mode = Ev.Wheel.Delta_mode.line ->
+        Ev.Wheel.delta_y wheel *. 16.
+      | mode when mode = Ev.Wheel.Delta_mode.page ->
+        Ev.Wheel.delta_y wheel *. 100.
+      | _ -> Ev.Wheel.delta_y wheel
+    in
+    if dy <> 0. then begin
+      Ev.prevent_default ev;
+      let cx, cy = to_canvas_of_mouse (Ev.Wheel.as_mouse wheel) in
+      let wx = !view_left +. (cx /. board_px ()) in
+      let wy = !view_top +. (cy /. board_px ()) in
+      let factor = exp (-.dy /. 420.) |> clamp_float 0.78 1.28 in
+      zoom := clamp_float (!zoom *. factor) 0.35 3.5;
+      view_left :=
+        clamp_float (wx -. (cx /. board_px ())) 0. (max_left ());
+      view_top :=
+        clamp_float (wy -. (cy /. board_px ())) 0. (max_top ());
+      ensure_window ();
+      request_draw ()
+    end
+  in
+
   ignore (Ev.listen Ev.pointerdown on_pointer_down (El.as_target canvas_el));
   let window = Window.as_target G.window in
   ignore (Ev.listen Ev.pointermove on_pointer_move window);
   ignore (Ev.listen Ev.pointerup on_pointer_up window);
   ignore (Ev.listen Ev.pointercancel on_pointer_cancel window);
+  ignore
+    (Ev.listen
+       ~opts:(Ev.listen_opts ~passive:false ())
+       Ev.wheel on_wheel (El.as_target canvas_el));
 
   let connect_ws () =
     let location = Jv.get Jv.global "location" in

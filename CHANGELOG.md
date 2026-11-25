@@ -44,4 +44,8 @@
 
 - Added a live connection-status pill, panning hint, keyboard focus target and
   a cleaner dark visual style.
+- Added scroll-wheel zoom around the pointer, with a high-resolution board
+  tile and 256 px piece atlas rendered from a symbol font.
+- Rebuilt the piece atlas with measured glyph centering, crisp white/black
+  outlines and high-quality image smoothing.
 - Disabled per-move browser RTT logging by default.

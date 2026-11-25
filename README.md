@@ -137,6 +137,7 @@ snapshot, fsync/close the WAL and exit 0. `SIGKILL` remains a crash. See
 
 The board grid fills the whole window.
 
+- Scroll to zoom in and out around the pointer.
 - Drag empty space (or use a non-left button) to pan.
 - Drag a piece to move it. Quiet moves may cross board boundaries. A piece
   can only capture while it is on its own original board; leaving clears the

@@ -507,6 +507,26 @@ async function main() {
       fail(`returning from the eviction lost the query centre: ${await coordsText()}`);
     }
 
+    // Scroll-wheel zoom must change the canvas scale without losing the
+    // connection status. Place the pointer over the canvas interior.
+    const zoomBefore = await evaluate(
+      "parseFloat(document.body.dataset.zoom || '1')"
+    );
+    await send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: 400,
+      y: 350,
+      deltaX: 0,
+      deltaY: -240,
+    });
+    await sleep(300);
+    const zoomAfter = await evaluate(
+      "parseFloat(document.body.dataset.zoom || '1')"
+    );
+    if (!(zoomAfter > zoomBefore + 0.05)) {
+      fail(`scroll wheel did not zoom in: ${zoomBefore} -> ${zoomAfter}`);
+    }
+
     if (exceptions !== 0) fail(`browser raised ${exceptions} exception(s)`);
     console.log(
       `Client grid snapshot test passed: ${new Set(requests.map(([x, y]) => `${x},${y}`)).size} distinct boards requested, ` +

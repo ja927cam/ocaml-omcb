@@ -1004,22 +1004,26 @@ The client is a WASM/Brr canvas application. It renders a 1000 x 1000 world of
 boards, not a single board:
 
 - The canvas fills the viewport (`100vw x 100vh`) and its backing store tracks
-  the viewport size. Each board occupies 216 x 216 backing pixels (27 px per
-  square), so three boards span 648 px. On a typical desktop the nine centre
-  boards are fully visible (except at world edges), with more boards at the
-  edges.
+  the viewport size. At zoom 1 each board occupies 216 x 216 backing pixels
+  (27 px per square), so three boards span 648 px. Scroll-wheel zoom scales
+  around the pointer from 0.35x to 3.5x; the camera is clamped so the world
+  cannot scroll past its edges.
 - `view_left` and `view_top` hold floating-point board coordinates at the
   canvas origin, clamped independently to the world. Dragging empty space
   pans; a drag that starts on a piece moves that piece instead.
 - A fixed top-right overlay shows the rounded camera centre as `(x, y)`.
   `?x=<board_x>&y=<board_y>` sets the initial centre and survives reloads.
-- A single 8 x 8 board tile is rendered once to a 216 x 216 offscreen canvas
-  with a one-pixel dark inner border. Every visible board is one `drawImage`
-  blit instead of 64 rectangle fills, and adjacent borders separate boards.
-  Pieces are drawn only for loaded boards. A dirty flag coalesces redraws into
-  one `requestAnimationFrame`; there is no continuous render loop.
-- All 12 piece sprites are rendered once into a 6 x 2 atlas. A redraw is one
-  tile blit per visible board plus at most 64 sprite blits per loaded board.
+- A single 8 x 8 board tile is rendered once to a 648 x 648 offscreen canvas
+  with a three-pixel dark inner border, then scaled to the current board size.
+  Every visible board is one `drawImage` blit instead of 64 rectangle fills,
+  and adjacent borders separate boards. Pieces are drawn only for loaded
+  boards. A dirty flag coalesces redraws into one `requestAnimationFrame`; there
+  is no continuous render loop.
+- All 12 piece sprites are rendered once into a 6 x 2 atlas at 256 x 256 per
+  cell. Glyphs are centred from their measured bounding boxes, filled with
+  high-contrast outlines and drawn with high-quality image smoothing, so they
+  stay crisp at the maximum zoom. A redraw is one tile blit per visible board
+  plus at most 64 sprite blits per loaded board.
 
 ### Snapshot cache
 
