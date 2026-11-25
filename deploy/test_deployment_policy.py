@@ -74,6 +74,14 @@ class DeploymentPolicyTests(unittest.TestCase):
         self.assertIn("wasm-opt --version", dockerfile)
         self.assertIn('ENV PATH="/usr/local/bin:${PATH}"', dockerfile)
 
+    def test_metrics_endpoints_are_public(self) -> None:
+        caddyfile = text("deploy/Caddyfile")
+        self.assertNotIn("path /metrics", caddyfile)
+        self.assertIn("@internal path /state-hash /debug/*", caddyfile)
+        server = text("server/server.ml")
+        self.assertIn('Dream.get "/metrics.prom"', server)
+        self.assertIn('Dream.get "/metrics"', server)
+
     def test_docker_runs_dune_through_opam_exec(self) -> None:
         dockerfile = text("Dockerfile")
         self.assertIn(

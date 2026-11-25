@@ -463,9 +463,13 @@ sudo docker compose -f docker-compose.prod.yml logs -f --tail=200 caddy
 curl -fsS https://chess.jamesashwood.com/healthz
 curl -fsS https://chess.jamesashwood.com/readyz
 
-# Operational metrics are intentionally not public.
+# Public monitoring endpoints.
+curl -fsS https://chess.jamesashwood.com/metrics | python3 -m json.tool
+curl -fsS https://chess.jamesashwood.com/metrics.prom
+
+# Expensive diagnostics stay internal to the Docker network.
 sudo docker compose -f docker-compose.prod.yml exec app \
-  curl -fsS http://127.0.0.1:8080/metrics | python3 -m json.tool
+  curl -fsS http://127.0.0.1:8080/state-hash
 
 sudo docker inspect --format '{{.State.Health.Status}}' \
   "$(sudo docker compose -f docker-compose.prod.yml ps -q app)"

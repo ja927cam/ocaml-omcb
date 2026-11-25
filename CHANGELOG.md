@@ -18,6 +18,13 @@
   satisfies opam's depext check; a pinned, checksummed static release is the
   `wasm-opt` used by the build.
 
+### Monitoring
+
+- Added a public Prometheus text endpoint at `/metrics.prom` (in addition to
+  the existing JSON `/metrics`) covering pipeline stage latency, worker,
+  connection, persistence and adaptive-commit metrics. `/state-hash` and
+  `/debug/*` remain internal to the Docker network.
+
 ### Production CI/CD
 
 - Added `.github/workflows/deploy.yml`: on every push to `main`, validate the

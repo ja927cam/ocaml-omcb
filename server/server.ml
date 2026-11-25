@@ -267,20 +267,210 @@ let memprof_json () =
       ("sites_by_count", `List (List.map memprof_site_json by_count));
     ]
 
-let metrics_body manager worker persistence adaptive ~fixed_group ~fixed_delay_us =
+let metrics_json manager worker persistence adaptive ~fixed_group ~fixed_delay_us =
   let worker_metrics = State_worker.metrics worker in
   let connection_metrics = Connection_manager.metrics manager in
+  Metrics.json
+    ~extra:
+      [
+        ("worker", worker_metrics_json worker_metrics);
+        ("connections", connection_metrics_json connection_metrics);
+        ("persistence", Persistence.metrics_json persistence);
+        ("memory", memory_json ());
+        ("adaptive", adaptive_json adaptive ~fixed_group ~fixed_delay_us);
+      ]
+    ()
+
+let metrics_body manager worker persistence adaptive ~fixed_group ~fixed_delay_us =
   Yojson.Safe.to_string
-    (Metrics.json
-       ~extra:
-         [
-           ("worker", worker_metrics_json worker_metrics);
-           ("connections", connection_metrics_json connection_metrics);
-           ("persistence", Persistence.metrics_json persistence);
-           ("memory", memory_json ());
-           ("adaptive", adaptive_json adaptive ~fixed_group ~fixed_delay_us);
-         ]
-       ())
+    (metrics_json manager worker persistence adaptive ~fixed_group
+       ~fixed_delay_us)
+
+let json_member key json = Yojson.Safe.Util.member key json
+
+let json_float key json =
+  match json_member key json with
+  | `Float value -> value
+  | `Int value -> float_of_int value
+  | `Intlit value | `String value -> (
+    try float_of_string value with _ -> 0.)
+  | _ -> 0.
+
+let json_int key json = int_of_float (json_float key json)
+
+let json_string key json =
+  match json_member key json with
+  | `String value | `Intlit value -> value
+  | `Int value -> string_of_int value
+  | `Float value -> Printf.sprintf "%.9g" value
+  | _ -> ""
+
+let json_bool key json =
+  match json_member key json with `Bool value -> value | _ -> false
+
+let prometheus_value value =
+  Printf.sprintf "%.9g" value
+
+let prometheus_header buffer name kind help =
+  Buffer.add_string buffer (Printf.sprintf "# HELP %s %s\n" name help);
+  Buffer.add_string buffer (Printf.sprintf "# TYPE %s %s\n" name kind)
+
+let prometheus_metric buffer name value =
+  Buffer.add_string buffer
+    (Printf.sprintf "%s %s\n" name (prometheus_value value))
+
+let prometheus_metrics_body manager worker persistence adaptive ~fixed_group
+    ~fixed_delay_us =
+  let json =
+    metrics_json manager worker persistence adaptive ~fixed_group
+      ~fixed_delay_us
+  in
+  let buffer = Buffer.create 8192 in
+  prometheus_header buffer "sim_map_up" "gauge" "Process is alive";
+  prometheus_metric buffer "sim_map_up" 1.;
+  prometheus_header buffer "sim_map_uptime_seconds" "gauge"
+    "Process uptime in seconds";
+  prometheus_metric buffer "sim_map_uptime_seconds"
+    (json_float "uptime_ms" json /. 1000.);
+  prometheus_header buffer "sim_map_stage_latency_seconds" "summary"
+    "Move pipeline stage latency";
+  let stages =
+    match json_member "stages" json with
+    | `Assoc stages -> stages
+    | _ -> []
+  in
+  List.iter
+    (fun (stage, data) ->
+      List.iter
+        (fun (quantile, field) ->
+          prometheus_metric buffer
+            (Printf.sprintf
+               "sim_map_stage_latency_seconds{stage=%S,quantile=%S}" stage
+               quantile)
+            (json_float field data /. 1000.))
+        [ ("0.5", "p50_ms"); ("0.95", "p95_ms"); ("0.99", "p99_ms") ];
+      prometheus_metric buffer
+        (Printf.sprintf "sim_map_stage_latency_seconds_sum{stage=%S}" stage)
+        (json_float "total_ms" data /. 1000.);
+      prometheus_metric buffer
+        (Printf.sprintf "sim_map_stage_latency_seconds_count{stage=%S}" stage)
+        (float_of_int (json_int "n" data));
+      prometheus_metric buffer
+        (Printf.sprintf "sim_map_stage_latency_max_seconds{stage=%S}" stage)
+        (json_float "max_ms" data /. 1000.))
+    stages;
+  let counters = json_member "counters" json in
+  prometheus_header buffer "sim_map_events_broadcast_total" "counter"
+    "Broadcast events";
+  prometheus_metric buffer "sim_map_events_broadcast_total"
+    (json_float "events_broadcast" counters);
+  prometheus_header buffer "sim_map_recipients_total" "counter"
+    "Broadcast recipient deliveries";
+  prometheus_metric buffer "sim_map_recipients_total"
+    (json_float "recipients" counters);
+  prometheus_header buffer "sim_map_outbox_enqueues_total" "counter"
+    "Outbox enqueues";
+  prometheus_metric buffer "sim_map_outbox_enqueues_total"
+    (json_float "outbox_enqueues" counters);
+  prometheus_header buffer "sim_map_outbox_dropped_total" "counter"
+    "Dropped outbox items";
+  prometheus_metric buffer "sim_map_outbox_dropped_total"
+    (json_float "outbox_dropped" counters);
+  prometheus_header buffer "sim_map_send_failures_total" "counter"
+    "WebSocket send failures";
+  prometheus_metric buffer "sim_map_send_failures_total"
+    (json_float "send_failures" counters);
+  prometheus_header buffer "sim_map_max_outbox_depth" "gauge"
+    "Maximum connection outbox depth";
+  prometheus_metric buffer "sim_map_max_outbox_depth"
+    (json_float "max_outbox_depth" counters);
+  let worker_json = json_member "worker" json in
+  prometheus_header buffer "sim_map_worker_queue_depth" "gauge"
+    "Worker queue depth";
+  prometheus_metric buffer "sim_map_worker_queue_depth"
+    (json_float "queue_depth" worker_json);
+  prometheus_header buffer "sim_map_worker_moves_processed_total" "counter"
+    "Moves processed by the worker";
+  prometheus_metric buffer "sim_map_worker_moves_processed_total"
+    (json_float "moves_processed" worker_json);
+  prometheus_header buffer "sim_map_worker_requests_rejected_total" "counter"
+    "Rejected worker requests";
+  prometheus_metric buffer "sim_map_worker_requests_rejected_total"
+    (json_float "requests_rejected" worker_json);
+  prometheus_header buffer "sim_map_worker_avg_queue_wait_seconds" "gauge"
+    "Average worker queue wait";
+  prometheus_metric buffer "sim_map_worker_avg_queue_wait_seconds"
+    (json_float "avg_queue_wait_ms" worker_json /. 1000.);
+  prometheus_header buffer "sim_map_worker_avg_processing_seconds" "gauge"
+    "Average worker processing time";
+  prometheus_metric buffer "sim_map_worker_avg_processing_seconds"
+    (json_float "avg_processing_ms" worker_json /. 1000.);
+  let connections = json_member "connections" json in
+  prometheus_header buffer "sim_map_clients" "gauge"
+    "Connected WebSocket clients";
+  prometheus_metric buffer "sim_map_clients"
+    (json_float "clients" connections);
+  prometheus_header buffer "sim_map_subscriptions" "gauge"
+    "Active board subscriptions";
+  prometheus_metric buffer "sim_map_subscriptions"
+    (json_float "subscriptions" connections);
+  prometheus_header buffer "sim_map_connection_total_outbox_depth" "gauge"
+    "Total queued outbox items";
+  prometheus_metric buffer "sim_map_connection_total_outbox_depth"
+    (json_float "total_outbox_depth" connections);
+  let persistence_json = json_member "persistence" json in
+  prometheus_header buffer "sim_map_persistence_sequence" "gauge"
+    "Current durable sequence";
+  Buffer.add_string buffer
+    (Printf.sprintf "sim_map_persistence_sequence %s\n"
+       (json_string "sequence" persistence_json));
+  prometheus_header buffer "sim_map_persistence_snapshot_pending" "gauge"
+    "Whether a snapshot is pending";
+  prometheus_metric buffer "sim_map_persistence_snapshot_pending"
+    (if json_bool "snapshot_pending" persistence_json then 1. else 0.);
+  prometheus_header buffer "sim_map_persistence_commits_since_snapshot" "gauge"
+    "Commits since the last snapshot";
+  prometheus_metric buffer "sim_map_persistence_commits_since_snapshot"
+    (json_float "commits_since_snapshot" persistence_json);
+  prometheus_header buffer "sim_map_persistence_wal_bytes" "gauge"
+    "Bytes of WAL segments on disk";
+  prometheus_metric buffer "sim_map_persistence_wal_bytes"
+    (json_float "wal_bytes" persistence_json);
+  prometheus_header buffer "sim_map_persistence_last_sync_seconds" "gauge"
+    "Most recent WAL sync duration";
+  prometheus_metric buffer "sim_map_persistence_last_sync_seconds"
+    (json_float "last_sync_ms" persistence_json /. 1000.);
+  let memory_json = json_member "memory" json in
+  prometheus_header buffer "sim_map_process_rss_bytes" "gauge"
+    "Resident set size";
+  prometheus_metric buffer "sim_map_process_rss_bytes"
+    (json_float "rss_kb" memory_json *. 1024.);
+  let adaptive = json_member "adaptive" json in
+  prometheus_header buffer "sim_map_adaptive_move_rate" "gauge"
+    "Recent move rate";
+  prometheus_metric buffer "sim_map_adaptive_move_rate"
+    (json_float "move_rate" adaptive);
+  prometheus_header buffer "sim_map_adaptive_pending_moves" "gauge"
+    "Moves awaiting a commit batch";
+  prometheus_metric buffer "sim_map_adaptive_pending_moves"
+    (json_float "pending_moves" adaptive);
+  prometheus_header buffer "sim_map_adaptive_fsync_p95_seconds" "gauge"
+    "Adaptive controller fsync p95 latency";
+  prometheus_metric buffer "sim_map_adaptive_fsync_p95_seconds"
+    (json_float "fsync_p95_us" adaptive /. 1_000_000.);
+  prometheus_header buffer "sim_map_adaptive_broadcast_backlog" "gauge"
+    "Adaptive controller broadcast backlog";
+  prometheus_metric buffer "sim_map_adaptive_broadcast_backlog"
+    (json_float "broadcast_backlog" adaptive);
+  prometheus_header buffer "sim_map_adaptive_event_lag_p95_seconds" "gauge"
+    "Adaptive controller event lag p95";
+  prometheus_metric buffer "sim_map_adaptive_event_lag_p95_seconds"
+    (json_float "event_lag_p95_ms" adaptive /. 1000.);
+  prometheus_header buffer "sim_map_end_to_end_p95_seconds" "gauge"
+    "End-to-end broadcast p95 latency";
+  prometheus_metric buffer "sim_map_end_to_end_p95_seconds"
+    (json_float "end_to_end_p95_ms" json /. 1000.);
+  Buffer.contents buffer
 
 let log_phase name started =
   let elapsed = Int64.sub (now_ns ()) started in
@@ -893,6 +1083,12 @@ let () =
          Dream.respond
            ~headers:[ ("Content-Type", "application/json") ]
            (metrics_body manager worker persistence adaptive_controller ~fixed_group ~fixed_delay_us));
+       Dream.get "/metrics.prom" (fun _req ->
+         Dream.respond
+           ~headers:
+             [ ("Content-Type", "text/plain; version=0.0.4; charset=utf-8") ]
+           (prometheus_metrics_body manager worker persistence
+              adaptive_controller ~fixed_group ~fixed_delay_us));
        Dream.get "/debug/memprof" (fun _req ->
          if int_env "SIM_MAP_MEMPROF" 0 = 0 then Dream.respond ~status:`Not_Found ""
          else

@@ -5,14 +5,13 @@
 chess.jamesashwood.com {
 	encode zstd gzip
 
-	# Operational endpoints stay available only inside the Docker network.
-	# Inspect them with:
-	#   docker compose -f /opt/sim-map/docker-compose.prod.yml exec app \
-	#     curl -fsS http://127.0.0.1:8080/metrics
+	# Public monitoring: /metrics (JSON) and /metrics.prom (Prometheus
+	# text exposition). Expensive diagnostics stay internal to the Docker
+	# network.
 	#
 	# route preserves this order: block internals first, proxy the rest.
 	route {
-		@internal path /metrics /state-hash /debug/*
+		@internal path /state-hash /debug/*
 		respond @internal 404
 
 		# Caddy's reverse_proxy handles WebSocket upgrades (including /ws)

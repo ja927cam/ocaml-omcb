@@ -242,8 +242,11 @@ numbers.
 The server exposes aggregate pipeline metrics while it runs:
 
 ```bash
-curl -s http://localhost:8080/metrics
+curl -s http://localhost:8080/metrics          # JSON
+curl -s http://localhost:8080/metrics.prom     # Prometheus text format
 ```
+
+Both are public on production (`https://chess.jamesashwood.com/metrics`).
 
 Live events are batched into kind-4 4 KiB frames by default, with the origin
 connection flushed before its response and other clients batched on a 1 ms
