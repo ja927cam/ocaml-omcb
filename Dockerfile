@@ -54,12 +54,14 @@ RUN opam update \
 
 COPY --chown=opam:opam . .
 
-RUN dune build --profile release
+# Docker RUN does not use the base image's `opam exec --` entrypoint, so the
+# switch bin directory is not on PATH here. Invoke dune through opam exec.
+RUN opam exec -- dune build --profile release
 
 # CI target: run the OCaml unit/integration tests without building the runtime
 # image. The production image still targets the `runtime` stage only.
 FROM build AS test
-RUN dune runtest --profile release
+RUN opam exec -- dune runtest --profile release
 
 # ---------------------------------------------------------------------------
 # Runtime: only the server binary, its shared libraries and the static client.

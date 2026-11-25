@@ -74,6 +74,17 @@ class DeploymentPolicyTests(unittest.TestCase):
         self.assertIn("wasm-opt --version", dockerfile)
         self.assertIn('ENV PATH="/usr/local/bin:${PATH}"', dockerfile)
 
+    def test_docker_runs_dune_through_opam_exec(self) -> None:
+        dockerfile = text("Dockerfile")
+        self.assertIn(
+            "RUN opam exec -- dune build --profile release", dockerfile
+        )
+        self.assertIn(
+            "RUN opam exec -- dune runtest --profile release", dockerfile
+        )
+        self.assertNotIn("RUN dune build", dockerfile)
+        self.assertNotIn("RUN dune runtest", dockerfile)
+
     def test_runtime_image_contains_deploy_files(self) -> None:
         dockerfile = text("Dockerfile")
         self.assertIn("FROM build AS test", dockerfile)
