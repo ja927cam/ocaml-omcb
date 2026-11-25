@@ -14,10 +14,14 @@
   <meta property="og:description" content="A single shared world of 1,000 × 1,000 live chessboards. Pan, zoom and play. Every move is permanent.">
   <meta property="og:url" content="https://chess.jamesashwood.com/">
   <meta property="og:image" content="https://chess.jamesashwood.com/static/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A wall of live chessboards and the One Million Chessboards title">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="One Million Chessboards">
   <meta name="twitter:description" content="A single shared world of 1,000 × 1,000 live chessboards.">
   <meta name="twitter:image" content="https://chess.jamesashwood.com/static/og.png">
+  <meta name="twitter:image:alt" content="A wall of live chessboards and the One Million Chessboards title">
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"One Million Chessboards","url":"https://chess.jamesashwood.com/","description":"A shared world of 1,000 x 1,000 live chessboards."}</script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23101318'/%3E%3Cpath d='M20 46h24v6H20z' fill='%237bd88f'/%3E%3Cpath d='M24 40c0-8 4-10 4-16l-4 2 6-10 10 10c6 4 6 10 4 14z' fill='%23f2f4f8'/%3E%3C/svg%3E">
   <style>
@@ -229,7 +233,7 @@
       letter-spacing: 0.02em;
     }
 
-    #help-toggle {
+    #help-toggle, #share-toggle {
       width: 36px;
       height: 36px;
       display: inline-flex;
@@ -246,7 +250,7 @@
       transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
     }
 
-    #help-toggle:hover, #help-toggle:focus-visible {
+    #help-toggle:hover, #help-toggle:focus-visible, #share-toggle:hover, #share-toggle:focus-visible {
       color: var(--text);
       border-color: var(--line-strong);
       background: rgba(34, 42, 54, 0.9);
@@ -376,6 +380,23 @@
       text-align: center;
       text-transform: uppercase;
     }
+
+    #toast {
+      position: fixed;
+      left: 50%;
+      bottom: 72px;
+      transform: translateX(-50%);
+      z-index: 40;
+      padding: 9px 14px;
+      border: 1px solid rgba(123, 216, 143, 0.35);
+      border-radius: 999px;
+      background: rgba(17, 24, 20, 0.94);
+      color: var(--accent);
+      font: 12px/1 ui-sans-serif, system-ui, sans-serif;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    #toast[hidden] { display: none; }
 
     #piece-info {
       position: fixed;
@@ -555,11 +576,32 @@
       border-bottom: 1px solid var(--line);
     }
 
-    #intro-footer a:hover {
+    #intro-footer a:hover, #intro-footer .link-button:hover {
       color: var(--text);
     }
 
+    #intro-footer .link-button {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      color: var(--muted);
+      font: inherit;
+      cursor: pointer;
+      border-bottom: 1px solid var(--line);
+    }
+
     @media (max-width: 760px) {
+      /* Blurred glass is expensive on mobile GPUs; use solid panels there. */
+      #brand, #status, #hint, #zoom-controls, #help-toggle, #intro {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(17, 21, 27, 0.94) !important;
+      }
+
+      #intro {
+        background: rgba(7, 9, 13, 0.82) !important;
+      }
+
       #topbar {
         padding: 12px 12px 26px;
       }
@@ -596,7 +638,7 @@
         display: none;
       }
 
-      #minimap-wrap {
+      #minimap-wrap, #share-toggle {
         display: none;
       }
 
@@ -674,6 +716,7 @@
     </div>
     <div id="top-actions" class="ui">
       <div id="coords" class="pill" aria-live="off">(0, 0)</div>
+      <button id="share-toggle" type="button" aria-label="Share this world">↗</button>
       <button id="help-toggle" type="button" aria-label="How to play" aria-haspopup="dialog">?</button>
     </div>
   </header>
@@ -704,11 +747,13 @@
     <pre id="piece-info-body"></pre>
   </aside>
 
+  <div id="toast" hidden role="status">Link copied</div>
+
   <div id="intro" hidden>
     <section id="intro-card" role="dialog" aria-modal="true" aria-labelledby="intro-title">
       <div class="eyebrow">A shared world</div>
       <h2 id="intro-title">One million boards.<br>One living chess world.</h2>
-      <p class="lede">Every board is real, every move is permanent, and you are playing against everyone else exploring at the same time.</p>
+      <p class="lede">Every board is real, every move is permanent, and you are playing alongside everyone else exploring at the same time. No account. No lobby.</p>
       <div class="controls">
         <div class="control"><b>Pan</b>Drag empty space to explore the world.</div>
         <div class="control"><b>Zoom</b>Scroll, pinch, or use the + / − controls.</div>
@@ -719,6 +764,7 @@
       <button id="intro-close" type="button">Enter the world</button>
       <div id="intro-footer">
         <a href="https://github.com/ja927cam/sim-map" target="_blank" rel="noreferrer">Source</a>
+        <button id="intro-share" type="button" class="link-button">Share</button>
         <a href="/status">Status</a>
         <span>1,000 × 1,000 boards</span>
       </div>
@@ -730,6 +776,9 @@
       const intro = document.getElementById('intro');
       const close = document.getElementById('intro-close');
       const help = document.getElementById('help-toggle');
+      const share = document.getElementById('share-toggle');
+      const introShare = document.getElementById('intro-share');
+      const toast = document.getElementById('toast');
       const colour = document.getElementById('colour');
       const introColour = document.getElementById('intro-colour');
       const storageKey = 'sim-map.seen-intro';
@@ -737,6 +786,32 @@
 
       function syncColour() {
         introColour.textContent = colour.textContent.trim() || 'White';
+      }
+
+      let toastTimer = 0;
+      function showToast(message) {
+        toast.textContent = message;
+        toast.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toast.hidden = true; }, 1800);
+      }
+
+      async function shareWorld() {
+        const url = location.origin + '/';
+        const data = {
+          title: 'One Million Chessboards',
+          text: 'A shared world of 1,000 x 1,000 live chessboards.',
+          url,
+        };
+        if (navigator.share) {
+          try { await navigator.share(data); return; } catch (_) { return; }
+        }
+        try {
+          await navigator.clipboard.writeText(url);
+          showToast('Link copied');
+        } catch (_) {
+          window.prompt('Copy this link', url);
+        }
       }
 
       function openIntro() {
@@ -754,6 +829,8 @@
 
       close.addEventListener('click', closeIntro);
       help.addEventListener('click', openIntro);
+      share.addEventListener('click', shareWorld);
+      introShare.addEventListener('click', shareWorld);
       intro.addEventListener('click', function (event) {
         if (event.target === intro) closeIntro();
       });
