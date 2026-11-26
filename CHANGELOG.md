@@ -71,6 +71,14 @@
   derived from the bounded ledger at startup and updated on every commit, and
   are available at `/tally.json` and in `/metrics`.
 
+- Fixed iPhone playability. Touch input now uses native Touch Events with
+  non-passive `preventDefault`, so iOS Safari no longer cancels the gesture
+  into a page scroll. Pointer capture keeps mouse drags flowing, panning stays
+  available while a move is awaiting its response, and the tap slop is
+  measured in CSS pixels instead of physical canvas pixels (the old 12-pixel
+  limit was only 4 CSS pixels at iPhone DPR 3, rejecting ordinary fingertip
+  jitter).
+
 - Added a first-visit introduction and help dialog explaining the shared
   world, panning, zooming, moves and piece inspection.
 - Added a branded top bar, player colour, coordinate and zoom controls, a

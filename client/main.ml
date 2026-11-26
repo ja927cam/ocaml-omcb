@@ -480,6 +480,7 @@ let main () =
   let click_streak : click_streak option ref = ref None in
   let pointer_down_at : (float * float) option ref = ref None in
   let pointer_down_time = ref 0. in
+  let last_touch_end = ref (-1e9) in
   let selected : (board_state * int) option ref = ref None in
   let hint_targets : Move_hints.target list ref = ref [] in
   (* Load telemetry. The browser tests assert the board count, batch count and
@@ -543,9 +544,13 @@ let main () =
   in
   update_layout ();
 
+  let to_canvas_xy x y =
+    ( (x -. !origin_x) *. !scale_x,
+      (y -. !origin_y) *. !scale_y )
+  in
+
   let to_canvas_of_mouse m =
-    ( (Ev.Mouse.client_x m -. !origin_x) *. !scale_x,
-      (Ev.Mouse.client_y m -. !origin_y) *. !scale_y )
+    to_canvas_xy (Ev.Mouse.client_x m) (Ev.Mouse.client_y m)
   in
 
   let to_canvas ev =
@@ -1468,54 +1473,61 @@ let main () =
     El.set_at (Jstr.v "hidden") (Some (Jstr.v "")) piece_info_el
   in
 
+  let note_piece_info_tap bx by sq =
+    let now = Performance.now_ms G.performance in
+    let count =
+      match !click_streak with
+      | Some streak
+        when streak.cs_bx = bx && streak.cs_by = by
+             && streak.cs_sq = sq
+             && now -. streak.cs_last < 700. ->
+        streak.cs_count + 1
+      | _ -> 1
+    in
+    click_streak :=
+      Some
+        {
+          cs_bx = bx;
+          cs_by = by;
+          cs_sq = sq;
+          cs_last = now;
+          cs_count = count;
+        };
+    if count = 2 then request_piece_info bx by sq;
+    if count >= 3 then begin
+      open_piece_info bx by sq;
+      click_streak := None
+    end
+  in
+
   ignore
     (Ev.listen Ev.click
        (fun ev ->
-         let mouse = Ev.as_type ev in
-         let cx, cy = to_canvas_of_mouse mouse in
-         let moved =
-           match !pointer_down_at with
-           | Some (px, py) ->
-             abs_float (cx -. px) > 4. || abs_float (cy -. py) > 4.
-           | None -> false
-         in
-         pointer_down_at := None;
-         if not moved then
-           match board_at_canvas cx cy with
-           | None -> ()
-           | Some (bx, by, col, row) ->
-             let sq = (row * 8) + col in
-             let state = state_of bx by in
-             if
-               state.loaded
-               && Bytes.unsafe_get state.pieces sq <> empty
-             then begin
-               let now = Performance.now_ms G.performance in
-               let count =
-                 match !click_streak with
-                 | Some streak
-                   when streak.cs_bx = bx && streak.cs_by = by
-                        && streak.cs_sq = sq
-                        && now -. streak.cs_last < 700. ->
-                   streak.cs_count + 1
-                 | _ -> 1
-               in
-               click_streak :=
-                 Some
-                   {
-                     cs_bx = bx;
-                     cs_by = by;
-                     cs_sq = sq;
-                     cs_last = now;
-                     cs_count = count;
-                   };
-               if count = 2 then request_piece_info bx by sq;
-               if count >= 3 then begin
-                 open_piece_info bx by sq;
-                 click_streak := None
-               end
-             end
-             else click_streak := None)
+         (* Touch taps are already handled by the Touch Events path. A few
+            browsers still emit a compatibility click after them. *)
+         let click_now = Performance.now_ms G.performance in
+         if click_now -. !last_touch_end > 600. then begin
+           let mouse = Ev.as_type ev in
+           let cx, cy = to_canvas_of_mouse mouse in
+           let moved =
+             match !pointer_down_at with
+             | Some (px, py) ->
+               abs_float (cx -. px) > 4. || abs_float (cy -. py) > 4.
+             | None -> false
+           in
+           pointer_down_at := None;
+           if not moved then
+             match board_at_canvas cx cy with
+             | None -> click_streak := None
+             | Some (bx, by, col, row) ->
+               let sq = (row * 8) + col in
+               let state = state_of bx by in
+               if
+                 state.loaded
+                 && Bytes.unsafe_get state.pieces sq <> empty
+               then note_piece_info_tap bx by sq
+               else click_streak := None
+         end)
        (El.as_target canvas_el));
   ignore
     (Ev.listen Ev.click
@@ -1827,8 +1839,10 @@ let main () =
             end
   in
 
-  let handle_tap cx cy =
-    match board_at_canvas cx cy with
+  let handle_tap ~touch cx cy =
+    let target = board_at_canvas cx cy in
+    let moved = ref false in
+    (match target with
     | None -> clear_selection ()
     | Some (bx, by, col, row) ->
       let square = (row * 8) + col in
@@ -1850,17 +1864,20 @@ let main () =
                && target.square = square)
              !hint_targets
          then begin
-           let piece = Bytes.unsafe_get source.pieces source_square in
-           finish_drag
-             {
-               state = source;
-               from = source_square;
-               piece_byte = piece;
-               piece = glyph_of_byte piece;
-               x = cx;
-               y = cy;
-             }
-             bx by square;
+           if !pending = None then begin
+             let piece = Bytes.unsafe_get source.pieces source_square in
+             finish_drag
+               {
+                 state = source;
+                 from = source_square;
+                 piece_byte = piece;
+                 piece = glyph_of_byte piece;
+                 x = cx;
+                 y = cy;
+               }
+               bx by square;
+             moved := true
+           end;
            clear_selection ()
          end
          else clear_selection ()
@@ -1871,17 +1888,37 @@ let main () =
              select_piece state square
            else clear_selection ()
          end
-         else clear_selection ())
+         else clear_selection ()));
+    if touch then
+      match target with
+      | None -> click_streak := None
+      | Some (bx, by, col, row) ->
+        let square = (row * 8) + col in
+        let state = state_of bx by in
+        if
+          (not !moved) && state.loaded
+          && Bytes.unsafe_get state.pieces square <> empty
+        then note_piece_info_tap bx by square
+        else click_streak := None
   in
 
-  let on_pointer_down ev =
-    update_layout ();
+  let tap_slop () = 16. *. max 1. !device_pixel_ratio in
+
+  let cancel_gesture () =
+    Hashtbl.clear pointers;
+    pinch := None;
+    drag := None;
+    panning := None;
+    pointer_down_at := None;
+    clear_selection ();
+    request_draw ()
+  in
+
+  let begin_gesture ~id ~cx ~cy ~can_drag =
     pointer_down_time := Performance.now_ms G.performance;
-    let pointer = Ev.as_type ev in
-    let id = Ev.Pointer.id pointer in
-    let cx, cy = to_canvas ev in
     Hashtbl.replace pointers id (cx, cy);
-    if Hashtbl.length pointers = 2 then begin
+    let count = Hashtbl.length pointers in
+    if count = 2 then begin
       (* The second touch turns a potential drag/pan into a pinch. Nothing
          has been committed yet, so it is safe to cancel the gesture. *)
       drag := None;
@@ -1903,9 +1940,8 @@ let main () =
             }
       | _ -> ()
     end
-    else if !pinch = None && !pending = None then begin
+    else if count = 1 && !pinch = None then begin
       pointer_down_at := Some (cx, cy);
-      let button = Ev.Pointer.as_mouse pointer |> Ev.Mouse.button in
       let target = board_at_canvas cx cy in
       let drag_state =
         match target with
@@ -1922,7 +1958,7 @@ let main () =
           else None
       in
       match drag_state with
-      | Some (state, sq, byte) when button = 0 ->
+      | Some (state, sq, byte) when can_drag && !pending = None ->
         drag :=
           Some
             {
@@ -1934,6 +1970,9 @@ let main () =
               y = cy;
             }
       | _ ->
+        (* Keep panning available even while an optimistic move is waiting for
+           its response. Otherwise a slow mobile connection locks the whole
+           board for up to two seconds after every move. *)
         panning :=
           Some
             {
@@ -1945,10 +1984,7 @@ let main () =
     end
   in
 
-  let on_pointer_move ev =
-    let pointer = Ev.as_type ev in
-    let id = Ev.Pointer.id pointer in
-    let cx, cy = to_canvas ev in
+  let move_gesture ~id ~cx ~cy =
     if Hashtbl.mem pointers id then Hashtbl.replace pointers id (cx, cy);
     match !pinch with
     | Some p when Hashtbl.length pointers >= 2 ->
@@ -1994,19 +2030,19 @@ let main () =
             request_draw ()))
   in
 
-  let on_pointer_up ev =
-    let id = Ev.Pointer.id (Ev.as_type ev) in
+  let end_gesture ~id ~cx ~cy ~touch =
     Hashtbl.remove pointers id;
     let now = Performance.now_ms G.performance in
+    if touch then last_touch_end := now;
+    let slop = tap_slop () in
     let tap =
       !pinch = None
       &&
       match !pointer_down_at with
       | None -> false
       | Some (sx, sy) ->
-        let cx, cy = to_canvas ev in
         let dx = cx -. sx and dy = cy -. sy in
-        (dx *. dx) +. (dy *. dy) <= 144.
+        (dx *. dx) +. (dy *. dy) <= slop *. slop
         && now -. !pointer_down_time <= 700.
     in
     if !pinch <> None then begin
@@ -2022,8 +2058,7 @@ let main () =
       pointer_down_at := None;
       panning := None;
       drag := None;
-      let cx, cy = to_canvas ev in
-      handle_tap cx cy;
+      handle_tap ~touch cx cy;
       request_draw ()
     end
     else
@@ -2037,7 +2072,6 @@ let main () =
       (match !drag with
        | None -> ()
        | Some d ->
-         let cx, cy = to_canvas ev in
          (match board_at_canvas cx cy with
           | Some (bx, by, col, row) ->
             finish_drag d bx by ((row * 8) + col);
@@ -2048,14 +2082,127 @@ let main () =
          request_draw ())
   in
 
-  let on_pointer_cancel _ =
-    Hashtbl.clear pointers;
-    pinch := None;
-    drag := None;
-    panning := None;
-    pointer_down_at := None;
-    clear_selection ();
-    request_draw ()
+  let pointer_is_touch pointer =
+    Jstr.equal (Ev.Pointer.type' pointer) (Jstr.v "touch")
+  in
+  (* iOS Safari can cancel Pointer Events when it decides a drag is a page
+     scroll, even with touch-action:none. Touch Events are universal and
+     allow preventDefault, so they are the primary input path for touch and
+     Pointer Events are kept for mouse/pen input. Touch handlers simply never
+     fire on devices without a touch screen. *)
+  let use_touch_events = true in
+
+  let on_pointer_down ev =
+    let pointer = Ev.as_type ev in
+    let is_touch = pointer_is_touch pointer in
+    if not (is_touch && use_touch_events) then begin
+      update_layout ();
+      let id = Ev.Pointer.id pointer in
+      let cx, cy = to_canvas ev in
+      (try
+         ignore
+           (Jv.call (Jv.Id.to_jv canvas_el) "setPointerCapture"
+              [| Jv.of_int id |])
+       with _ -> ());
+      if is_touch then Ev.prevent_default ev;
+      let button = Ev.Pointer.as_mouse pointer |> Ev.Mouse.button in
+      begin_gesture ~id ~cx ~cy ~can_drag:(button = 0)
+    end
+  in
+
+  let on_pointer_move ev =
+    let pointer = Ev.as_type ev in
+    if not (pointer_is_touch pointer && use_touch_events) then begin
+      let id = Ev.Pointer.id pointer in
+      let cx, cy = to_canvas ev in
+      move_gesture ~id ~cx ~cy
+    end
+  in
+
+  let on_pointer_up ev =
+    let pointer = Ev.as_type ev in
+    if not (pointer_is_touch pointer && use_touch_events) then begin
+      let id = Ev.Pointer.id pointer in
+      let cx, cy = to_canvas ev in
+      end_gesture ~id ~cx ~cy ~touch:false
+    end
+  in
+
+  let on_pointer_cancel ev =
+    let pointer = Ev.as_type ev in
+    if not (pointer_is_touch pointer && use_touch_events) then
+      cancel_gesture ()
+  in
+
+  let touch_points ev key =
+    let touches = Jv.get (Jv.Id.to_jv ev) key in
+    let length = Jv.Int.get touches "length" in
+    List.init length (fun index ->
+        let touch = Jv.get touches (string_of_int index) in
+        ( Jv.Int.get touch "identifier",
+          Jv.Float.get touch "clientX",
+          Jv.Float.get touch "clientY" ))
+  in
+
+  let on_touch_start ev =
+    if use_touch_events then begin
+      Ev.prevent_default ev;
+      update_layout ();
+      List.iter
+        (fun (id, x, y) ->
+          let cx, cy = to_canvas_xy x y in
+          begin_gesture ~id ~cx ~cy ~can_drag:true)
+        (touch_points ev "changedTouches")
+    end
+  in
+
+  let on_touch_move ev =
+    if use_touch_events then begin
+      Ev.prevent_default ev;
+      List.iter
+        (fun (id, x, y) ->
+          let cx, cy = to_canvas_xy x y in
+          move_gesture ~id ~cx ~cy)
+        (touch_points ev "touches")
+    end
+  in
+
+  let on_touch_end ev =
+    if use_touch_events then begin
+      Ev.prevent_default ev;
+      let changed = touch_points ev "changedTouches" in
+      if changed <> [] then
+        List.iter
+          (fun (id, x, y) ->
+            let cx, cy = to_canvas_xy x y in
+            end_gesture ~id ~cx ~cy ~touch:true)
+          changed
+      else begin
+        (* Some synthetic touch drivers (and a few older WebViews) leave
+           changedTouches empty. The ended touches are the ones that are no
+           longer in [touches]. *)
+        let remaining =
+          List.map (fun (id, _, _) -> id) (touch_points ev "touches")
+        in
+        let ended =
+          Hashtbl.fold
+            (fun id position acc ->
+              if List.mem id remaining then acc else (id, position) :: acc)
+            pointers []
+        in
+        List.iter
+          (fun (id, (cx, cy)) -> end_gesture ~id ~cx ~cy ~touch:true)
+          ended
+      end
+    end
+  in
+
+  let on_touch_cancel ev =
+    if use_touch_events then begin
+      Ev.prevent_default ev;
+      last_touch_end := Performance.now_ms G.performance;
+      cancel_gesture ()
+    end
   in
 
   let on_wheel ev =
@@ -2091,6 +2238,20 @@ let main () =
   ignore (Ev.listen Ev.pointermove on_pointer_move window);
   ignore (Ev.listen Ev.pointerup on_pointer_up window);
   ignore (Ev.listen Ev.pointercancel on_pointer_cancel window);
+  let touch_opts = Ev.listen_opts ~passive:false () in
+  let touch_type name = Ev.Type.void (Jstr.v name) in
+  ignore
+    (Ev.listen ~opts:touch_opts (touch_type "touchstart") on_touch_start
+       (El.as_target canvas_el));
+  ignore
+    (Ev.listen ~opts:touch_opts (touch_type "touchmove") on_touch_move
+       (El.as_target canvas_el));
+  ignore
+    (Ev.listen ~opts:touch_opts (touch_type "touchend") on_touch_end
+       (El.as_target canvas_el));
+  ignore
+    (Ev.listen ~opts:touch_opts (touch_type "touchcancel") on_touch_cancel
+       (El.as_target canvas_el));
   ignore
     (Ev.listen
        ~opts:(Ev.listen_opts ~passive:false ())

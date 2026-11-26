@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#18120d">
   <link rel="canonical" href="https://chess.jamesashwood.com/">
-  <link rel="preload" href="/static/main.bc.wasm.js?v=20261126c" as="script">
+  <link rel="preload" href="/static/main.bc.wasm.js?v=20261126d" as="script">
   <title>One Million Chessboards — a shared living world</title>
   <meta name="description" content="A single shared world of 1,000 × 1,000 live chessboards. Pan, zoom and play. Every move is permanent.">
   <meta property="og:type" content="website">
@@ -58,6 +58,7 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
+      overscroll-behavior: none;
       background:
         radial-gradient(1100px 760px at 50% -12%, #3a2a1c 0%, transparent 64%),
         radial-gradient(900px 500px at 50% 112%, #2a1f16 0%, transparent 60%),
@@ -84,6 +85,9 @@
       width: 100vw;
       height: 100vh;
       touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
       cursor: grab;
       outline: none;
     }
@@ -868,7 +872,7 @@
   <div id="bottom-bar">
     <div id="status" data-status="connecting" aria-live="polite">Connecting...</div>
     <div id="hint" class="ui" aria-hidden="true">
-      <b>Tap a piece</b>, then a highlighted square · <b>Drag</b> to pan · <b>Scroll</b> to zoom
+      <b>Tap a piece</b>, then a highlighted square · <b>Drag</b> to pan · <b>Pinch</b> to zoom
     </div>
     <div id="zoom-controls" class="glass ui" role="group" aria-label="Zoom controls">
       <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
@@ -897,7 +901,7 @@
         <div class="control"><b>Pan</b>Drag empty space to explore the world.</div>
         <div class="control"><b>Zoom</b>Scroll, pinch, or use the + / − controls.</div>
         <div class="control"><b>Move</b>Tap a piece, then tap a highlighted square. Dragging still works.</div>
-        <div class="control"><b>Inspect</b>Triple-click a piece for its full history.</div>
+        <div class="control"><b>Inspect</b>Double/triple-tap (or double/triple-click) a piece for its full history.</div>
       </div>
       <p class="note">You are playing <strong id="intro-colour">White</strong> on this device. Captures are only allowed on the board a piece started on.</p>
       <button id="intro-close" type="button">Enter the world</button>
@@ -1107,7 +1111,7 @@
   <script>
     (function () {
       const params = new URLSearchParams(window.location.search);
-      const entry = '/static/main.bc.wasm.js?v=20261126c';
+      const entry = '/static/main.bc.wasm.js?v=20261126d';
       let loaded = false;
       function loadClient() {
         if (loaded) return;
