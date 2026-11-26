@@ -142,6 +142,37 @@ async function freePort() {
       await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       await sleep(350);
     };
+    // Client bytes use 2 = bishop and 3 = knight. Selecting a blocked
+    // bishop must not show knight jumps, and the b1 knight must show its
+    // two open squares (a3 and c3).
+    await tap(point(2, 7)); // white c1 bishop
+    const bishop = JSON.parse(
+      await evaluate(`JSON.stringify({
+        square: document.body.dataset.selectedSquare,
+        hints: document.body.dataset.hintCount,
+        targets: document.body.dataset.hintTargets
+      })`)
+    );
+    if (bishop.square !== "58" || bishop.hints !== "0") {
+      throw new Error(`c1 bishop hints are wrong: ${JSON.stringify(bishop)}`);
+    }
+    await tap(point(1, 7)); // white b1 knight
+    const knight = JSON.parse(
+      await evaluate(`JSON.stringify({
+        square: document.body.dataset.selectedSquare,
+        hints: document.body.dataset.hintCount,
+        targets: document.body.dataset.hintTargets
+      })`)
+    );
+    if (knight.square !== "57" || knight.hints !== "2") {
+      throw new Error(`b1 knight hints are wrong: ${JSON.stringify(knight)}`);
+    }
+    for (const square of ["40", "42"]) {
+      if (!String(knight.targets).includes(`500:500:${square}`)) {
+        throw new Error(`b1 knight is missing square ${square}: ${knight.targets}`);
+      }
+    }
+
     await tap(point(4, 6)); // white e2
     const selected = JSON.parse(
       await evaluate(`JSON.stringify({

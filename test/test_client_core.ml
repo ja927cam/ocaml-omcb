@@ -338,12 +338,18 @@ let test_hints_rook () =
   check "rook stops after capture" (not (has_target targets 0 0 40))
 
 let test_hints_knight_pawn () =
-  let knight = piece_byte 2 true true in
+  let knight = piece_byte 3 true true in
   let pieces = pieces_with [ (57, knight) ] in
   let get = hint_boards [ (0, 0, pieces) ] in
   let targets = H.targets ~get ~bx:0 ~by:0 ~square:57 ~piece:knight in
   check_int "knight from b1" 3 (List.length targets);
   check "knight a3" (has_target targets 0 0 40);
+  let bishop = piece_byte 2 true true in
+  let pieces = pieces_with [ (36, bishop) ] in
+  let get = hint_boards [ (0, 0, pieces) ] in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:36 ~piece:bishop in
+  check_int "bishop from e4" 13 (List.length targets);
+  check "bishop b1" (has_target targets 0 0 57);
   let pawn = piece_byte 1 true true in
   let pieces = pieces_with [ (52, pawn); (43, piece_byte 1 false true) ] in
   let get = hint_boards [ (0, 0, pieces) ] in

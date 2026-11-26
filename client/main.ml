@@ -1283,8 +1283,8 @@ let main () =
 
   let piece_type_name = function
     | 1 -> "Pawn"
-    | 2 -> "Knight"
-    | 3 -> "Bishop"
+    | 2 -> "Bishop"
+    | 3 -> "Knight"
     | 4 -> "Rook"
     | 5 -> "Queen"
     | 6 -> "King"
@@ -1298,8 +1298,8 @@ let main () =
   let piece_glyph type_code white =
     match type_code with
     | 1 -> if white then "\xe2\x99\x99" else "\xe2\x99\x9f"
-    | 2 -> if white then "\xe2\x99\x98" else "\xe2\x99\x9e"
-    | 3 -> if white then "\xe2\x99\x97" else "\xe2\x99\x9d"
+    | 2 -> if white then "\xe2\x99\x97" else "\xe2\x99\x9d"
+    | 3 -> if white then "\xe2\x99\x98" else "\xe2\x99\x9e"
     | 4 -> if white then "\xe2\x99\x96" else "\xe2\x99\x9c"
     | 5 -> if white then "\xe2\x99\x95" else "\xe2\x99\x9b"
     | 6 -> if white then "\xe2\x99\x94" else "\xe2\x99\x9a"

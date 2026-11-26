@@ -50,6 +50,14 @@
 
 ### Client experience
 
+- Fixed bishop and knight move hints. Compact board bytes use `2` for a
+  bishop and `3` for a knight; the hint generator, piece names and piece
+  glyphs previously treated those codes the other way round, so selecting a
+  blocked bishop could show knight jumps and a knight could show no dots.
+  Added unit coverage and a browser regression that selects c1 and b1 on a
+  pristine board.
+
+
 - Added tap-to-select and tap-to-move for phones, tablets and touch screens.
   Tapping one of your pieces highlights possible destinations; tapping a
   highlighted square sends the move. Dragging remains supported. Move hints
