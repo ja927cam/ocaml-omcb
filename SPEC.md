@@ -511,7 +511,13 @@ captured square; the processor never reclassifies the move.
 
 ### Castling
 
-- Recompute the rook source and destination from the king’s move.
+- An unmoved king and an unmoved same-colour rook on the same rank may castle
+  with a clear path, including across board boundaries, up to 36 squares apart.
+- The king must move to the central square on the rook's side; the rook moves
+  to the other central square. The pieces therefore land on the two middle
+  squares between their starting positions and swap sides.
+- Both pieces must have move count zero. Any prior move, including leaving the
+  original board, removes the right.
 - Increment king and rook move counts from 0 to 1.
 - Set each piece's `on_original_board` from its destination board.
 - Clear both original squares.

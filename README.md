@@ -202,6 +202,9 @@ The board grid fills the whole window.
   destinations. Quiet moves may cross board boundaries. A piece can only
   capture while it is on its own original board; leaving clears the capturable
   bit and returning restores it.
+- Castling can span boards. An unmoved king and rook on the same rank, with a
+  clear path up to 36 squares apart, move to the two central squares between
+  them and swap sides. Either piece loses this right after any move.
 - The current centre is shown in the top-right corner. A new visitor without
   explicit coordinates joins near the busiest group of current viewers.
 - `?x=<board_x>&y=<board_y>` opens the client centred on that board.

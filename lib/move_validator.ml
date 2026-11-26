@@ -60,29 +60,50 @@ let same_colour a b = Piece.is_white a = Piece.is_white b
 let validate_castle t (move : Move.t) moving =
   let src = move.src and dst = move.dst in
   let src_x = Board.world_x src and src_y = Board.world_y src in
-  let dst_x = Board.world_x dst in
+  let dst_x = Board.world_x dst and dst_y = Board.world_y dst in
   let dx = dst_x - src_x in
-  if Piece.move_count moving <> 0 then Illegal Invalid_special_move
+  if
+    dst_y <> src_y || abs_int dx < 2 || abs_int dx > max_move_distance
+    || Piece.move_count moving <> 0
+  then Illegal Invalid_special_move
   else
-    let rook_x = src_x + if dx = 2 then 3 else -4 in
-    if not (world_in_bounds rook_x src_y) then Illegal Invalid_special_move
-    else
-      let rook_src = Board.position_of_world ~x:rook_x ~y:src_y in
-      let rook = Board.get t rook_src in
+    let direction = if dx > 0 then 1 else -1 in
+    let rec find_rook x =
       if
-        Piece.is_empty rook
-        || Piece.piece_type rook <> Piece.Rook
-        || not (same_colour rook moving)
-        || Piece.move_count rook <> 0
-      then Illegal Invalid_special_move
-      else if not (path_clear t src rook_src) then Illegal Blocked_path
+        abs (x - src_x) > max_move_distance
+        || not (world_in_bounds x src_y)
+      then None
       else
-        let rook_dst_x = dst_x + if dx = 2 then -1 else 1 in
-        if not (world_in_bounds rook_dst_x src_y) then
+        let candidate = Board.position_of_world ~x ~y:src_y in
+        let piece = Board.get t candidate in
+        if Piece.is_empty piece then find_rook (x + direction)
+        else if
+          Piece.piece_type piece = Piece.Rook
+          && same_colour piece moving
+          && Piece.move_count piece = 0
+        then Some (x, candidate)
+        else find_rook (x + direction)
+    in
+    match find_rook (src_x + direction) with
+    | None -> Illegal Invalid_special_move
+    | Some (rook_x, rook_src) ->
+      let lo = min src_x rook_x and hi = max src_x rook_x in
+      let distance = hi - lo in
+      if distance < 3 then Illegal Invalid_special_move
+      else
+        let mid_lo = (lo + hi) / 2 in
+        let mid_hi = mid_lo + 1 in
+        let king_dst_x = if rook_x > src_x then mid_hi else mid_lo in
+        let rook_dst_x = if rook_x > src_x then mid_lo else mid_hi in
+        if dst_x <> king_dst_x then Illegal Invalid_special_move
+        else if not (path_clear t src rook_src) then Illegal Blocked_path
+        else if not (world_in_bounds rook_dst_x src_y) then
           Illegal Invalid_special_move
         else
           let rook_dst = Board.position_of_world ~x:rook_dst_x ~y:src_y in
-          legal (Castle { rook_src; rook_dst }) moving Piece.empty src dst
+          if not (Piece.is_empty (Board.get t rook_dst)) then
+            Illegal Invalid_special_move
+          else legal (Castle { rook_src; rook_dst }) moving Piece.empty src dst
 
 let validate_en_passant t (move : Move.t) moving =
   let src = move.src and dst = move.dst in
@@ -171,7 +192,7 @@ let validate t (move : Move.t) =
         then Illegal Invalid_geometry
         else if
           Piece.piece_type moving = Piece.King
-          && abs_int dx = 2 && dy = 0
+          && abs_int dx >= 2 && dy = 0
         then validate_castle t move moving
         else if
           Piece.piece_type moving = Piece.Pawn

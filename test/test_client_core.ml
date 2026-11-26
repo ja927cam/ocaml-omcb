@@ -358,6 +358,28 @@ let test_hints_knight_pawn () =
   check "pawn two forward" (has_target targets 0 0 36);
   check "pawn diagonal capture" (capture_target targets 0 0 43)
 
+let test_hints_extended_castle () =
+  let king = piece_byte ~unmoved:true 6 true true in
+  let rook = piece_byte ~unmoved:true 4 true true in
+  let left = pieces_with [ (60, king) ] in
+  let right = pieces_with [ (60, rook) ] in
+  let get = hint_boards [ (0, 0, left); (1, 0, right) ] in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:60 ~piece:king in
+  check "extended castle king target" (has_target targets 1 0 57);
+  (match
+     List.find_opt
+       (fun (t : H.target) -> t.bx = 1 && t.by = 0 && t.square = 57)
+       targets
+   with
+   | Some { castle = Some c; _ } ->
+     check "extended castle rook destination board" (c.rook_dst_bx = 1);
+     check "extended castle rook destination square" (c.rook_dst_square = 56)
+   | _ -> failwith "FAIL: extended castle missing rook destination");
+  let blocked = pieces_with [ (60, king); (61, piece_byte 1 true true) ] in
+  let get = hint_boards [ (0, 0, blocked); (1, 0, right) ] in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:60 ~piece:king in
+  check "extended castle blocked" (not (has_target targets 1 0 57))
+
 let test_hints_slide_limit () =
   let queen = piece_byte 5 true true in
   let boards =
@@ -425,6 +447,7 @@ let () =
   test_hints_cross_board ();
   test_hints_slide_limit ();
   test_hints_castle ();
+  test_hints_extended_castle ();
   if !failures = 0 then Printf.printf "client core tests: OK\n%!"
   else begin
     Printf.eprintf "client core tests: %d failure(s)\n%!" !failures;

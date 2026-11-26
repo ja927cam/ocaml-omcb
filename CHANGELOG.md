@@ -58,6 +58,13 @@
 
 ### Client experience
 
+- Extended castling across boards. An unmoved king and rook on the same rank
+  may castle with a clear path up to 36 squares apart. The king and rook land
+  on the two central squares between them and swap sides. The client shows the
+  king destination and the rook's destination; both pieces lose the right
+  after moving.
+
+
 - Fixed bishop and knight move hints. Compact board bytes use `2` for a
   bishop and `3` for a knight; the hint generator, piece names and piece
   glyphs previously treated those codes the other way round, so selecting a

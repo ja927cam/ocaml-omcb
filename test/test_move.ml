@@ -249,6 +249,52 @@ let test_king () =
   let _ = place Piece.Knight false 0 0 5 7 in
   expect_illegal Blocked_path (move (pos 0 0 4 7) (pos 0 0 6 7))
 
+let test_extended_castle () =
+  reset ();
+  let king = place Piece.King true 0 0 4 7 in
+  let rook = place Piece.Rook true 1 0 4 7 in
+  let info = expect_legal (move (pos 0 0 4 7) (pos 1 0 1 7)) in
+  (match info.kind with
+   | Move_validator.Castle { rook_src; rook_dst } ->
+     check "extended castle rook source" (rook_src = pos 1 0 4 7);
+     check "extended castle rook destination" (rook_dst = pos 1 0 0 7)
+   | _ -> failwith "FAIL: extended castle not classified as Castle");
+  Move_processor.apply world info;
+  check "extended castle king" (Piece.id (piece_at 1 0 1 7) = Piece.id king);
+  check "extended castle rook" (Piece.id (piece_at 1 0 0 7) = Piece.id rook);
+  check "extended castle king source empty" (Piece.is_empty (piece_at 0 0 4 7));
+  check "extended castle rook source empty" (Piece.is_empty (piece_at 1 0 4 7));
+
+  reset ();
+  let _ = place Piece.King true 0 0 4 7 in
+  let _ = place Piece.Rook true 1 0 4 7 in
+  let _ = place Piece.Knight true 0 0 5 7 in
+  expect_illegal Blocked_path (move (pos 0 0 4 7) (pos 1 0 1 7));
+
+  reset ();
+  let _ = place Piece.King true 0 0 4 7 in
+  let _ = place Piece.Rook true 1 0 4 7 in
+  let king = piece_at 0 0 4 7 in
+  put (Piece.increment_move_count king) 0 0 4 7;
+  expect_illegal Invalid_special_move (move (pos 0 0 4 7) (pos 1 0 1 7));
+
+  reset ();
+  let _ = place Piece.King true 0 0 4 7 in
+  let _ = place Piece.Rook true 1 0 4 7 in
+  let rook = piece_at 1 0 4 7 in
+  put (Piece.increment_move_count rook) 1 0 4 7;
+  expect_illegal Invalid_special_move (move (pos 0 0 4 7) (pos 1 0 1 7));
+
+  reset ();
+  let _ = place Piece.King true 0 0 4 7 in
+  let _ = place Piece.Rook true 1 0 4 7 in
+  expect_illegal Invalid_special_move (move (pos 0 0 4 7) (pos 1 0 0 7));
+
+  reset ();
+  let _ = place Piece.King true 0 0 4 7 in
+  let _ = place Piece.Rook true 5 0 4 7 in
+  expect_illegal Invalid_special_move (move (pos 0 0 4 7) (pos 2 0 1 7))
+
 let test_capture_off_original_board () =
   reset ();
   let rook =
@@ -473,6 +519,7 @@ let () =
   test_knight ();
   test_sliders ();
   test_king ();
+  test_extended_castle ();
   test_capture_off_original_board ();
   test_en_passant ();
   test_promotion ();

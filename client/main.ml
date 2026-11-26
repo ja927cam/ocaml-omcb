@@ -402,6 +402,7 @@ let main () =
   let hint_stroke = C2d.color (Jstr.v "#e4c889") in
   let hint_dot = C2d.color (Jstr.v "rgba(79, 107, 67, 0.9)") in
   let hint_capture = C2d.color (Jstr.v "#8f4f45") in
+  let castle_fill = C2d.color (Jstr.v "rgba(226, 191, 110, 0.55)") in
 
   (* One board tile blit replaces 64 per-square fills on every frame. Render
      the tile at 3x so it stays crisp when the user zooms in. *)
@@ -1064,6 +1065,24 @@ let main () =
           end
       done
     done;
+
+    (* Extended castling: show where the rook will land as well as the
+       king's destination. *)
+    List.iter
+      (fun (target : Move_hints.target) ->
+        match target.castle with
+        | None -> ()
+        | Some castle ->
+          let ox = (float castle.rook_dst_bx -. !view_left) *. board_px () in
+          let oy = (float castle.rook_dst_by -. !view_top) *. board_px () in
+          C2d.set_fill_style ctx castle_fill;
+          C2d.fill_rect ctx
+            ~x:(ox
+               +. (float (castle.rook_dst_square mod 8) *. cell_px ()))
+            ~y:(oy
+               +. (float (castle.rook_dst_square / 8) *. cell_px ()))
+            ~w:(cell_px ()) ~h:(cell_px ()))
+      !hint_targets;
 
     List.iter
       (fun (target : Move_hints.target) ->
@@ -1739,53 +1758,42 @@ let main () =
                     ((d.from lsl 8) lor Char.code d.piece_byte)
                 in
                 let castle =
-                  if king && abs dx = 2 && dy = 0 then begin
-                    let src_world_x = (src_bx * 8) + (d.from mod 8) in
-                    let src_world_y = (src_by * 8) + (d.from / 8) in
-                    let dst_world_x = (bx * 8) + (dst mod 8) in
-                    let dst_world_y = (by * 8) + (dst / 8) in
-                    let rook_src_world_x =
-                      src_world_x + if dx = 2 then 3 else -4
+                  if king && dy = 0 && abs dx >= 2 then
+                    let castles =
+                      Move_hints.castling ~get:get_loaded_pieces ~bx:src_bx
+                        ~by:src_by ~square:d.from
+                        ~piece:(Char.code d.piece_byte)
                     in
-                    let rook_dst_world_x =
-                      dst_world_x + if dx = 2 then -1 else 1
-                    in
-                    if
-                      rook_src_world_x >= 0 && rook_src_world_x < 8000
-                      && rook_dst_world_x >= 0 && rook_dst_world_x < 8000
-                    then begin
-                      let rook_src_bx = rook_src_world_x / 8 in
-                      let rook_src_by = src_world_y / 8 in
-                      let rook_dst_bx = rook_dst_world_x / 8 in
-                      let rook_dst_by = dst_world_y / 8 in
-                      let rook_src =
-                        ((src_world_y mod 8) * 8)
-                        + (rook_src_world_x mod 8)
+                    match
+                      List.find_opt
+                        (fun (c : Move_hints.castle) ->
+                          c.king_bx = bx && c.king_by = by
+                          && c.king_square = dst)
+                        castles
+                    with
+                    | None -> None
+                    | Some c ->
+                      let rook_src_state = state_of c.rook_bx c.rook_by in
+                      let rook_dst_state =
+                        state_of c.rook_dst_bx c.rook_dst_by
                       in
-                      let rook_dst =
-                        ((dst_world_y mod 8) * 8)
-                        + (rook_dst_world_x mod 8)
-                      in
-                      let rook_src_state = state_of rook_src_bx rook_src_by in
-                      if rook_src_state.loaded then
+                      if rook_src_state.loaded && rook_dst_state.loaded then
                         Some
                           {
                             king_src_state = d.state;
                             king_dst_state = dst_state;
                             rook_src_state;
-                            rook_dst_state = state_of rook_dst_bx rook_dst_by;
+                            rook_dst_state;
                             king_src = d.from;
                             king_dst = dst;
-                            rook_src;
-                            rook_dst;
+                            rook_src = c.rook_square;
+                            rook_dst = c.rook_dst_square;
                             king_piece = d.piece_byte;
                             rook_piece =
-                              Bytes.unsafe_get rook_src_state.pieces rook_src;
+                              Bytes.unsafe_get rook_src_state.pieces
+                                c.rook_square;
                           }
                       else None
-                    end
-                    else None
-                  end
                   else None
                 in
                 let action =
