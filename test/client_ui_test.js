@@ -189,6 +189,28 @@ async function main() {
     if (mobileLayout.minimap !== "none") fail("minimap should be hidden on mobile");
     if (mobileLayout.brandRight > mobileLayout.width + 1) fail("brand overflows on mobile");
 
+    // Tall/narrow desktop windows used to run the full hint into the status
+    // pill. It should be hidden as soon as there is not enough room.
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 900,
+      height: 1000,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await sleep(350);
+    const verticalLayout = JSON.parse(
+      await evaluate(`JSON.stringify({
+        hint: getComputedStyle(document.getElementById('hint')).display,
+        statusRight: document.getElementById('status').getBoundingClientRect().right,
+        zoomLeft: document.getElementById('zoom-controls').getBoundingClientRect().left,
+        width: window.innerWidth
+      })`)
+    );
+    if (verticalLayout.hint !== "none") fail("hint should be hidden in a narrow vertical window");
+    if (verticalLayout.statusRight > verticalLayout.zoomLeft) {
+      fail("status and zoom controls overlap in a vertical window");
+    }
+
     await send("Emulation.setDeviceMetricsOverride", {
       width: 320,
       height: 700,
