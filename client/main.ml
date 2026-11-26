@@ -1664,7 +1664,10 @@ let main () =
 
   let finish_drag d bx by dst =
     let dst_state = state_of bx by in
-    if dst_state.loaded && dst <> d.from then begin
+    let same_position =
+      bx = d.state.bx && by = d.state.by && dst = d.from
+    in
+    if dst_state.loaded && not same_position then begin
               let src_bx = d.state.bx and src_by = d.state.by in
               let same_board = bx = src_bx && by = src_by in
               let dst_piece = Bytes.unsafe_get dst_state.pieces dst in

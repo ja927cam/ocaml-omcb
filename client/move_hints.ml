@@ -62,14 +62,17 @@ let targets ~get ~bx ~by ~square ~piece =
     List.iter
       (fun (dx, dy) ->
         let rec go wx wy =
-          match at wx wy with
-          | None -> ()
-          | Some (tx, ty, square, byte) ->
-            if byte = empty then begin
-              add tx ty square;
-              go (wx + dx) (wy + dy)
-            end
-            else if can_capture tx ty byte then add ~capture:true tx ty square
+          let ddx = abs (wx - src_x) and ddy = abs (wy - src_y) in
+          if ddx > 36 || ddy > 36 then ()
+          else
+            match at wx wy with
+            | None -> ()
+            | Some (tx, ty, square, byte) ->
+              if byte = empty then begin
+                add tx ty square;
+                go (wx + dx) (wy + dy)
+              end
+              else if can_capture tx ty byte then add ~capture:true tx ty square
         in
         go (src_x + dx) (src_y + dy))
       steps

@@ -358,6 +358,30 @@ let test_hints_knight_pawn () =
   check "pawn two forward" (has_target targets 0 0 36);
   check "pawn diagonal capture" (capture_target targets 0 0 43)
 
+let test_hints_slide_limit () =
+  let queen = piece_byte 5 true true in
+  let boards =
+    List.init 7 (fun bx -> (bx, 0, empty_pieces ()))
+    |> List.map (fun (bx, by, pieces) ->
+           if bx = 0 then
+             let pieces = Bytes.copy pieces in
+             Bytes.set pieces 36 (Char.chr queen);
+             (bx, by, pieces)
+           else (bx, by, pieces))
+  in
+  let get = hint_boards boards in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:36 ~piece:queen in
+  let too_far =
+    List.exists
+      (fun (t : H.target) ->
+        let wx = (t.bx * 8) + (t.square mod 8) in
+        let wy = (t.by * 8) + (t.square / 8) in
+        abs (wx - (0 * 8 + 4)) > 36 || abs (wy - (0 * 8 + 4)) > 36)
+      targets
+  in
+  check "queen hints stay within 36 squares" (not too_far);
+  check "queen hint reaches 36 squares" (has_target targets 5 0 32)
+
 let test_hints_cross_board () =
   let rook = piece_byte 4 true true in
   let left = pieces_with [ (63, rook) ] in
@@ -399,6 +423,7 @@ let () =
   test_hints_rook ();
   test_hints_knight_pawn ();
   test_hints_cross_board ();
+  test_hints_slide_limit ();
   test_hints_castle ();
   if !failures = 0 then Printf.printf "client core tests: OK\n%!"
   else begin

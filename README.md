@@ -76,6 +76,7 @@ node test/client_panning_test.js    # rapid panning, cache bound and settle time
 node test/client_ui_test.js         # intro, help, zoom, minimap, mobile, status page
 node test/client_tap_move_test.js   # touch tap-to-select and tap-to-move
 node test/client_touch_test.js      # DPR-3 iPhone touch tap, move and pan
+node test/client_cross_board_test.js  # same-square move onto an adjacent board
 node test/client_activity_tally_test.js  # join-near-activity and king tally
 node test/client_reconnect_test.js  # server restart / automatic reconnect
 MODE=bounded node test/subscription_stress_test.js  # subscription/RSS bounds
