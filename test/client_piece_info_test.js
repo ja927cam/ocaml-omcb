@@ -8,7 +8,7 @@
  * their colour, type, square and zero moves on a pristine board.
  *
  * Requires the game server at http://localhost:8080 (override with
- * SIM_MAP_TEST_URL) and chromium on PATH.
+ * OCAML_OMCB_TEST_URL) and chromium on PATH.
  */
 
 const { spawn } = require("child_process");
@@ -16,7 +16,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const SERVER = process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
+const SERVER = process.env.OCAML_OMCB_TEST_URL || process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
 const WS_URL = SERVER.replace(/^http/, "ws").replace(/\/$/, "") + "/ws";
 const BOARD_SCALE = 216;
 const CELL = BOARD_SCALE / 8;
@@ -212,7 +212,7 @@ async function main() {
     })();`;
     await send("Page.addScriptToEvaluateOnNewDocument", { source: hook });
     await send("Page.enable");
-    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}" });
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ocaml-omcb.seen-intro', '1'); } catch (_) {}" });
     await send("Runtime.enable");
     await send("Page.navigate", { url: `${SERVER}?x=${board.x}&y=${board.y}` });
 

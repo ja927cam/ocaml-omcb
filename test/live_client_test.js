@@ -12,7 +12,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const SERVER = process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
+const SERVER = process.env.OCAML_OMCB_TEST_URL || process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
 const WS_URL = SERVER.replace(/^http/, "ws").replace(/\/$/, "") + "/ws";
 const BOARD_SCALE = 216;
 const CELL = BOARD_SCALE / 8;
@@ -211,7 +211,7 @@ async function main() {
       };
     })();`;
     await send("Page.enable");
-    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}" });
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ocaml-omcb.seen-intro', '1'); } catch (_) {}" });
     await send("Page.addScriptToEvaluateOnNewDocument", { source: hook });
     await send("Page.navigate", { url: `${SERVER}?x=${board.x}&y=${board.y}` });
     await sleep(1500);

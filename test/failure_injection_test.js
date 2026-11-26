@@ -3,7 +3,7 @@
  * Operational failure-injection audit.
  *
  * Spawns real servers against isolated data directories, injects one-shot I/O
- * failures through the test-only SIM_MAP_FAULT hooks, and verifies the
+ * failures through the test-only OCAML_OMCB_FAULT hooks, and verifies the
  * durable-before-publish and recovery invariants. Writes a Markdown report and
  * a machine-readable result file under bench/.
  *
@@ -65,18 +65,18 @@ async function startServer({
     fs.mkdirSync(dir, { recursive: true });
   }
   if (!(await portFree())) fail("port 8080 is in use");
-  const logPath = path.join("/tmp", `sim-map-failure-${name}.log`);
+  const logPath = path.join("/tmp", `ocaml-omcb-failure-${name}.log`);
   const log = fs.openSync(logPath, "w");
   const child = spawn(SERVER, [], {
     cwd: ROOT,
     env: {
       ...process.env,
-      SIM_MAP_DATA_DIR: dir,
-      SIM_MAP_ADAPTIVE: "0",
-      SIM_MAP_WAL_GROUP: "16",
-      SIM_MAP_WAL_GROUP_DELAY_US: "10000",
-      SIM_MAP_SNAPSHOT_MOVES: "0",
-      SIM_MAP_SNAPSHOT_SECONDS: "0",
+      OCAML_OMCB_DATA_DIR: dir,
+      OCAML_OMCB_ADAPTIVE: "0",
+      OCAML_OMCB_WAL_GROUP: "16",
+      OCAML_OMCB_WAL_GROUP_DELAY_US: "10000",
+      OCAML_OMCB_SNAPSHOT_MOVES: "0",
+      OCAML_OMCB_SNAPSHOT_SECONDS: "0",
       ...env,
     },
     stdio: ["ignore", log, log],
@@ -214,8 +214,8 @@ async function walFailureCase({ name, fault, after, expectedGroup }) {
   const server = await startServer({
     name,
     env: {
-      SIM_MAP_FAULT: fault,
-      SIM_MAP_FAULT_AFTER: String(after),
+      OCAML_OMCB_FAULT: fault,
+      OCAML_OMCB_FAULT_AFTER: String(after),
     },
   });
   const watcher = new Client(9000, "probe");
@@ -313,10 +313,10 @@ async function rotationFailureCase() {
   const server = await startServer({
     name,
     env: {
-      SIM_MAP_FAULT: "wal-rotate",
+      OCAML_OMCB_FAULT: "wal-rotate",
       // open_wal_segment is also called at startup; fail the first rotation.
-      SIM_MAP_FAULT_AFTER: "1",
-      SIM_MAP_SNAPSHOT_MOVES: "10",
+      OCAML_OMCB_FAULT_AFTER: "1",
+      OCAML_OMCB_SNAPSHOT_MOVES: "10",
     },
   });
   const clients = await openClients(8);
@@ -378,9 +378,9 @@ async function snapshotFailureCase(fault) {
   const server = await startServer({
     name,
     env: {
-      SIM_MAP_FAULT: fault,
-      SIM_MAP_FAULT_AFTER: "0",
-      SIM_MAP_SNAPSHOT_MOVES: "10",
+      OCAML_OMCB_FAULT: fault,
+      OCAML_OMCB_FAULT_AFTER: "0",
+      OCAML_OMCB_SNAPSHOT_MOVES: "10",
     },
   });
   const clients = await openClients(8);
@@ -440,7 +440,7 @@ async function shutdownCase(mode) {
   const server = await startServer({
     name,
     env: {
-      SIM_MAP_SNAPSHOT_MOVES: mode === "snapshot" ? "10" : "0",
+      OCAML_OMCB_SNAPSHOT_MOVES: mode === "snapshot" ? "10" : "0",
     },
   });
   const clients = await openClients(8);

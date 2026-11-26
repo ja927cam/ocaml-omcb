@@ -1,2 +1,2 @@
 (lang dune 3.17)
-(name sim_map)
+(name ocaml-omcb)

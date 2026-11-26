@@ -28,7 +28,7 @@ async function freePort() {
 
 (async () => {
   const port = await freePort();
-  const data = path.join(os.tmpdir(), `sim-map-reconnect-${process.pid}`);
+  const data = path.join(os.tmpdir(), `ocaml-omcb-reconnect-${process.pid}`);
   fs.rmSync(data, { recursive: true, force: true });
   fs.mkdirSync(data, { recursive: true });
   const startServer = () => {
@@ -37,11 +37,11 @@ async function freePort() {
       cwd: ROOT,
       env: {
         ...process.env,
-        SIM_MAP_DATA_DIR: data,
-        SIM_MAP_PORT: String(port),
-        SIM_MAP_INTERFACE: "127.0.0.1",
-        SIM_MAP_SNAPSHOT_MOVES: "0",
-        SIM_MAP_SNAPSHOT_SECONDS: "0",
+        OCAML_OMCB_DATA_DIR: data,
+        OCAML_OMCB_PORT: String(port),
+        OCAML_OMCB_INTERFACE: "127.0.0.1",
+        OCAML_OMCB_SNAPSHOT_MOVES: "0",
+        OCAML_OMCB_SNAPSHOT_SECONDS: "0",
       },
       stdio: ["ignore", fd, fd],
     });
@@ -108,7 +108,7 @@ async function freePort() {
     await send("Page.enable");
     await send("Runtime.enable");
     await send("Page.addScriptToEvaluateOnNewDocument", {
-      source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}",
+      source: "try { localStorage.setItem('ocaml-omcb.seen-intro', '1'); } catch (_) {}",
     });
     const evaluate = async (expression) => {
       const result = await send("Runtime.evaluate", {

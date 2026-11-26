@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #
-# Idempotent production deployment for /opt/sim-map.
+# Idempotent production deployment for /opt/ocaml-omcb.
 #
 # Usage:
-#   sudo /opt/sim-map/deploy.sh --tag <40-character-git-sha>
-#   sudo /opt/sim-map/deploy.sh --rollback
-#   sudo /opt/sim-map/deploy.sh --rollback --tag <40-character-git-sha>
+#   sudo /opt/ocaml-omcb/deploy.sh --tag <40-character-git-sha>
+#   sudo /opt/ocaml-omcb/deploy.sh --rollback
+#   sudo /opt/ocaml-omcb/deploy.sh --rollback --tag <40-character-git-sha>
 #
 # The script only replaces the application container. It never removes
 # /srv/chess/data, never runs `docker compose down`, and never prunes images.
 set -Eeuo pipefail
 
-ROOT="/opt/sim-map"
+ROOT="${OCAML_OMCB_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 COMPOSE_FILE="${ROOT}/docker-compose.prod.yml"
 STATE_DIR="${ROOT}/state"
 DATA_DIR="/srv/chess/data"
@@ -54,7 +54,7 @@ Usage: deploy.sh --tag <40-char-git-sha>
 USAGE
 }
 
-[[ "${EUID}" -eq 0 ]] || die "run this script as root (sudo /opt/sim-map/deploy.sh ...)"
+[[ "${EUID}" -eq 0 ]] || die "run this script as root (sudo /opt/ocaml-omcb/deploy.sh ...)"
 
 MODE="deploy"
 TAG=""
@@ -124,13 +124,13 @@ guard_compose() {
   fi
   IMAGE_TAG="${TAG}" "${args[@]}" config --format json \
     | python3 "${ROOT}/validate_compose.py" "${project_dir}" "${TAG}" \
-        "ghcr.io/ja927cam/sim-map"
+        "ghcr.io/ja927cam/ocaml-omcb"
 }
 
 extract_config() {
   local image="$1"
   STAGING="$(mktemp -d "${ROOT}/.config.XXXXXX")"
-  CONFIG_CONTAINER="sim-map-config-$$"
+  CONFIG_CONTAINER="ocaml-omcb-config-$$"
   if ! docker create --name "${CONFIG_CONTAINER}" "${image}" >/dev/null; then
     rm -rf "${STAGING}"
     STAGING=""
@@ -138,7 +138,7 @@ extract_config() {
   fi
   local file
   for file in docker-compose.prod.yml Caddyfile deploy.sh pull_agent.py validate_compose.py; do
-    if ! docker cp "${CONFIG_CONTAINER}:/opt/sim-map/deploy/${file}" \
+    if ! docker cp "${CONFIG_CONTAINER}:/opt/ocaml-omcb/deploy/${file}" \
         "${STAGING}/${file}" >/dev/null 2>&1; then
       docker rm -f -v "${CONFIG_CONTAINER}" >/dev/null 2>&1 || true
       CONFIG_CONTAINER=""
@@ -153,10 +153,10 @@ extract_config() {
 }
 
 # Optional GHCR credentials for a private package. Keep this file root-only.
-if [[ -f /etc/sim-map/ghcr.env ]]; then
+if [[ -f /etc/ocaml-omcb/ghcr.env ]]; then
   # shellcheck disable=SC1091
   set -a
-  . /etc/sim-map/ghcr.env
+  . /etc/ocaml-omcb/ghcr.env
   set +a
   if [[ -n "${GHCR_TOKEN:-}" ]]; then
     [[ -n "${GHCR_USERNAME:-}" ]] \

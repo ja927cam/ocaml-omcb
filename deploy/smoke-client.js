@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /* Minimal live WebSocket check used by deploy/smoke-test.sh. */
 
-process.env.SIM_MAP_WS_URL =
-  process.env.SIM_MAP_WS_URL || process.argv[2] || "ws://127.0.0.1:8080/ws";
+process.env.OCAML_OMCB_WS_URL =
+  process.env.OCAML_OMCB_WS_URL || process.env.SIM_MAP_WS_URL || process.argv[2] || "ws://127.0.0.1:8080/ws";
 
 const path = require("path");
 const { Client } = require(path.join(__dirname, "..", "bench", "ws_client.js"));

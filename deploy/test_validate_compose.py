@@ -74,7 +74,7 @@ class ComposeValidatorTests(unittest.TestCase):
     def test_wrong_app_image(self) -> None:
         self.assert_rejected(
             lambda c: c["services"]["app"].__setitem__(
-                "image", "ghcr.io/attacker/sim-map:" + TAG
+                "image", "ghcr.io/attacker/ocaml-omcb:" + TAG
             ),
             "app image",
         )
@@ -92,8 +92,8 @@ class ComposeValidatorTests(unittest.TestCase):
             lambda c: c["services"]["app"]["volumes"].append(
                 {
                     "type": "bind",
-                    "source": "/opt/sim-map",
-                    "target": "/opt/sim-map",
+                    "source": "/opt/ocaml-omcb",
+                    "target": "/opt/ocaml-omcb",
                 }
             ),
             "app volumes",
@@ -162,9 +162,9 @@ class ComposeValidatorTests(unittest.TestCase):
     def test_app_environment_data_dir_changed(self) -> None:
         self.assert_rejected(
             lambda c: c["services"]["app"]["environment"].__setitem__(
-                "SIM_MAP_DATA_DIR", "/tmp"
+                "OCAML_OMCB_DATA_DIR", "/tmp"
             ),
-            "SIM_MAP_DATA_DIR",
+            "OCAML_OMCB_DATA_DIR",
         )
 
     def test_app_host_networking(self) -> None:

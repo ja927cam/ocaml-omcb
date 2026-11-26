@@ -1,5 +1,8 @@
 # One Million Chessboards — OCaml
 
+Project: **`ocaml-omcb`**. The public site remains
+**https://chess.jamesashwood.com**.
+
 Server-authoritative world of 1,000 × 1,000 chessboards (64,000,000 squares,
 32,000,000 starting pieces), with a pannable WASM/Brr grid client, a bounded
 900-board LRU cache with a 25 × 25 prefetch window plus a small margin,
@@ -15,6 +18,14 @@ protocol.
   to feature branches merged into it). Pushes to `develop` do not build or
   deploy production.
 - Release by merging `develop` into `main`.
+
+Existing production installs that were created before the `sim-map` rename
+keep working from `/opt/sim-map` and pull the legacy
+`ghcr.io/ja927cam/sim-map` image. The workflow publishes that legacy image
+alongside `ghcr.io/ja927cam/ocaml-omcb`; the server also still reads
+`SIM_MAP_*` environment variables as fallbacks. Migrate the host pull agent
+and `/opt/sim-map` files to `/opt/ocaml-omcb` when convenient, then remove the
+legacy image push.
 
 ## Build and run
 
@@ -127,19 +138,19 @@ connection.
 
 The authoritative world is durable by default:
 
-- `data/` (or `SIM_MAP_DATA_DIR`) holds `wal-<first-sequence>.log` segments and
+- `data/` (or `OCAML_OMCB_DATA_DIR`) holds `wal-<first-sequence>.log` segments and
   `snapshot-<sequence>.snap` files.
 - Every accepted move is appended to the WAL, and responses/events are
   published only after the group's fsync. By default a bounded adaptive
   controller chooses the commit batch from move arrivals, queued moves, recent
   fsync percentiles, client outbox depth and broadcast lag. Fixed group commit
-  remains the fallback: `SIM_MAP_ADAPTIVE=0` commits up to 64 consecutive moves
-  per fsync, `SIM_MAP_WAL_GROUP=1` (with adaptive off) gives strict per-move
-  fsync, and `SIM_MAP_WAL_SYNC=0` disables fsync for development.
+  remains the fallback: `OCAML_OMCB_ADAPTIVE=0` commits up to 64 consecutive moves
+  per fsync, `OCAML_OMCB_WAL_GROUP=1` (with adaptive off) gives strict per-move
+  fsync, and `OCAML_OMCB_WAL_SYNC=0` disables fsync for development.
 - The controller never validates or orders moves, and every group is still
   fsynced before responses or events are published.
-- A full-world snapshot is taken after `SIM_MAP_SNAPSHOT_MOVES` commits
-  (default 100,000) or `SIM_MAP_SNAPSHOT_SECONDS` seconds (default 600),
+- A full-world snapshot is taken after `OCAML_OMCB_SNAPSHOT_MOVES` commits
+  (default 100,000) or `OCAML_OMCB_SNAPSHOT_SECONDS` seconds (default 600),
   whichever comes first.
 - Snapshots are written to a temporary file, fsynced, renamed into place and
   the directory fsynced. Two snapshot generations are retained; WAL segments
@@ -150,19 +161,19 @@ Environment variables:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SIM_MAP_DATA_DIR` | `data` | Directory for the WAL and snapshots |
-| `SIM_MAP_PORT` | `8080` | HTTP/WebSocket listen port |
-| `SIM_MAP_WAL_GROUP` | `64` | Fallback max consecutive moves per commit fsync (`1` = strict per-move) |
-| `SIM_MAP_WAL_SYNC` | `1` | Enable WAL fsync (`0` for development only) |
-| `SIM_MAP_ADAPTIVE` | `1` | Adaptive commit controller (`0` = fixed fallback policy) |
-| `SIM_MAP_ADAPTIVE_MIN` | `1` | Minimum adaptive batch size |
-| `SIM_MAP_ADAPTIVE_MAX` | `256` | Maximum adaptive batch size |
-| `SIM_MAP_ADAPTIVE_MIN_DELAY_US` | `0` | Minimum adaptive group-formation delay |
-| `SIM_MAP_ADAPTIVE_MAX_DELAY_US` | `2000` | Maximum adaptive group-formation delay |
-| `SIM_MAP_ADAPTIVE_HYSTERESIS` | `3` | Samples required before increasing the policy |
-| `SIM_MAP_SNAPSHOT_MOVES` | `100000` | Commit count between snapshots (`0` disables) |
-| `SIM_MAP_SNAPSHOT_SECONDS` | `600` | Seconds between snapshots (`0` disables) |
-| `SIM_MAP_DEBUG_GC` | `0` | Test-only `/debug/gc` endpoint (`1` enables) |
+| `OCAML_OMCB_DATA_DIR` | `data` | Directory for the WAL and snapshots |
+| `OCAML_OMCB_PORT` | `8080` | HTTP/WebSocket listen port |
+| `OCAML_OMCB_WAL_GROUP` | `64` | Fallback max consecutive moves per commit fsync (`1` = strict per-move) |
+| `OCAML_OMCB_WAL_SYNC` | `1` | Enable WAL fsync (`0` for development only) |
+| `OCAML_OMCB_ADAPTIVE` | `1` | Adaptive commit controller (`0` = fixed fallback policy) |
+| `OCAML_OMCB_ADAPTIVE_MIN` | `1` | Minimum adaptive batch size |
+| `OCAML_OMCB_ADAPTIVE_MAX` | `256` | Maximum adaptive batch size |
+| `OCAML_OMCB_ADAPTIVE_MIN_DELAY_US` | `0` | Minimum adaptive group-formation delay |
+| `OCAML_OMCB_ADAPTIVE_MAX_DELAY_US` | `2000` | Maximum adaptive group-formation delay |
+| `OCAML_OMCB_ADAPTIVE_HYSTERESIS` | `3` | Samples required before increasing the policy |
+| `OCAML_OMCB_SNAPSHOT_MOVES` | `100000` | Commit count between snapshots (`0` disables) |
+| `OCAML_OMCB_SNAPSHOT_SECONDS` | `600` | Seconds between snapshots (`0` disables) |
+| `OCAML_OMCB_DEBUG_GC` | `0` | Test-only `/debug/gc` endpoint (`1` enables) |
 
 `GET /state-hash` returns the current global sequence and a digest of the
 board, revisions and bounded ledger. It is intended for recovery tests and
@@ -208,16 +219,16 @@ send failures, board-load failures, restarts, WAL/snapshot problems, high RSS
 and sustained broadcast latency. The previous state is only advanced after a
 successful send, so a failed email is covered by the next report.
 
-Install the user timer (the service uses `%h/Work/sim-map`; adjust it if the
+Install the user timer (the service uses `%h/Work/ocaml-omcb`; adjust it if the
 checkout lives elsewhere):
 
 ```bash
-cp scripts/sim-map-hourly-report.service scripts/sim-map-hourly-report.timer \
+cp scripts/ocaml-omcb-hourly-report.service scripts/ocaml-omcb-hourly-report.timer \
   ~/.config/systemd/user/
-# edit SIM_MAP_REPORT_TO in the service if needed
+# edit OCAML_OMCB_REPORT_TO in the service if needed
 systemctl --user daemon-reload
-systemctl --user enable --now sim-map-hourly-report.timer
-systemctl --user list-timers sim-map-hourly-report.timer
+systemctl --user enable --now ocaml-omcb-hourly-report.timer
+systemctl --user list-timers ocaml-omcb-hourly-report.timer
 ```
 
 Preview a report without sending it or advancing the state:
@@ -229,11 +240,11 @@ python3 scripts/hourly_report.py --dry-run
 Recent runs and delivery errors:
 
 ```bash
-journalctl --user -u sim-map-hourly-report.service
+journalctl --user -u ocaml-omcb-hourly-report.service
 ```
 
 The comparison state is stored at
-`~/.local/state/sim-map-hourly-report/state.json`. A first run establishes a
+`~/.local/state/ocaml-omcb-hourly-report/state.json`. A first run establishes a
 baseline; later runs report one-hour deltas. If the machine is asleep, the
 timer's `Persistent=true` sends the missed report when it wakes.
 
@@ -307,7 +318,7 @@ curl -s http://localhost:8080/metrics.prom     # Prometheus text format
 Both are public on production (`https://chess.jamesashwood.com/metrics`).
 A human-readable dashboard is at
 [`https://chess.jamesashwood.com/status`](https://chess.jamesashwood.com/status).
-The JSON `board_load` object and the `sim_map_board_region_*` Prometheus
+The JSON `board_load` object and the `ocaml_omcb_board_region_*` Prometheus
 metrics group snapshot loading by 100 x 100 board regions (request/board
 counts and p50/p95/max/last latency).
 

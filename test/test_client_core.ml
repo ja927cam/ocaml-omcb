@@ -1,4 +1,4 @@
-open Sim_map_client_core
+open Ocaml_omcb_client_core
 
 module C = Board_cache
 module V = Viewport

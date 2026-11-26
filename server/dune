@@ -1,6 +1,6 @@
 (executable
  (name server)
- (libraries dream protocol sim_map_lib yojson)
+ (libraries dream protocol ocaml_omcb_lib yojson)
  (preprocess (pps lwt_ppx)))
 
 (alias

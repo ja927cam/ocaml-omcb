@@ -13,10 +13,11 @@ import json
 import os
 import sys
 
-EXPECTED_IMAGE = "ghcr.io/ja927cam/sim-map"
+EXPECTED_IMAGE = "ghcr.io/ja927cam/ocaml-omcb"
+LEGACY_IMAGE = "ghcr.io/ja927cam/sim-map"
 CADDY_IMAGE = "caddy:2.8.4-alpine"
 APP_DATA_SOURCE = "/srv/chess/data"
-APP_DATA_TARGET = "/var/lib/sim-map/data"
+APP_DATA_TARGET = "/var/lib/ocaml-omcb/data"
 CADDY_DATA_SOURCE = "/srv/chess/caddy/data"
 CADDY_CONFIG_SOURCE = "/srv/chess/caddy/config"
 APP_STOP_GRACE = "45s"
@@ -59,9 +60,15 @@ def validate(
         errors.append("app must drop all Linux capabilities")
 
     expected_app_image = f"{expected_image}:{tag}"
-    if app.get("image") != expected_app_image:
+    allowed_app_images = {
+        expected_app_image,
+        f"{EXPECTED_IMAGE}:{tag}",
+        f"{LEGACY_IMAGE}:{tag}",
+    }
+    if app.get("image") not in allowed_app_images:
         errors.append(
-            f"app image must be {expected_app_image!r}, got {app.get('image')!r}"
+            f"app image must be one of {sorted(allowed_app_images)!r}, "
+            f"got {app.get('image')!r}"
         )
     if app.get("ports"):
         errors.append("app must not publish host ports")
@@ -87,12 +94,12 @@ def validate(
         )
 
     environment = app.get("environment") or {}
-    if environment.get("SIM_MAP_DATA_DIR") != APP_DATA_TARGET:
-        errors.append(f"app SIM_MAP_DATA_DIR must be {APP_DATA_TARGET!r}")
-    if environment.get("SIM_MAP_PORT") != "8080":
-        errors.append("app SIM_MAP_PORT must be '8080'")
-    if environment.get("SIM_MAP_INTERFACE") != "0.0.0.0":
-        errors.append("app SIM_MAP_INTERFACE must be '0.0.0.0'")
+    if environment.get("OCAML_OMCB_DATA_DIR") != APP_DATA_TARGET:
+        errors.append(f"app OCAML_OMCB_DATA_DIR must be {APP_DATA_TARGET!r}")
+    if environment.get("OCAML_OMCB_PORT") != "8080":
+        errors.append("app OCAML_OMCB_PORT must be '8080'")
+    if environment.get("OCAML_OMCB_INTERFACE") != "0.0.0.0":
+        errors.append("app OCAML_OMCB_INTERFACE must be '0.0.0.0'")
 
     caddy = services.get("caddy")
     if not isinstance(caddy, dict):

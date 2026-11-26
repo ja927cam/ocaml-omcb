@@ -5,11 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=sim-map
-Group=sim-map
-WorkingDirectory=/var/lib/sim-map
-EnvironmentFile=/etc/sim-map/env
-ExecStart=/opt/sim-map/server.exe
+User=ocaml-omcb
+Group=ocaml-omcb
+WorkingDirectory=/var/lib/ocaml-omcb
+EnvironmentFile=/etc/ocaml-omcb/env
+ExecStart=/opt/ocaml-omcb/server.exe
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=35
@@ -19,8 +19,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/sim-map
-ReadOnlyPaths=/opt/sim-map
+ReadWritePaths=/var/lib/ocaml-omcb
+ReadOnlyPaths=/opt/ocaml-omcb
 
 [Install]
 WantedBy=multi-user.target

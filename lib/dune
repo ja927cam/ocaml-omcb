@@ -1,5 +1,5 @@
 (library
- (name sim_map_lib)
+ (name ocaml_omcb_lib)
  (wrapped false)
  (libraries lwt.unix mtime.clock.os protocol yojson)
  (modules

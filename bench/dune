@@ -1,3 +1,3 @@
 (executable
  (name bench)
- (libraries sim_map_lib protocol lwt.unix mtime.clock.os unix))
+ (libraries ocaml_omcb_lib protocol lwt.unix mtime.clock.os unix))

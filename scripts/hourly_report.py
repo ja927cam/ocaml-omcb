@@ -22,24 +22,39 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-BASE_URL = os.environ.get("SIM_MAP_REPORT_URL", "https://chess.jamesashwood.com")
-DEFAULT_TO = os.environ.get("SIM_MAP_REPORT_TO", "contact@jamesashwood.com")
-DEFAULT_FROM = os.environ.get(
-    "SIM_MAP_REPORT_FROM", "jamesashwood.contact@gmail.com"
-)
+def env(name: str, default: str) -> str:
+    """Read the renamed variable, falling back to the pre-rename name."""
+    value = os.environ.get(name)
+    if value is not None:
+        return value
+    legacy = name.replace("OCAML_OMCB_", "SIM_MAP_", 1)
+    return os.environ.get(legacy, default)
+
+
+BASE_URL = env("OCAML_OMCB_REPORT_URL", "https://chess.jamesashwood.com")
+DEFAULT_TO = env("OCAML_OMCB_REPORT_TO", "contact@jamesashwood.com")
+DEFAULT_FROM = env("OCAML_OMCB_REPORT_FROM", "jamesashwood.contact@gmail.com")
 STATE_FILE = Path(
-    os.environ.get(
-        "SIM_MAP_REPORT_STATE",
-        str(Path.home() / ".local/state/sim-map-hourly-report/state.json"),
+    env(
+        "OCAML_OMCB_REPORT_STATE",
+        str(Path.home() / ".local/state/ocaml-omcb-hourly-report/state.json"),
     )
 )
+LEGACY_STATE_FILE = Path.home() / ".local/state/sim-map-hourly-report/state.json"
 TIMEOUT = 20
+
+if not STATE_FILE.exists() and LEGACY_STATE_FILE.exists():
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        STATE_FILE.write_bytes(LEGACY_STATE_FILE.read_bytes())
+    except OSError:
+        pass
 
 
 def get_json(path: str) -> Any:
     request = urllib.request.Request(
         f"{BASE_URL}{path}",
-        headers={"User-Agent": "sim-map-hourly-report/1.0"},
+        headers={"User-Agent": "ocaml-omcb-hourly-report/1.0"},
     )
     with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
         return json.load(response)
@@ -48,7 +63,7 @@ def get_json(path: str) -> Any:
 def get_text(path: str) -> str:
     request = urllib.request.Request(
         f"{BASE_URL}{path}",
-        headers={"User-Agent": "sim-map-hourly-report/1.0"},
+        headers={"User-Agent": "ocaml-omcb-hourly-report/1.0"},
     )
     with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
         return response.read().decode("utf-8", "replace")

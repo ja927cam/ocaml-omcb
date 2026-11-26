@@ -1,6 +1,6 @@
 (tests
  (names test_piece_board test_move test_game_state test_engine test_worker test_connection_manager test_wsd test_persistence test_adaptive_commit test_client_core test_board_load_metrics test_world_stats)
- (libraries sim_map_lib sim_map_client_core lwt.unix httpun-ws bigstringaf))
+ (libraries ocaml_omcb_lib ocaml_omcb_client_core lwt.unix httpun-ws bigstringaf))
 
 (test
  (name test_protocol)

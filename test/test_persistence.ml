@@ -7,7 +7,7 @@ let pos bx by x y =
 let created_dirs = ref []
 
 let temp_dir () =
-  let path = Filename.temp_file "sim-map-persistence-" "" in
+  let path = Filename.temp_file "ocaml-omcb-persistence-" "" in
   Unix.unlink path;
   Unix.mkdir path 0o700;
   created_dirs := path :: !created_dirs;

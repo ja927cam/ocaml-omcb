@@ -3,7 +3,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cache="${XDG_CACHE_HOME:-$HOME/.cache}/sim-map"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/ocaml-omcb"
 pin_dir="$cache/httpun-ws-0.2.0"
 
 mkdir -p "$cache"

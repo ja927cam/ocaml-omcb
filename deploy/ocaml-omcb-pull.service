@@ -1,0 +1,18 @@
+[Unit]
+Description=Deploy a new ocaml-omcb image from GHCR
+After=network-online.target docker.service
+Wants=network-online.target
+ConditionPathExists=/opt/ocaml-omcb/deploy.sh
+ConditionPathExists=/opt/ocaml-omcb/pull_agent.py
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/ocaml-omcb
+EnvironmentFile=-/etc/ocaml-omcb/pull-agent.env
+EnvironmentFile=-/etc/ocaml-omcb/ghcr.env
+ExecStart=/usr/bin/python3 /opt/ocaml-omcb/pull_agent.py
+UMask=0077
+SyslogIdentifier=ocaml-omcb-pull
+TimeoutStartSec=15min

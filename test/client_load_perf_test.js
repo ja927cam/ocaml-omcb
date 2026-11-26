@@ -24,7 +24,7 @@ const path = require("path");
 
 const ROOT = path.join(__dirname, "..");
 const SERVER = path.join(ROOT, "_build", "default", "server", "server.exe");
-const DATA = path.join(os.tmpdir(), `sim-map-load-perf-${process.pid}`);
+const DATA = path.join(os.tmpdir(), `ocaml-omcb-load-perf-${process.pid}`);
 const WIRE_FRAME = 4096;
 const BOARD_SCALE = 216;
 const WINDOW_BOARDS = 25;
@@ -65,11 +65,11 @@ async function startServer(port) {
     cwd: ROOT,
     env: {
       ...process.env,
-      SIM_MAP_DATA_DIR: DATA,
-      SIM_MAP_PORT: String(port),
-      SIM_MAP_ADAPTIVE: "1",
-      SIM_MAP_SNAPSHOT_MOVES: "0",
-      SIM_MAP_SNAPSHOT_SECONDS: "0",
+      OCAML_OMCB_DATA_DIR: DATA,
+      OCAML_OMCB_PORT: String(port),
+      OCAML_OMCB_ADAPTIVE: "1",
+      OCAML_OMCB_SNAPSHOT_MOVES: "0",
+      OCAML_OMCB_SNAPSHOT_SECONDS: "0",
     },
     stdio: ["ignore", fd, fd],
   });
@@ -307,7 +307,7 @@ async function measureBrowser(port) {
     };
 
     await send("Page.enable");
-    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}" });
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ocaml-omcb.seen-intro', '1'); } catch (_) {}" });
     await send("Runtime.enable");
     await send("Network.enable");
     const started = Date.now();

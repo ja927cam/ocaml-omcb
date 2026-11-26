@@ -1,6 +1,6 @@
 open Brr
 open Brr_canvas
-open Sim_map_client_core
+open Ocaml_omcb_client_core
 
 (* 216 px boards are a comfortable zoom: three fit vertically in a 700 px
    window, while larger screens show more context. *)
@@ -178,8 +178,11 @@ let draw_piece ctx atlas piece x y size =
 
 type player_colour = White | Black
 
-let colour_key = "sim-map.player-colour"
-let colour_cookie = "sim-map-colour"
+let colour_key = "ocaml-omcb.player-colour"
+let colour_cookie = "ocaml-omcb-colour"
+(* Pre-rename storage. Copy it once so existing devices keep their colour. *)
+let legacy_colour_key = "sim-map.player-colour"
+let legacy_colour_cookie = "sim-map-colour"
 let colour_name = function White -> "white" | Black -> "black"
 
 let colour_of_string = function
@@ -244,6 +247,12 @@ let cookie_set name value =
    the cookie is the backup so clearing one store does not change the colour.
    Both stores are reconciled to the chosen value. *)
 let assigned_colour () =
+  (match (storage_get colour_key, storage_get legacy_colour_key) with
+   | None, Some value -> storage_set colour_key value
+   | _ -> ());
+  (match (cookie_get colour_cookie, cookie_get legacy_colour_cookie) with
+   | None, Some value -> cookie_set colour_cookie value
+   | _ -> ());
   let from_storage =
     match storage_get colour_key with
     | Some value -> colour_of_string value

@@ -811,11 +811,11 @@ used. If the WAL starts above the required sequence, recovery refuses to run.
 
 ### Failure injection
 
-`SIM_MAP_FAULT` and `SIM_MAP_FAULT_AFTER` are test-only one-shot I/O fault
+`OCAML_OMCB_FAULT` and `OCAML_OMCB_FAULT_AFTER` are test-only one-shot I/O fault
 hooks in `lib/persistence.ml`. They cover WAL append/partial append, WAL fsync,
 WAL rotation, snapshot write, snapshot fsync, snapshot rename and snapshot
 directory fsync. They raise ordinary exceptions so the worker follows its
-normal failure path; `SIM_MAP_CRASH_POINT` remains the separate hard-kill path.
+normal failure path; `OCAML_OMCB_CRASH_POINT` remains the separate hard-kill path.
 The hooks are inert unless configured and the environment is cached at first
 use.
 
@@ -836,16 +836,16 @@ specific cross-board and special-move squares.
 
 Commit policies:
 
-- **Strict** (`SIM_MAP_ADAPTIVE=0`, `SIM_MAP_WAL_GROUP=1`): append → fsync →
+- **Strict** (`OCAML_OMCB_ADAPTIVE=0`, `OCAML_OMCB_WAL_GROUP=1`): append → fsync →
   apply → publish.
 - **Adaptive** (default): a bounded controller chooses the batch ceiling and
   formation delay; every group still fsyncs before publishing.
-- **Group** (fallback, `SIM_MAP_ADAPTIVE=0`, 64): take up to 64 consecutive
+- **Group** (fallback, `OCAML_OMCB_ADAPTIVE=0`, 64): take up to 64 consecutive
   moves, validate, append and apply them in order, fsync once, then publish
   the whole group. The in-memory apply is tentative until the fsync; a failure
   fail-stops without publishing. Snapshot requests are non-move items and
   force a flush first, so no client read can observe an uncommitted group.
-- **No fsync** (`SIM_MAP_WAL_SYNC=0`): append and publish without fsync;
+- **No fsync** (`OCAML_OMCB_WAL_SYNC=0`): append and publish without fsync;
   process crashes survive in the page cache, power loss can lose recent acks.
 
 The group experiment (`bench/group_commit_experiment.js`,
@@ -855,7 +855,7 @@ board state.
 
 ### Adaptive group commit
 
-`SIM_MAP_ADAPTIVE=1` (the default) replaces the fixed batch ceiling with a
+`OCAML_OMCB_ADAPTIVE=1` (the default) replaces the fixed batch ceiling with a
 bounded, rule-based controller (`lib/adaptive_commit.ml`). Set it to `0` to use
 the fixed group-commit fallback. It runs entirely outside
 move validation, ordering, application and durability: the state worker still
@@ -915,7 +915,7 @@ The transition experiment (`bench/adaptive_commit_test.js`,
 fixed 64 and adaptive: quiet → 128-writer heavy writes → quiet → 8 hot writers
 with 256 subscribers → 16 hot writers → continued writes, with five
 repetitions per mode. Full-world snapshot pressure is enabled for the whole
-run (`SIM_MAP_SNAPSHOT_MOVES=3000`), so snapshot writes also overlap the heavy
+run (`OCAML_OMCB_SNAPSHOT_MOVES=3000`), so snapshot writes also overlap the heavy
 and fan-out phases; the final phase measures writes while a snapshot is likely
 in flight. The values below are medians across the repetitions.
 
@@ -984,12 +984,12 @@ Group commit closes most of the strict-to-no-sync gap while preserving
 durable-before-ack. The actual average group at a configured maximum of 256 is
 about 85 because the worker starts before every concurrent writer arrives; a
 small group-formation window would raise that further. Group-64 is retained as
-the fixed fallback (`SIM_MAP_ADAPTIVE=0`) and remains a good latency/throughput
+the fixed fallback (`OCAML_OMCB_ADAPTIVE=0`) and remains a good latency/throughput
 balance when a predictable policy is preferable to the controller.
 
 ### Fault injection and tests
 
-`SIM_MAP_CRASH_POINT` injects a SIGKILL at a named point: `wal-before-write`,
+`OCAML_OMCB_CRASH_POINT` injects a SIGKILL at a named point: `wal-before-write`,
 `wal-partial-write`, `wal-after-fsync`, `snapshot-partial-temp`,
 `snapshot-temp-fsynced`, `snapshot-renamed` or `snapshot-cleaned`. The crash
 suite spawns real servers against isolated directories and covers empty and

@@ -33,11 +33,11 @@ async function start(port, data) {
     cwd: ROOT,
     env: {
       ...process.env,
-      SIM_MAP_DATA_DIR: data,
-      SIM_MAP_PORT: String(port),
-      SIM_MAP_INTERFACE: "127.0.0.1",
-      SIM_MAP_SNAPSHOT_MOVES: "0",
-      SIM_MAP_SNAPSHOT_SECONDS: "0",
+      OCAML_OMCB_DATA_DIR: data,
+      OCAML_OMCB_PORT: String(port),
+      OCAML_OMCB_INTERFACE: "127.0.0.1",
+      OCAML_OMCB_SNAPSHOT_MOVES: "0",
+      OCAML_OMCB_SNAPSHOT_SECONDS: "0",
     },
     stdio: ["ignore", fd, fd],
   });
@@ -127,7 +127,7 @@ class Client {
 
 (async () => {
   const port = await freePort();
-  const data = path.join(os.tmpdir(), `sim-map-transition-${process.pid}`);
+  const data = path.join(os.tmpdir(), `ocaml-omcb-transition-${process.pid}`);
   const server = await start(port, data);
   const observer = new Client(port);
   const mover = new Client(port);

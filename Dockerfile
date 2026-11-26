@@ -23,7 +23,7 @@ RUN apt-get update \
       pkg-config \
       zlib1g-dev \
  && rm -rf /var/lib/apt/lists/* \
- && install -d -o opam -g opam /home/opam/sim-map
+ && install -d -o opam -g opam /home/opam/ocaml-omcb
 
 # Make the pinned tool win over Debian's older /usr/bin/wasm-opt for every
 # later opam build step.
@@ -40,11 +40,11 @@ RUN curl -fsSL -o /tmp/binaryen.tar.gz \
  && wasm-opt --version | grep -q "version ${BINARYEN_VERSION}"
 
 USER opam
-WORKDIR /home/opam/sim-map
+WORKDIR /home/opam/ocaml-omcb
 
 # Keep the dependency layer stable: only the manifests and the websocket pin
 # are copied before opam runs.
-COPY --chown=opam:opam dune-project sim_map.opam ./
+COPY --chown=opam:opam dune-project ocaml-omcb.opam ./
 COPY --chown=opam:opam scripts/pin-httpun-ws.sh scripts/pin-httpun-ws.sh
 COPY --chown=opam:opam vendor/httpun-ws-wsd.patch vendor/httpun-ws-wsd.patch
 
@@ -79,28 +79,30 @@ RUN apt-get update \
       libzstd1 \
       zlib1g \
  && rm -rf /var/lib/apt/lists/* \
- && groupadd --system --gid 10001 sim-map \
- && useradd --uid 10001 --gid 10001 --home-dir /var/lib/sim-map \
-      --shell /usr/sbin/nologin --no-create-home sim-map \
- && install -d -o sim-map -g sim-map /var/lib/sim-map/data \
- && install -d /opt/sim-map/server/static
+ && groupadd --system --gid 10001 ocaml-omcb \
+ && useradd --uid 10001 --gid 10001 --home-dir /var/lib/ocaml-omcb \
+      --shell /usr/sbin/nologin --no-create-home ocaml-omcb \
+ && install -d -o ocaml-omcb -g ocaml-omcb /var/lib/ocaml-omcb/data \
+ && install -d -o ocaml-omcb -g ocaml-omcb /var/lib/sim-map/data \
+ && install -d /opt/ocaml-omcb/server/static \
+ && ln -s /opt/ocaml-omcb /opt/sim-map
 
-WORKDIR /opt/sim-map
+WORKDIR /opt/ocaml-omcb
 
-COPY --from=build /home/opam/sim-map/_build/default/server/server.exe ./server.exe
-COPY --from=build /home/opam/sim-map/server/static ./server/static
-COPY --from=build /home/opam/sim-map/_build/default/client ./_build/default/client
-COPY --from=build /home/opam/sim-map/deploy ./deploy
+COPY --from=build /home/opam/ocaml-omcb/_build/default/server/server.exe ./server.exe
+COPY --from=build /home/opam/ocaml-omcb/server/static ./server/static
+COPY --from=build /home/opam/ocaml-omcb/_build/default/client ./_build/default/client
+COPY --from=build /home/opam/ocaml-omcb/deploy ./deploy
 
-ENV SIM_MAP_DATA_DIR=/var/lib/sim-map/data \
-    SIM_MAP_PORT=8080 \
-    SIM_MAP_INTERFACE=0.0.0.0
+ENV OCAML_OMCB_DATA_DIR=/var/lib/ocaml-omcb/data \
+    OCAML_OMCB_PORT=8080 \
+    OCAML_OMCB_INTERFACE=0.0.0.0
 
 EXPOSE 8080
-VOLUME ["/var/lib/sim-map/data"]
+VOLUME ["/var/lib/ocaml-omcb/data"]
 
-USER sim-map
+USER ocaml-omcb
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
-  CMD curl -fsS "http://127.0.0.1:${SIM_MAP_PORT}/healthz" || exit 1
+  CMD curl -fsS "http://127.0.0.1:${OCAML_OMCB_PORT}/healthz" || exit 1
 
-ENTRYPOINT ["/opt/sim-map/server.exe"]
+ENTRYPOINT ["/opt/ocaml-omcb/server.exe"]

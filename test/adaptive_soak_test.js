@@ -76,17 +76,17 @@ async function startServer(fresh = true) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
   if (!(await portFree())) throw new Error("port 8080 is already in use");
-  const logPath = "/tmp/sim-map-adaptive-soak.log";
+  const logPath = "/tmp/ocaml-omcb-adaptive-soak.log";
   const log = fs.openSync(logPath, "w");
   const child = spawn(SERVER, [], {
     cwd: ROOT,
     env: {
       ...process.env,
-      SIM_MAP_DATA_DIR: DATA_DIR,
-      SIM_MAP_ADAPTIVE: "1",
-      SIM_MAP_ADAPTIVE_MAX: "256",
-      SIM_MAP_SNAPSHOT_MOVES: "100000",
-      SIM_MAP_SNAPSHOT_SECONDS: "0",
+      OCAML_OMCB_DATA_DIR: DATA_DIR,
+      OCAML_OMCB_ADAPTIVE: "1",
+      OCAML_OMCB_ADAPTIVE_MAX: "256",
+      OCAML_OMCB_SNAPSHOT_MOVES: "100000",
+      OCAML_OMCB_SNAPSHOT_SECONDS: "0",
     },
     stdio: ["ignore", log, log],
   });

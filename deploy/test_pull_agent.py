@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import pull_agent  # noqa: E402
 
 REVISION = "0123456789abcdef0123456789abcdef01234567"
-SOURCE = "https://github.com/ja927cam/sim-map"
+SOURCE = "https://github.com/ja927cam/ocaml-omcb"
 
 
 def body(value: dict) -> bytes:
@@ -249,17 +249,21 @@ class PullAgentTests(unittest.TestCase):
 
     def test_parse_image(self) -> None:
         self.assertEqual(
-            pull_agent.parse_image("ghcr.io/ja927cam/sim-map"),
-            ("ghcr.io", "ja927cam/sim-map"),
+            pull_agent.parse_image("ghcr.io/ja927cam/ocaml-omcb"),
+            ("ghcr.io", "ja927cam/ocaml-omcb"),
+        )
+        self.assertEqual(
+            pull_agent.parse_image("ghcr.io/ja927cam/ocaml-omcb:latest"),
+            ("ghcr.io", "ja927cam/ocaml-omcb"),
         )
         self.assertEqual(
             pull_agent.parse_image("ghcr.io/ja927cam/sim-map:latest"),
             ("ghcr.io", "ja927cam/sim-map"),
         )
         with self.assertRaises(ValueError):
-            pull_agent.parse_image("ghcr.io/attacker/sim-map")
+            pull_agent.parse_image("ghcr.io/attacker/ocaml-omcb")
         with self.assertRaises(ValueError):
-            pull_agent.parse_image("docker.io/ja927cam/sim-map")
+            pull_agent.parse_image("docker.io/ja927cam/ocaml-omcb")
 
     def test_failure_state_backoff_is_temporary(self) -> None:
         failure = {"digest": "sha256:" + "1" * 64, "failed_at": 1000.0}

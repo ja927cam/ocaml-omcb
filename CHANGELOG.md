@@ -2,6 +2,14 @@
 
 ## Unreleased — production hardening
 
+- Renamed the project and GitHub repository from `sim-map` to `ocaml-omcb`.
+  The public site remains `chess.jamesashwood.com`. New code, docs, package
+  metadata, image defaults, Prometheus prefixes and local service names use
+  `ocaml-omcb`/`OCAML_OMCB_*`. Existing VPS installs keep working through the
+  legacy `ghcr.io/ja927cam/sim-map` image, `/opt/sim-map` host paths and
+  `SIM_MAP_*` fallbacks until the host is migrated.
+
+
 ### Docker
 
 - Added a multi-stage `Dockerfile` that builds the OCaml server, the WASM
@@ -10,9 +18,9 @@
 - Added a `test` Docker target that runs the OCaml test suite in CI.
 - Added `docker-compose.yml` for local development, with a healthcheck,
   `init`, a 45-second stop grace period and persistent WAL/snapshot storage.
-- Added `SIM_MAP_INTERFACE` (default `localhost`; the image uses `0.0.0.0`) so
+- Added `OCAML_OMCB_INTERFACE` (default `localhost`; the image uses `0.0.0.0`) so
   the container's published port can reach the server.
-- Added `sim_map.opam` dependency metadata for reproducible image builds.
+- Added `ocaml-omcb.opam` dependency metadata for reproducible image builds.
 - The Docker builder now provides binaryen 119 for `wasm_of_ocaml-compiler`
   6.4 (Debian 12 only ships binaryen 108). The distro binaryen package
   satisfies opam's depext check; a pinned, checksummed static release is the
@@ -111,8 +119,8 @@
 - Added per-region board-load metrics. Snapshot batches are grouped into
   10 x 10 world regions (100 x 100 boards each), with request/board/failure
   counters and p50/p95/max/last server batch latency in `/metrics` under
-  `board_load` and in `/metrics.prom` as `sim_map_board_load_*` and
-  `sim_map_board_region_*`.
+  `board_load` and in `/metrics.prom` as `ocaml_omcb_board_load_*` and
+  `ocaml_omcb_board_region_*`.
 
 - Added a public Prometheus text endpoint at `/metrics.prom` (in addition to
   the existing JSON `/metrics`) covering pipeline stage latency, worker,
@@ -133,9 +141,9 @@
   image, and publish an immutable full-SHA tag plus `latest` (main pushes
   only). GitHub Actions has no VPS credentials and never connects to the VPS.
 - Added a root systemd pull agent (`deploy/pull_agent.py` plus
-  `sim-map-pull.service`/`.timer`) that checks the GHCR `latest` manifest
+  `ocaml-omcb-pull.service`/`.timer`) that checks the GHCR `latest` manifest
   digest every five minutes, verifies manifest/config digests, the exact
-  `ghcr.io/ja927cam/sim-map` repository and OCI source label, reads the
+  `ghcr.io/ja927cam/ocaml-omcb` repository and OCI source label, reads the
   embedded commit-SHA label, and invokes the existing deploy script. Registry
   failures are retried safely and failed image digests are backed off.
 - `latest` is published only when the run is still the current `main` head;
@@ -168,8 +176,8 @@
   untrusted renamed file; recovery removes stale `snapshot-*.snap.tmp.*` files.
 - `SIGTERM`/`SIGINT` drain the worker, wait up to 30 seconds for an in-flight
   snapshot, close the WAL and exit 0.
-- Added `/healthz`, `/readyz` and optional `SIM_MAP_DEBUG_GC` diagnostics.
-- Added `SIM_MAP_PORT`.
+- Added `/healthz`, `/readyz` and optional `OCAML_OMCB_DEBUG_GC` diagnostics.
+- Added `OCAML_OMCB_PORT`.
 - Added systemd, environment-file and nginx examples under `deploy/`.
 
 ### Adaptive commit

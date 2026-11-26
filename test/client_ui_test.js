@@ -6,7 +6,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const SERVER = process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
+const SERVER = process.env.OCAML_OMCB_TEST_URL || process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
 const CDP_PORT = 9400 + Math.floor(Math.random() * 300);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -119,7 +119,7 @@ async function main() {
     if (await evaluate("!document.getElementById('intro').hidden")) {
       fail("introduction did not close");
     }
-    if ((await evaluate("localStorage.getItem('sim-map.seen-intro')")) !== "1") {
+    if ((await evaluate("localStorage.getItem('ocaml-omcb.seen-intro')")) !== "1") {
       fail("introduction dismissal was not remembered");
     }
 

@@ -82,7 +82,7 @@ async function freePort() {
 
 (async () => {
   const port = await freePort();
-  const data = path.join(os.tmpdir(), `sim-map-touch-${process.pid}`);
+  const data = path.join(os.tmpdir(), `ocaml-omcb-touch-${process.pid}`);
   fs.rmSync(data, { recursive: true, force: true });
   fs.mkdirSync(data, { recursive: true });
   const logFd = fs.openSync(path.join(data, "server.log"), "w");
@@ -90,11 +90,11 @@ async function freePort() {
     cwd: ROOT,
     env: {
       ...process.env,
-      SIM_MAP_DATA_DIR: data,
-      SIM_MAP_PORT: String(port),
-      SIM_MAP_INTERFACE: "127.0.0.1",
-      SIM_MAP_SNAPSHOT_MOVES: "0",
-      SIM_MAP_SNAPSHOT_SECONDS: "0",
+      OCAML_OMCB_DATA_DIR: data,
+      OCAML_OMCB_PORT: String(port),
+      OCAML_OMCB_INTERFACE: "127.0.0.1",
+      OCAML_OMCB_SNAPSHOT_MOVES: "0",
+      OCAML_OMCB_SNAPSHOT_SECONDS: "0",
     },
     stdio: ["ignore", logFd, logFd],
   });
@@ -176,7 +176,7 @@ async function freePort() {
     });
     await send("Page.addScriptToEvaluateOnNewDocument", {
       source:
-        "try { localStorage.setItem('sim-map.player-colour','white'); localStorage.setItem('sim-map.seen-intro','1'); } catch (_) {}",
+        "try { localStorage.setItem('ocaml-omcb.player-colour','white'); localStorage.setItem('ocaml-omcb.seen-intro','1'); } catch (_) {}",
     });
     await send("Page.navigate", {
       url: `http://127.0.0.1:${port}/?x=500&y=500`,

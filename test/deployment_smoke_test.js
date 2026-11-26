@@ -4,7 +4,7 @@
  * WebSocket move, graceful SIGTERM drain and restart on the same data directory.
  */
 
-process.env.SIM_MAP_WS_URL = "ws://localhost:18080/ws";
+process.env.OCAML_OMCB_WS_URL = "ws://localhost:18080/ws";
 
 const { spawn } = require("child_process");
 const fs = require("fs");
@@ -43,17 +43,17 @@ async function start(fresh) {
     fs.mkdirSync(DATA, { recursive: true });
   }
   if (!(await portFree())) throw new Error(`port ${PORT} in use`);
-  const log = "/tmp/sim-map-deployment-smoke.log";
+  const log = "/tmp/ocaml-omcb-deployment-smoke.log";
   const fd = fs.openSync(log, "w");
   const child = spawn(SERVER, [], {
     cwd: ROOT,
     env: {
       ...process.env,
-      SIM_MAP_DATA_DIR: DATA,
-      SIM_MAP_PORT: String(PORT),
-      SIM_MAP_ADAPTIVE: "1",
-      SIM_MAP_SNAPSHOT_MOVES: "0",
-      SIM_MAP_SNAPSHOT_SECONDS: "0",
+      OCAML_OMCB_DATA_DIR: DATA,
+      OCAML_OMCB_PORT: String(PORT),
+      OCAML_OMCB_ADAPTIVE: "1",
+      OCAML_OMCB_SNAPSHOT_MOVES: "0",
+      OCAML_OMCB_SNAPSHOT_SECONDS: "0",
     },
     stdio: ["ignore", fd, fd],
   });

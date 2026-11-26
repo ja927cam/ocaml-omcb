@@ -1,12 +1,12 @@
 [Unit]
-Description=Check GHCR for a new sim-map image
+Description=Check GHCR for a new ocaml-omcb image
 
 [Timer]
 OnBootSec=2min
 OnUnitInactiveSec=5min
 RandomizedDelaySec=30s
 Persistent=true
-Unit=sim-map-pull.service
+Unit=ocaml-omcb-pull.service
 
 [Install]
 WantedBy=timers.target

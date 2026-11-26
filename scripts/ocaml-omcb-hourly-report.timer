@@ -5,7 +5,7 @@ Description=Hourly email report for chess.jamesashwood.com
 OnCalendar=hourly
 Persistent=true
 RandomizedDelaySec=60
-Unit=sim-map-hourly-report.service
+Unit=ocaml-omcb-hourly-report.service
 
 [Install]
 WantedBy=timers.target

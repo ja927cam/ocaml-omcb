@@ -24,8 +24,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set image name
-        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - name: Set image names
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "LEGACY_IMAGE=ghcr.io/ja927cam/sim-map" >> "$GITHUB_ENV"
 
       - name: Test pull agent registry logic
         run: python3 deploy/test_pull_agent.py
@@ -52,7 +54,7 @@ jobs:
             caddy validate --config /etc/caddy/Caddyfile
 
       - name: Build test stage and run OCaml tests
-        run: docker build --target test -t sim-map:test .
+        run: docker build --target test -t ocaml-omcb:test .
 
       - name: Build runtime image
         run: |
@@ -61,6 +63,17 @@ jobs:
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             -t "$IMAGE:$GITHUB_SHA" \
             -t "$IMAGE:latest" .
+
+      # The VPS pull agent installed before the rename still reads the legacy
+      # image name and the old source label. Publish a byte-for-byte
+      # compatibility image alongside the new one until the host is migrated.
+      - name: Build legacy compatibility image
+        run: |
+          docker build \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=https://github.com/ja927cam/sim-map" \
+            -t "$LEGACY_IMAGE:$GITHUB_SHA" \
+            -t "$LEGACY_IMAGE:latest" .
 
       - name: Smoke test image and WAL persistence
         run: |
@@ -78,7 +91,9 @@ jobs:
             | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Publish immutable SHA tag
-        run: docker push "$IMAGE:$GITHUB_SHA"
+        run: |
+          docker push "$IMAGE:$GITHUB_SHA"
+          docker push "$LEGACY_IMAGE:$GITHUB_SHA"
 
       # latest is only moved by a successful push to main, and only if this
       # run is still the current head of main. Manual workflow_dispatch runs
@@ -99,6 +114,7 @@ jobs:
             exit 0
           fi
           docker push "$IMAGE:latest"
+          docker push "$LEGACY_IMAGE:latest"
 
       - name: Log out of GHCR
         if: always()

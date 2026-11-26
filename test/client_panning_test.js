@@ -57,12 +57,12 @@ async function startServer(port, dataDir) {
     cwd: ROOT,
     env: {
       ...process.env,
-      SIM_MAP_DATA_DIR: dataDir,
-      SIM_MAP_PORT: String(port),
-      SIM_MAP_INTERFACE: "127.0.0.1",
-      SIM_MAP_ADAPTIVE: "1",
-      SIM_MAP_SNAPSHOT_MOVES: "0",
-      SIM_MAP_SNAPSHOT_SECONDS: "0",
+      OCAML_OMCB_DATA_DIR: dataDir,
+      OCAML_OMCB_PORT: String(port),
+      OCAML_OMCB_INTERFACE: "127.0.0.1",
+      OCAML_OMCB_ADAPTIVE: "1",
+      OCAML_OMCB_SNAPSHOT_MOVES: "0",
+      OCAML_OMCB_SNAPSHOT_SECONDS: "0",
     },
     stdio: ["ignore", fd, fd],
   });
@@ -106,7 +106,7 @@ function percentile(values, p) {
 
 async function main() {
   const port = await freePort();
-  const dataDir = path.join(os.tmpdir(), `sim-map-panning-${process.pid}`);
+  const dataDir = path.join(os.tmpdir(), `ocaml-omcb-panning-${process.pid}`);
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "omc-panning-"));
   const server = await startServer(port, dataDir);
   const cdpPort = 9600 + Math.floor(Math.random() * 300);
@@ -179,11 +179,11 @@ async function main() {
     };
 
     await send("Page.enable");
-    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}" });
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ocaml-omcb.seen-intro', '1'); } catch (_) {}" });
     await send("Runtime.enable");
     await send("Performance.enable");
     await send("Page.addScriptToEvaluateOnNewDocument", {
-      source: "localStorage.setItem('sim-map.player-colour', 'white');",
+      source: "localStorage.setItem('ocaml-omcb.player-colour', 'white');",
     });
     await send("Page.addScriptToEvaluateOnNewDocument", {
       source: `(() => {

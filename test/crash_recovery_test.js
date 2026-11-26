@@ -32,7 +32,7 @@ function fail(message) {
 }
 
 function tempDir(label) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `sim-map-crash-${label}-`));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `ocaml-omcb-crash-${label}-`));
   return dir;
 }
 
@@ -45,8 +45,8 @@ async function startServer(dataDir, extraEnv = {}) {
     cwd: ROOT,
     env: {
       ...process.env,
-      SIM_MAP_DATA_DIR: dataDir,
-      SIM_MAP_SNAPSHOT_SECONDS: "0",
+      OCAML_OMCB_DATA_DIR: dataDir,
+      OCAML_OMCB_SNAPSHOT_SECONDS: "0",
       ...extraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -183,7 +183,7 @@ async function runControl(label, moves, env = {}) {
   let client;
   try {
     server = await startServer(dir, {
-      SIM_MAP_SNAPSHOT_MOVES: "0",
+      OCAML_OMCB_SNAPSHOT_MOVES: "0",
       ...env,
     });
     client = await openClient();
@@ -231,10 +231,10 @@ async function main() {
 
   await runCase("empty world restart", async () => {
     const dir = tempDir("empty");
-    let server = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    let server = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     let hash = await stateHash();
     await stopServer(server);
-    server = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    server = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     const recovered = await stateHash();
     await stopServer(server);
     removeDir(dir);
@@ -251,7 +251,7 @@ async function main() {
       }
     });
     const dir = tempDir("several");
-    let server = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    let server = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     let client = await openClient();
     for (const board of [100, 101, 102]) {
       const result = await e2e4(client, board, 100);
@@ -260,7 +260,7 @@ async function main() {
     const before = await stateHash();
     await closeClient(client);
     await stopServer(server);
-    server = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    server = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     const after = await stateHash();
     client = await openClient();
     const board = await snapshotBoard(client, 100, 100);
@@ -281,13 +281,13 @@ async function main() {
       crossBoardMoves(client, 200, 200)
     );
     const dir = tempDir("cross");
-    let server = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    let server = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     let client = await openClient();
     await crossBoardMoves(client, 200, 200);
     const before = await stateHash();
     await closeClient(client);
     await stopServer(server);
-    server = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    server = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     const after = await stateHash();
     client = await openClient();
     const source = await snapshotBoard(client, 200, 200);
@@ -305,13 +305,13 @@ async function main() {
   await runCase("castling and en passant restart", async () => {
     const control = await runControl("special", (client) => specialMoves(client));
     const dir = tempDir("special");
-    let server = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    let server = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     let client = await openClient();
     await specialMoves(client);
     const before = await stateHash();
     await closeClient(client);
     await stopServer(server);
-    server = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    server = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     const after = await stateHash();
     client = await openClient();
     const castle = await snapshotBoard(client, 300, 300);
@@ -333,8 +333,8 @@ async function main() {
   await runCase("torn trailing WAL record", async () => {
     const dir = tempDir("torn");
     const server = await startServer(dir, {
-      SIM_MAP_SNAPSHOT_MOVES: "0",
-      SIM_MAP_CRASH_POINT: "wal-partial-write",
+      OCAML_OMCB_SNAPSHOT_MOVES: "0",
+      OCAML_OMCB_CRASH_POINT: "wal-partial-write",
     });
     const client = await openClient();
     const before = await stateHash();
@@ -348,7 +348,7 @@ async function main() {
     await waitForExit(server);
     if (!crashed) fail("move unexpectedly succeeded through the crash point");
     await stopServer(server);
-    const restarted = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    const restarted = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     const after = await stateHash();
     await stopServer(restarted);
     removeDir(dir);
@@ -364,8 +364,8 @@ async function main() {
     });
     const dir = tempDir("snapshot-partial");
     const server = await startServer(dir, {
-      SIM_MAP_SNAPSHOT_MOVES: "1",
-      SIM_MAP_CRASH_POINT: "snapshot-partial-temp",
+      OCAML_OMCB_SNAPSHOT_MOVES: "1",
+      OCAML_OMCB_CRASH_POINT: "snapshot-partial-temp",
     });
     const client = await openClient();
     const result = await e2e4(client, 500, 500);
@@ -373,7 +373,7 @@ async function main() {
     await closeClient(client);
     await waitForExit(server);
     await stopServer(server);
-    const restarted = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    const restarted = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     const after = await stateHash();
     await stopServer(restarted);
     removeDir(dir);
@@ -389,8 +389,8 @@ async function main() {
     });
     const dir = tempDir("snapshot-renamed");
     const server = await startServer(dir, {
-      SIM_MAP_SNAPSHOT_MOVES: "1",
-      SIM_MAP_CRASH_POINT: "snapshot-renamed",
+      OCAML_OMCB_SNAPSHOT_MOVES: "1",
+      OCAML_OMCB_CRASH_POINT: "snapshot-renamed",
     });
     const client = await openClient();
     const result = await e2e4(client, 510, 510);
@@ -398,7 +398,7 @@ async function main() {
     await closeClient(client);
     await waitForExit(server);
     await stopServer(server);
-    const restarted = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    const restarted = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     const after = await stateHash();
     await stopServer(restarted);
     removeDir(dir);
@@ -409,7 +409,7 @@ async function main() {
 
   await runCase("corrupt newest snapshot falls back", async () => {
     const dir = tempDir("corrupt-snapshot");
-    const server = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "1" });
+    const server = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "1" });
     const client = await openClient();
     for (const board of [600, 601, 602]) {
       const result = await e2e4(client, board, 600);
@@ -431,7 +431,7 @@ async function main() {
     fs.writeSync(fd, buffer, 0, 1, 100);
     fs.closeSync(fd);
 
-    const restarted = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    const restarted = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     const after = await stateHash();
     await stopServer(restarted);
     removeDir(dir);
@@ -442,7 +442,7 @@ async function main() {
 
   await runCase("large WAL replay", async () => {
     const dir = tempDir("large-wal");
-    let server = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    let server = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     let client = await openClient();
     for (let board = 0; board < 200; board++) {
       const result = await e2e4(client, board, 0);
@@ -451,7 +451,7 @@ async function main() {
     const before = await stateHash();
     await closeClient(client);
     await stopServer(server);
-    server = await startServer(dir, { SIM_MAP_SNAPSHOT_MOVES: "0" });
+    server = await startServer(dir, { OCAML_OMCB_SNAPSHOT_MOVES: "0" });
     const after = await stateHash();
     await stopServer(server);
     removeDir(dir);

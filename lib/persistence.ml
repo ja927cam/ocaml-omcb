@@ -84,7 +84,7 @@ let now_ms () = Unix.gettimeofday () *. 1000.
 let log fmt = Printf.ksprintf (fun s -> Printf.eprintf "persistence: %s\n%!" s) fmt
 
 let crash_point name =
-  match Sys.getenv_opt "SIM_MAP_CRASH_POINT" with
+  match Sys.getenv_opt "OCAML_OMCB_CRASH_POINT" with
   | Some point when point = name ->
     Printf.eprintf "persistence: crash point %s\n%!" name;
     flush stderr;
@@ -97,9 +97,9 @@ let crash_point name =
 let fault_counter = ref None
 let fault_config =
   lazy
-    (let name = Sys.getenv_opt "SIM_MAP_FAULT" in
+    (let name = Sys.getenv_opt "OCAML_OMCB_FAULT" in
      let after =
-       match Sys.getenv_opt "SIM_MAP_FAULT_AFTER" with
+       match Sys.getenv_opt "OCAML_OMCB_FAULT_AFTER" with
        | None -> 0
        | Some raw -> (try max 0 (int_of_string raw) with _ -> 0)
      in
@@ -934,7 +934,7 @@ let before_commit (t : t) (state : Game_state.t) (commit : Move_engine.commit) =
   let frame = Wal_format.encode_transition transition in
   crash_point "wal-before-write";
   (* A torn record is written deliberately for the crash-recovery test. *)
-  (match Sys.getenv_opt "SIM_MAP_CRASH_POINT" with
+  (match Sys.getenv_opt "OCAML_OMCB_CRASH_POINT" with
    | Some "wal-partial-write" ->
      let half = Bytes.length frame / 2 in
      ignore (Unix.write t.fd frame 0 half);

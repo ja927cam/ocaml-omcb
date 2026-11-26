@@ -23,7 +23,7 @@ def text(relative: str) -> str:
 class DeploymentPolicyTests(unittest.TestCase):
     def test_pull_agent_has_no_shell_or_sudo(self) -> None:
         agent = text("deploy/pull_agent.py")
-        self.assertIn('DEPLOY_SCRIPT = "/opt/sim-map/deploy.sh"', agent)
+        self.assertIn('DEPLOY_SCRIPT = str(Path(__file__).resolve().parent / "deploy.sh")', agent)
         self.assertNotIn("shell=True", agent)
         self.assertNotIn('"sudo"', agent)
         self.assertNotIn("'sudo'", agent)
@@ -39,15 +39,15 @@ class DeploymentPolicyTests(unittest.TestCase):
         self.assertIn('DATA_DIR="/srv/chess/data"', script)
 
     def test_systemd_units_are_root_and_interval_bounded(self) -> None:
-        service = text("deploy/sim-map-pull.service")
-        timer = text("deploy/sim-map-pull.timer")
+        service = text("deploy/ocaml-omcb-pull.service")
+        timer = text("deploy/ocaml-omcb-pull.timer")
         self.assertIn("User=root", service)
-        self.assertIn("ExecStart=/usr/bin/python3 /opt/sim-map/pull_agent.py", service)
-        self.assertIn("EnvironmentFile=-/etc/sim-map/ghcr.env", service)
+        self.assertIn("ExecStart=/usr/bin/python3 /opt/ocaml-omcb/pull_agent.py", service)
+        self.assertIn("EnvironmentFile=-/etc/ocaml-omcb/ghcr.env", service)
         self.assertIn("OnUnitInactiveSec=5min", timer)
         self.assertIn("OnBootSec=2min", timer)
         self.assertIn("Persistent=true", timer)
-        self.assertIn("Unit=sim-map-pull.service", timer)
+        self.assertIn("Unit=ocaml-omcb-pull.service", timer)
 
     def test_workflow_has_no_vps_ssh_or_secrets(self) -> None:
         workflow = text(".github/workflows/deploy.yml")
@@ -98,19 +98,20 @@ class DeploymentPolicyTests(unittest.TestCase):
         self.assertIn("FROM build AS test", dockerfile)
         self.assertIn("dune runtest --profile release", dockerfile)
         self.assertIn(
-            "COPY --from=build /home/opam/sim-map/deploy ./deploy", dockerfile
+            "COPY --from=build /home/opam/ocaml-omcb/deploy ./deploy", dockerfile
         )
 
     def test_agent_enforces_expected_repository_and_source(self) -> None:
         agent = text("deploy/pull_agent.py")
         self.assertIn(
-            'EXPECTED_IMAGE = "ghcr.io/ja927cam/sim-map"', agent
+            'EXPECTED_IMAGE = "ghcr.io/ja927cam/ocaml-omcb"', agent
         )
         self.assertIn(
-            'EXPECTED_SOURCE = "https://github.com/ja927cam/sim-map"', agent
+            'EXPECTED_SOURCE = "https://github.com/ja927cam/ocaml-omcb"', agent
         )
-        self.assertIn("image != EXPECTED_IMAGE", agent)
-        self.assertIn("source != EXPECTED_SOURCE", agent)
+        self.assertIn("image == EXPECTED_IMAGE", agent)
+        self.assertIn("image == LEGACY_IMAGE", agent)
+        self.assertIn("source not in {EXPECTED_SOURCE, LEGACY_SOURCE}", agent)
         self.assertIn("DIGEST_RE", agent)
 
 

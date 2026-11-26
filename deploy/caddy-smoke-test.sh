@@ -13,10 +13,10 @@ IMAGE="${1:?usage: deploy/caddy-smoke-test.sh <image:tag> [port]}"
 PORT="${2:-$((18100 + RANDOM % 300))}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUFFIX="$$-$RANDOM"
-APP="sim-map-caddy-app-${SUFFIX}"
-CADDY="sim-map-caddy-${SUFFIX}"
-NETWORK="sim-map-caddy-net-${SUFFIX}"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/sim-map-caddy-smoke.XXXXXX")"
+APP="ocaml-omcb-caddy-app-${SUFFIX}"
+CADDY="ocaml-omcb-caddy-${SUFFIX}"
+NETWORK="ocaml-omcb-caddy-net-${SUFFIX}"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/ocaml-omcb-caddy-smoke.XXXXXX")"
 DATA_DIR="${TMP}/data"
 CADDYFILE="${TMP}/Caddyfile"
 
@@ -46,10 +46,10 @@ CADDY
 docker network create "${NETWORK}" >/dev/null
 
 docker run -d --name "${APP}" --network "${NETWORK}" --network-alias app --init \
-  -e SIM_MAP_INTERFACE=0.0.0.0 \
-  -e SIM_MAP_PORT=8080 \
-  -e SIM_MAP_DATA_DIR=/var/lib/sim-map/data \
-  -v "${DATA_DIR}:/var/lib/sim-map/data" \
+  -e OCAML_OMCB_INTERFACE=0.0.0.0 \
+  -e OCAML_OMCB_PORT=8080 \
+  -e OCAML_OMCB_DATA_DIR=/var/lib/ocaml-omcb/data \
+  -v "${DATA_DIR}:/var/lib/ocaml-omcb/data" \
   "${IMAGE}" >/dev/null
 
 for attempt in $(seq 1 60); do
@@ -83,7 +83,7 @@ if ! node -e 'process.exit(typeof WebSocket === "undefined" ? 1 : 0)' >/dev/null
   fi
 fi
 
-SIM_MAP_WS_URL="ws://127.0.0.1:${PORT}/ws" \
+OCAML_OMCB_WS_URL="ws://127.0.0.1:${PORT}/ws" \
   node ${NODE_WS_FLAG} "${SCRIPT_DIR}/smoke-client.js" \
   || fail "WebSocket move through Caddy failed"
 

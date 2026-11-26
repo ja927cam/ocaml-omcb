@@ -101,15 +101,15 @@ README.md
 
 ### Build graph
 
-- `sim_map_lib` (`lib/`) is unwrapped and depends on `lwt.unix` and `mtime.clock.os`.
+- `ocaml_omcb_lib` (`lib/`) is unwrapped and depends on `lwt.unix` and `mtime.clock.os`.
   Modules: `Piece`, `Board`, `Int16`, `Ledger`, `Move`, `Move_validator`,
   `Move_processor`, `Game_state`, `Move_request`, `Move_engine`,
   `State_worker`.
 - `protocol` is a separate dependency-free library.
-  It remains independent of `sim_map_lib`, so the WASM client does not link
+  It remains independent of `ocaml_omcb_lib`, so the WASM client does not link
   the server-side world representation.
 - `client` is a WASM executable using `brr` and `protocol`.
-- `server` uses `dream`, `protocol`, and `sim_map_lib`.
+- `server` uses `dream`, `protocol`, and `ocaml_omcb_lib`.
 - The server's default alias also builds the client.
 
 ---
@@ -1198,25 +1198,25 @@ record from sequence 1.
 ### Commit policy and ordering
 
 The worker supports four commit policies, selected by
-`SIM_MAP_WAL_GROUP`, `SIM_MAP_WAL_SYNC` and `SIM_MAP_ADAPTIVE`. Adaptive is
+`OCAML_OMCB_WAL_GROUP`, `OCAML_OMCB_WAL_SYNC` and `OCAML_OMCB_ADAPTIVE`. Adaptive is
 the default; fixed group commit with a 64-move maximum is the fallback.
 
-- **Strict** (`SIM_MAP_ADAPTIVE=0`, `SIM_MAP_WAL_GROUP=1`,
-  `SIM_MAP_WAL_SYNC=1`): validate → append → fsync → apply → publish. This is
+- **Strict** (`OCAML_OMCB_ADAPTIVE=0`, `OCAML_OMCB_WAL_GROUP=1`,
+  `OCAML_OMCB_WAL_SYNC=1`): validate → append → fsync → apply → publish. This is
   the original ordering and is available explicitly.
-- **Group commit** (fallback, `SIM_MAP_ADAPTIVE=0`,
-  `SIM_MAP_WAL_GROUP=64`, `SIM_MAP_WAL_SYNC=1`):
+- **Group commit** (fallback, `OCAML_OMCB_ADAPTIVE=0`,
+  `OCAML_OMCB_WAL_GROUP=64`, `OCAML_OMCB_WAL_SYNC=1`):
   take up to 64 consecutive moves, validate/append/apply each in order (so
   later moves observe earlier ones), `fsync` the WAL once, then publish every
   response and event. The in-memory apply is tentative until the group fsync;
   if the fsync raises, the worker fail-stops without publishing any response
   from that group. A snapshot request is a non-move item and forces the
   current group to be flushed first, so no client can read uncommitted state.
-- **Adaptive** (default, `SIM_MAP_ADAPTIVE=1`): a bounded controller samples move
+- **Adaptive** (default, `OCAML_OMCB_ADAPTIVE=1`): a bounded controller samples move
   arrivals, queued moves, recent fsync p50/p95, queued client outbox frames,
   broadcast lag p95, recipients per broadcast event and snapshot capture state
   every 100 ms. It chooses a
-  maximum batch in `[SIM_MAP_ADAPTIVE_MIN, SIM_MAP_ADAPTIVE_MAX]` and a
+  maximum batch in `[OCAML_OMCB_ADAPTIVE_MIN, OCAML_OMCB_ADAPTIVE_MAX]` and a
   group-formation delay in the configured delay bounds, and steps gradually
   with hysteresis. Classification is rule-based: quiet/moderate/heavy,
   storage-bound when the recent median fsync is slow, broadcast-bound when
@@ -1225,7 +1225,7 @@ the default; fixed group commit with a 64-move maximum is the fallback.
   validation, ordering or application. Durability is exactly the group-commit
   path above: the group fsync completes before responses or events are
   published.
-- **No fsync** (`SIM_MAP_WAL_SYNC=0`): append and publish without `fsync`;
+- **No fsync** (`OCAML_OMCB_WAL_SYNC=0`): append and publish without `fsync`;
   development only. Process kills survive via the kernel page cache, power
   loss can lose recent acknowledged moves.
 
@@ -1247,20 +1247,20 @@ The default durability settings are:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SIM_MAP_DATA_DIR` | `data` | WAL and snapshot directory |
-| `SIM_MAP_PORT` | `8080` | HTTP/WebSocket listen port |
-| `SIM_MAP_INTERFACE` | `localhost` | HTTP/WebSocket bind address (`0.0.0.0` in Docker) |
-| `SIM_MAP_WAL_GROUP` | `64` | Fallback maximum per commit when adaptive is off |
-| `SIM_MAP_WAL_SYNC` | `1` | Enable WAL `fsync` |
-| `SIM_MAP_ADAPTIVE` | `1` | Adaptive commit controller (`0` = fixed fallback) |
-| `SIM_MAP_ADAPTIVE_MIN` | `1` | Minimum adaptive batch size |
-| `SIM_MAP_ADAPTIVE_MAX` | `256` | Maximum adaptive batch size |
-| `SIM_MAP_ADAPTIVE_MIN_DELAY_US` | `0` | Minimum group-formation delay |
-| `SIM_MAP_ADAPTIVE_MAX_DELAY_US` | `2000` | Maximum group-formation delay |
-| `SIM_MAP_ADAPTIVE_HYSTERESIS` | `3` | Samples before a batch increase |
-| `SIM_MAP_SNAPSHOT_MOVES` | `100000` | Commit count between snapshots (`0` disables) |
-| `SIM_MAP_SNAPSHOT_SECONDS` | `600` | Seconds between snapshots (`0` disables) |
-| `SIM_MAP_DEBUG_GC` | `0` | Test-only `/debug/gc` endpoint (`1` enables) |
+| `OCAML_OMCB_DATA_DIR` | `data` | WAL and snapshot directory |
+| `OCAML_OMCB_PORT` | `8080` | HTTP/WebSocket listen port |
+| `OCAML_OMCB_INTERFACE` | `localhost` | HTTP/WebSocket bind address (`0.0.0.0` in Docker) |
+| `OCAML_OMCB_WAL_GROUP` | `64` | Fallback maximum per commit when adaptive is off |
+| `OCAML_OMCB_WAL_SYNC` | `1` | Enable WAL `fsync` |
+| `OCAML_OMCB_ADAPTIVE` | `1` | Adaptive commit controller (`0` = fixed fallback) |
+| `OCAML_OMCB_ADAPTIVE_MIN` | `1` | Minimum adaptive batch size |
+| `OCAML_OMCB_ADAPTIVE_MAX` | `256` | Maximum adaptive batch size |
+| `OCAML_OMCB_ADAPTIVE_MIN_DELAY_US` | `0` | Minimum group-formation delay |
+| `OCAML_OMCB_ADAPTIVE_MAX_DELAY_US` | `2000` | Maximum group-formation delay |
+| `OCAML_OMCB_ADAPTIVE_HYSTERESIS` | `3` | Samples before a batch increase |
+| `OCAML_OMCB_SNAPSHOT_MOVES` | `100000` | Commit count between snapshots (`0` disables) |
+| `OCAML_OMCB_SNAPSHOT_SECONDS` | `600` | Seconds between snapshots (`0` disables) |
+| `OCAML_OMCB_DEBUG_GC` | `0` | Test-only `/debug/gc` endpoint (`1` enables) |
 
 ### WAL format
 
@@ -1420,7 +1420,7 @@ snapshot is pending, and the last snapshot write duration.
 6. Start the one-second snapshot timer and the first WAL segment.
 7. Build the Dream router (`/`, `/metrics`, `/state-hash`, `/static`, `/ws`).
 8. Install SIGTERM/SIGINT drain handlers.
-9. `Dream.run` on `SIM_MAP_INTERFACE`/`SIM_MAP_PORT` (defaults `localhost:8080`).
+9. `Dream.run` on `OCAML_OMCB_INTERFACE`/`OCAML_OMCB_PORT` (defaults `localhost:8080`).
 
 Startup timings are logged for allocation, persistence recovery, verification,
 worker startup, and total startup. Recovery logs the restored sequence, the
@@ -1454,8 +1454,8 @@ This enables a higher-resolution browser timer for RTT metrics.
 | `/metrics` | Aggregate pipeline, worker, connection, outbox, persistence, memory and adaptive metrics as JSON |
 | `/healthz` | Lightweight liveness JSON |
 | `/readyz` | Lightweight readiness JSON (the listener starts only after recovery) |
-| `/debug/gc` | Test-only full GC/compaction endpoint when `SIM_MAP_DEBUG_GC=1` |
-| `/debug/memprof` | Test-only live allocation sampler when `SIM_MAP_MEMPROF=1` |
+| `/debug/gc` | Test-only full GC/compaction endpoint when `OCAML_OMCB_DEBUG_GC=1` |
+| `/debug/memprof` | Test-only live allocation sampler when `OCAML_OMCB_MEMPROF=1` |
 | `/static/**` | Static files from `_build/default/client` (prefix stripped by `Dream.scope`) |
 | `/ws` | Binary WebSocket move endpoint |
 
@@ -1475,9 +1475,9 @@ successful `/readyz` means the process is accepting connections.
 counters and the number/bytes of live snapshot copies. Snapshot copies are
 Bigarrays, so their data is external to the OCaml heap and must be accounted
 for separately. `/debug/gc` is compiled in but returns 404 unless
-`SIM_MAP_DEBUG_GC=1`; it forces a full major collection and compaction for
+`OCAML_OMCB_DEBUG_GC=1`; it forces a full major collection and compaction for
 memory-retention profiling only. `/debug/memprof` is likewise test-only and is
-enabled with `SIM_MAP_MEMPROF=1` (optional `SIM_MAP_MEMPROF_RATE`).
+enabled with `OCAML_OMCB_MEMPROF=1` (optional `OCAML_OMCB_MEMPROF_RATE`).
 
 ### WebSocket handler
 
@@ -2157,7 +2157,7 @@ new connection. See `bench/load_default_results.json`,
 ## 21. Operational commands
 
 ```bash
-cd /home/james/Work/sim-map
+cd /home/james/Work/ocaml-omcb
 
 dune build
 dune runtest

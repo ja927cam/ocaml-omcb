@@ -25,7 +25,7 @@ const os = require("os");
 const path = require("path");
 
 const CDP_PORT = 9223 + Math.floor(Math.random() * 500);
-const SERVER = process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
+const SERVER = process.env.OCAML_OMCB_TEST_URL || process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
 const WS_URL = SERVER.replace(/^http/, "ws").replace(/\/$/, "") + "/ws";
 const WIRE_FRAME = 4096;
 const BOARD_SCALE = 216;
@@ -218,7 +218,7 @@ async function main() {
     };
 
     await send("Page.enable");
-    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}" });
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ocaml-omcb.seen-intro', '1'); } catch (_) {}" });
     await send("Runtime.enable");
 
     // Record the 9-byte snapshot requests and 14-byte move requests the client
@@ -261,7 +261,7 @@ async function main() {
     // device colour deterministic. Colour assignment itself is covered by
     // client_colour_test.js.
     await send("Page.addScriptToEvaluateOnNewDocument", {
-      source: "localStorage.setItem('sim-map.player-colour', 'white');",
+      source: "localStorage.setItem('ocaml-omcb.player-colour', 'white');",
     });
     await send("Page.addScriptToEvaluateOnNewDocument", { source: hook });
     await send("Page.navigate", { url: `${SERVER}?x=${BOARD.x}&y=${BOARD.y}` });

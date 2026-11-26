@@ -14,7 +14,7 @@ Baseline checks were run before and after the changes:
 dune build
 dune runtest
 node test/crash_recovery_test.js
-SIM_MAP_ADAPTIVE=0 node test/crash_recovery_test.js
+OCAML_OMCB_ADAPTIVE=0 node test/crash_recovery_test.js
 ```
 
 The persistence, worker, connection-manager and adaptive-controller designs
@@ -44,14 +44,14 @@ The relevant durability invariant is:
 A test-only, one-shot fault hook was added to `lib/persistence.ml`:
 
 ```bash
-SIM_MAP_FAULT=wal-fsync|wal-append|wal-rotate|snapshot-write|snapshot-fsync|snapshot-rename|snapshot-dir-fsync
-SIM_MAP_FAULT_AFTER=<number of matching points to skip>
+OCAML_OMCB_FAULT=wal-fsync|wal-append|wal-rotate|snapshot-write|snapshot-fsync|snapshot-rename|snapshot-dir-fsync
+OCAML_OMCB_FAULT_AFTER=<number of matching points to skip>
 ```
 
 With neither variable set, the hooks are inert. The configuration is cached at
 first use, so the normal WAL hot path does not perform an environment lookup per
 append. Faults raise an ordinary exception, letting the worker exercise its
-normal failure path; `SIM_MAP_CRASH_POINT` remains the separate hard-kill path.
+normal failure path; `OCAML_OMCB_CRASH_POINT` remains the separate hard-kill path.
 
 The audit runner is:
 
@@ -67,17 +67,17 @@ and compares `/state-hash`. Results are written to
 Memory work uses `test/memory_profile_test.js`. It compares a no-snapshot
 control with a snapshot-heavy workload and records `/proc` RSS,
 `smaps_rollup`, `Gc.quick_stat`, explicitly tracked snapshot-copy bytes, and
-the effect of a forced full major GC/compaction (`SIM_MAP_DEBUG_GC=1`).
-`SIM_MAP_MEMPROF=1` additionally samples live allocation sites through
+the effect of a forced full major GC/compaction (`OCAML_OMCB_DEBUG_GC=1`).
+`OCAML_OMCB_MEMPROF=1` additionally samples live allocation sites through
 `Gc.Memprof`; both debug endpoints return 404 when not enabled.
 
 ## 3. WAL failure injection
 
 | Failure | Exact injection | Expected | Observed |
 |---|---|---|---|
-| WAL fsync, multi-move group | `SIM_MAP_FAULT=wal-fsync`, after the first group | committed group acknowledged; failing group rejected with no events; process fail-stops; restart valid | 16 accepted, 16 connection errors, exit code 70; restart sequence 32; no event for any failed-group move; snapshot request works |
-| WAL append / partial write | `SIM_MAP_FAULT=wal-append`, after 20 appends (four moves into the second group) | short record left behind; failing group rejected; process fail-stops; recovery truncates the torn tail | 16 accepted, 16 connection errors, exit code 70; restart sequence 20 with `truncated_wal=true`; recovery valid |
-| WAL segment rotation | `SIM_MAP_FAULT=wal-rotate`, first rotation | failed snapshot rotation must not take down the write path; later snapshot succeeds; no partial segment | 40/40 moves accepted; server stayed live; next snapshot wrote at sequence 24; no temporary/partial segment; restart digest matched |
+| WAL fsync, multi-move group | `OCAML_OMCB_FAULT=wal-fsync`, after the first group | committed group acknowledged; failing group rejected with no events; process fail-stops; restart valid | 16 accepted, 16 connection errors, exit code 70; restart sequence 32; no event for any failed-group move; snapshot request works |
+| WAL append / partial write | `OCAML_OMCB_FAULT=wal-append`, after 20 appends (four moves into the second group) | short record left behind; failing group rejected; process fail-stops; recovery truncates the torn tail | 16 accepted, 16 connection errors, exit code 70; restart sequence 20 with `truncated_wal=true`; recovery valid |
+| WAL segment rotation | `OCAML_OMCB_FAULT=wal-rotate`, first rotation | failed snapshot rotation must not take down the write path; later snapshot succeeds; no partial segment | 40/40 moves accepted; server stayed live; next snapshot wrote at sequence 24; no temporary/partial segment; restart digest matched |
 
 A group of 16 was used, with a 10 ms group-formation delay, so the failing
 group contained several moves. An accepted response was never observed for a
@@ -94,7 +94,7 @@ acknowledged, and clients saw connection errors or a close.
 
 ## 4. Snapshot failure injection
 
-Each case used `SIM_MAP_SNAPSHOT_MOVES=10`, sent 24 valid moves and injected a
+Each case used `OCAML_OMCB_SNAPSHOT_MOVES=10`, sent 24 valid moves and injected a
 one-shot failure on the first snapshot.
 
 | Failure | Expected | Observed |
@@ -469,7 +469,7 @@ dune build
 dune runtest
 node test/failure_injection_test.js
 node test/crash_recovery_test.js
-SIM_MAP_ADAPTIVE=0 node test/crash_recovery_test.js
+OCAML_OMCB_ADAPTIVE=0 node test/crash_recovery_test.js
 node test/adaptive_soak_test.js          # 30 minutes
 SOAK_PHASE_SECONDS=10 node test/adaptive_soak_test.js  # smoke
 ```

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Pull-based deployment agent for the sim-map production VPS.
+"""Pull-based deployment agent for the ocaml-omcb production VPS.
 
 The agent runs as root under the dedicated systemd timer. It reads the public
 (or read-only private) GHCR manifest for the `latest` tag, extracts the
 immutable Git commit SHA from the image's OCI revision label, and invokes the
-root-owned /opt/sim-map/deploy.sh directly.
+root-owned /opt/ocaml-omcb/deploy.sh directly.
 
 Change detection uses the registry's Docker-Content-Digest for `latest`, not
 the GitHub API. Registry/network failures are logged and leave the running
@@ -30,13 +30,18 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-EXPECTED_IMAGE = "ghcr.io/ja927cam/sim-map"
-EXPECTED_REPOSITORY = "ja927cam/sim-map"
-EXPECTED_SOURCE = "https://github.com/ja927cam/sim-map"
+EXPECTED_IMAGE = "ghcr.io/ja927cam/ocaml-omcb"
+EXPECTED_REPOSITORY = "ja927cam/ocaml-omcb"
+EXPECTED_SOURCE = "https://github.com/ja927cam/ocaml-omcb"
+# Existing VPS installs still read the pre-rename image. Keep accepting it
+# until the host pull agent and .env have been migrated.
+LEGACY_IMAGE = "ghcr.io/ja927cam/sim-map"
+LEGACY_REPOSITORY = "ja927cam/sim-map"
+LEGACY_SOURCE = "https://github.com/ja927cam/sim-map"
 GHCR_BASE = "https://ghcr.io"
 DEFAULT_IMAGE = EXPECTED_IMAGE
-DEFAULT_STATE_DIR = "/var/lib/sim-map-pull"
-DEPLOY_SCRIPT = "/opt/sim-map/deploy.sh"
+DEFAULT_STATE_DIR = "/var/lib/ocaml-omcb-pull"
+DEPLOY_SCRIPT = str(Path(__file__).resolve().parent / "deploy.sh")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
@@ -71,11 +76,13 @@ def parse_image(image: str) -> tuple[str, str]:
     last = image.rsplit("/", 1)[-1]
     if ":" in last:
         image = image.rsplit(":", 1)[0]
-    if image != EXPECTED_IMAGE:
-        raise ValueError(
-            f"APP_IMAGE must be exactly {EXPECTED_IMAGE!r}, got {image!r}"
-        )
-    return "ghcr.io", EXPECTED_REPOSITORY
+    if image == EXPECTED_IMAGE:
+        return "ghcr.io", EXPECTED_REPOSITORY
+    if image == LEGACY_IMAGE:
+        return "ghcr.io", LEGACY_REPOSITORY
+    raise ValueError(
+        f"APP_IMAGE must be {EXPECTED_IMAGE!r} or {LEGACY_IMAGE!r}, got {image!r}"
+    )
 
 
 def basic_auth_header() -> str | None:
@@ -224,9 +231,10 @@ def fetch_latest(base: str, repository: str) -> tuple[str, str]:
 
     labels = get_config_labels(base, repository, config_digest, token)
     source = labels.get("org.opencontainers.image.source", "").strip()
-    if source != EXPECTED_SOURCE:
+    if source not in {EXPECTED_SOURCE, LEGACY_SOURCE}:
         raise RuntimeError(
-            f"latest image source label must be {EXPECTED_SOURCE!r}"
+            "latest image source label must be "
+            f"{EXPECTED_SOURCE!r} or {LEGACY_SOURCE!r}"
         )
     revision = labels.get("org.opencontainers.image.revision", "").strip()
     if not SHA_RE.match(revision):

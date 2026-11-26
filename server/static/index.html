@@ -944,7 +944,7 @@
       <p class="note">You are playing <strong id="intro-colour">White</strong> on this device. Captures are only allowed on the board a piece started on.</p>
       <button id="intro-close" type="button">Enter the world</button>
       <div id="intro-footer">
-        <a href="https://github.com/ja927cam/sim-map" target="_blank" rel="noreferrer">Source</a>
+        <a href="https://github.com/ja927cam/ocaml-omcb" target="_blank" rel="noreferrer">Source</a>
         <button id="intro-share" type="button" class="link-button">Share</button>
         <a href="/status">Status</a>
         <span>1,000 × 1,000 boards</span>
@@ -962,7 +962,13 @@
       const toast = document.getElementById('toast');
       const colour = document.getElementById('colour');
       const introColour = document.getElementById('intro-colour');
-      const storageKey = 'sim-map.seen-intro';
+      const storageKey = 'ocaml-omcb.seen-intro';
+      try {
+        if (localStorage.getItem(storageKey) === null) {
+          const legacy = localStorage.getItem('sim-map.seen-intro');
+          if (legacy !== null) localStorage.setItem(storageKey, legacy);
+        }
+      } catch (_) {}
       let lastFocus = null;
 
       function syncColour() {

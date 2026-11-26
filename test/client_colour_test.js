@@ -7,7 +7,7 @@
  * long-lived cookie, so clearing either store alone does not change it.
  *
  * Requires the game server at http://localhost:8080 (override with
- * SIM_MAP_TEST_URL) and chromium on PATH. It spawns its own headless browser.
+ * OCAML_OMCB_TEST_URL) and chromium on PATH. It spawns its own headless browser.
  */
 
 const { spawn } = require("child_process");
@@ -16,9 +16,9 @@ const os = require("os");
 const path = require("path");
 
 const CDP_PORT = 9400 + Math.floor(Math.random() * 400);
-const SERVER = process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
-const STORAGE_KEY = "sim-map.player-colour";
-const COOKIE_NAME = "sim-map-colour";
+const SERVER = process.env.OCAML_OMCB_TEST_URL || process.env.SIM_MAP_TEST_URL || "http://localhost:8080/";
+const STORAGE_KEY = "ocaml-omcb.player-colour";
+const COOKIE_NAME = "ocaml-omcb-colour";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function fail(message) {
@@ -171,7 +171,7 @@ async function main() {
     };
 
     await send("Page.enable");
-    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('sim-map.seen-intro', '1'); } catch (_) {}" });
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ocaml-omcb.seen-intro', '1'); } catch (_) {}" });
     await send("Runtime.enable");
 
     // Start from a clean device so the first assertion covers assignment.

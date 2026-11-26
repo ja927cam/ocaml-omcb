@@ -1,5 +1,5 @@
 (library
- (name sim_map_client_core)
+ (name ocaml_omcb_client_core)
  (modules board_cache viewport snapshot_plan request_tracker move_hints)
  (libraries))
 
@@ -10,7 +10,7 @@
  (libraries
   brr
   protocol
-  sim_map_client_core
+  ocaml_omcb_client_core
   )
 )
 

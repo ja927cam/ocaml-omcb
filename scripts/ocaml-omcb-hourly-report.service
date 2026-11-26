@@ -1,0 +1,13 @@
+[Unit]
+Description=Hourly email report for chess.jamesashwood.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Work/ocaml-omcb
+Environment=OCAML_OMCB_REPORT_URL=https://chess.jamesashwood.com
+Environment=OCAML_OMCB_REPORT_TO=contact@jamesashwood.com
+ExecStart=/usr/bin/python3 %h/Work/ocaml-omcb/scripts/hourly_report.py
+TimeoutStartSec=120
+Nice=10

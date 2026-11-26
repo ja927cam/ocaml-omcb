@@ -60,11 +60,11 @@ async function startServer(port, dataDir) {
     cwd: ROOT,
     env: {
       ...process.env,
-      SIM_MAP_DATA_DIR: dataDir,
-      SIM_MAP_PORT: String(port),
-      SIM_MAP_INTERFACE: "127.0.0.1",
-      SIM_MAP_SNAPSHOT_MOVES: "0",
-      SIM_MAP_SNAPSHOT_SECONDS: "0",
+      OCAML_OMCB_DATA_DIR: dataDir,
+      OCAML_OMCB_PORT: String(port),
+      OCAML_OMCB_INTERFACE: "127.0.0.1",
+      OCAML_OMCB_SNAPSHOT_MOVES: "0",
+      OCAML_OMCB_SNAPSHOT_SECONDS: "0",
     },
     stdio: ["ignore", fd, fd],
   });
@@ -273,7 +273,7 @@ async function run(port) {
 
 (async () => {
   const port = await freePort();
-  const dataDir = path.join(os.tmpdir(), `sim-map-subscriptions-${MODE}-${process.pid}`);
+  const dataDir = path.join(os.tmpdir(), `ocaml-omcb-subscriptions-${MODE}-${process.pid}`);
   const server = await startServer(port, dataDir);
   try {
     const result = await run(port);

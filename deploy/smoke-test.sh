@@ -13,8 +13,8 @@ set -Eeuo pipefail
 IMAGE="${1:?usage: deploy/smoke-test.sh <image:tag> [port]}"
 PORT="${2:-18080}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONTAINER="sim-map-smoke-$$"
-DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sim-map-smoke-data.XXXXXX")"
+CONTAINER="ocaml-omcb-smoke-$$"
+DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ocaml-omcb-smoke-data.XXXXXX")"
 
 cleanup() {
   docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
@@ -42,10 +42,10 @@ wait_ready() {
 start_container() {
   docker run -d --name "${CONTAINER}" --init \
     -p "127.0.0.1:${PORT}:8080" \
-    -e SIM_MAP_INTERFACE=0.0.0.0 \
-    -e SIM_MAP_PORT=8080 \
-    -e SIM_MAP_DATA_DIR=/var/lib/sim-map/data \
-    -v "${DATA_DIR}:/var/lib/sim-map/data" \
+    -e OCAML_OMCB_INTERFACE=0.0.0.0 \
+    -e OCAML_OMCB_PORT=8080 \
+    -e OCAML_OMCB_DATA_DIR=/var/lib/ocaml-omcb/data \
+    -v "${DATA_DIR}:/var/lib/ocaml-omcb/data" \
     "${IMAGE}" >/dev/null
 }
 
@@ -74,7 +74,7 @@ if ! node -e 'process.exit(typeof WebSocket === "undefined" ? 1 : 0)' >/dev/null
     fail "node does not provide a WebSocket client"
   fi
 fi
-SIM_MAP_WS_URL="ws://127.0.0.1:${PORT}/ws" \
+OCAML_OMCB_WS_URL="ws://127.0.0.1:${PORT}/ws" \
   node ${NODE_WS_FLAG} "${SCRIPT_DIR}/smoke-client.js" \
   || fail "websocket move failed"
 
