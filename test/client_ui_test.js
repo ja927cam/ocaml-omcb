@@ -168,6 +168,49 @@ async function main() {
     if (coordsBefore === coordsAfter) {
       fail(`minimap click did not move the camera (${coordsBefore})`);
     }
+    if (!(await evaluate("document.getElementById('coords').parentElement.id === 'minimap-wrap'"))) {
+      fail("coordinates are not above the minimap");
+    }
+    await evaluate("window.simMapGoto(222, 333)");
+    await sleep(350);
+    const apiCoords = await evaluate("document.getElementById('coords').textContent");
+    if (apiCoords !== "(222, 333)") {
+      fail(`simMapGoto did not move the camera: ${apiCoords}`);
+    }
+    await evaluate("document.getElementById('coords').click()");
+    await evaluate("document.getElementById('goto-input').value = '444, 555'");
+    await evaluate("document.getElementById('goto-form').requestSubmit()");
+    await sleep(350);
+    const formCoords = await evaluate("document.getElementById('coords').textContent");
+    if (formCoords !== "(444, 555)") {
+      fail(`coordinate form did not move the camera: ${formCoords}`);
+    }
+    await evaluate("window.__simMapActive = { viewers: [{ x: 900, y: 100 }], recent: [], watchers_total: 1 }");
+    const markerRect = JSON.parse(
+      await evaluate("JSON.stringify(document.getElementById('minimap').getBoundingClientRect())")
+    );
+    await send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: markerRect.x + markerRect.width * 0.9,
+      y: markerRect.y + markerRect.height * 0.1,
+      button: "left",
+      clickCount: 1,
+      buttons: 1,
+    });
+    await send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: markerRect.x + markerRect.width * 0.9,
+      y: markerRect.y + markerRect.height * 0.1,
+      button: "left",
+      clickCount: 1,
+      buttons: 0,
+    });
+    await sleep(400);
+    const markerCoords = await evaluate("document.getElementById('coords').textContent");
+    if (markerCoords !== "(900, 100)") {
+      fail(`minimap marker click did not teleport: ${markerCoords}`);
+    }
+    await evaluate("window.__simMapActive = null");
 
     // Pinch zoom on a phone-sized viewport.
     await send("Emulation.setDeviceMetricsOverride", {

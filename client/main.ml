@@ -1193,6 +1193,14 @@ let main () =
     request_draw ()
   in
 
+  let goto x y =
+    update_layout ();
+    select_center (clamp_int x 0 max_coord) (clamp_int y 0 max_coord)
+  in
+  Jv.set Jv.global "simMapGoto"
+    (Jv.callback ~arity:2 (fun x y ->
+         goto (Jv.to_int x) (Jv.to_int y)));
+
   let zoom_by factor =
     let center_x = !view_left +. (visible_w () /. 2.) in
     let center_y = !view_top +. (visible_h () /. 2.) in
@@ -1223,6 +1231,38 @@ let main () =
   (match Document.find_el_by_id G.document (Jstr.v "minimap") with
    | None -> ()
    | Some minimap ->
+     let marker_at x y =
+       let active = Jv.get Jv.global "__simMapActive" in
+       if Jv.is_none active then None
+       else begin
+         let best = ref None in
+         let consider markers =
+           let length = Jv.Int.get markers "length" in
+           for index = 0 to length - 1 do
+             let marker = Jv.get markers (string_of_int index) in
+             let mx = Jv.Int.get marker "x" in
+             let my = Jv.Int.get marker "y" in
+             let px = float mx /. 1000. *. El.bound_w minimap in
+             let py = float my /. 1000. *. El.bound_h minimap in
+             let dx = px -. x and dy = py -. y in
+             let distance = (dx *. dx) +. (dy *. dy) in
+             if distance <= 144. then
+               match !best with
+               | Some (best_distance, _, _) when best_distance <= distance -> ()
+               | _ -> best := Some (distance, mx, my)
+           done
+         in
+         (match Jv.find active "viewers" with
+          | Some viewers -> consider viewers
+          | None -> ());
+         (match Jv.find active "recent" with
+          | Some recent -> consider recent
+          | None -> ());
+         match !best with
+         | Some (_, mx, my) -> Some (mx, my)
+         | None -> None
+       end
+     in
      ignore
        (Ev.listen Ev.click
           (fun ev ->
@@ -1241,7 +1281,9 @@ let main () =
                    (y /. max 1. (El.bound_h minimap) *. 1000.))
                 0 max_coord
             in
-            select_center bx by)
+            match marker_at x y with
+            | Some (mx, my) -> select_center mx my
+            | None -> select_center bx by)
           (El.as_target minimap)));
 
   let on_resize _ =

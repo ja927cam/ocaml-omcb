@@ -58,6 +58,12 @@
 
 ### Client experience
 
+- Moved the coordinate readout above the minimap. Click it to enter an
+  `x, y` pair, or call `window.simMapGoto(x, y)` programmatically. Clicking a
+  viewer or recent-move marker on the minimap now teleports directly to that
+  board.
+
+
 - Castling can now be initiated by dragging the king onto its destination, the
   king onto the rook, or the rook onto the king. Both pieces move to the two
   central squares and swap sides, including across boards up to 36 squares

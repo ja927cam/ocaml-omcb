@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#18120d">
   <link rel="canonical" href="https://chess.jamesashwood.com/">
-  <link rel="preload" href="/static/main.bc.wasm.js?v=20261126k" as="script">
+  <link rel="preload" href="/static/main.bc.wasm.js?v=20261126l" as="script">
   <title>One Million Chessboards — a shared living world</title>
   <meta name="description" content="A single shared world of 1,000 × 1,000 live chessboards. Pan, zoom and play. Every move is permanent.">
   <meta property="og:type" content="website">
@@ -422,6 +422,51 @@
       padding: 7px;
       border-radius: 7px;
       pointer-events: auto;
+    }
+
+    #minimap-wrap #coords {
+      width: 100%;
+      justify-content: center;
+      margin-bottom: 6px;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #goto-form {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+
+    #goto-form[hidden] { display: none; }
+
+    #goto-input {
+      min-width: 0;
+      width: 100%;
+      padding: 5px 6px;
+      border: 1px solid var(--line-strong);
+      border-radius: 3px;
+      background: rgba(255, 252, 243, 0.8);
+      color: var(--ink);
+      font: 600 11px/1 Georgia, serif;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #goto-input:focus {
+      outline: 2px solid rgba(201, 164, 92, 0.55);
+      outline-offset: 1px;
+    }
+
+    #goto-submit {
+      flex: 0 0 auto;
+      padding: 5px 7px;
+      border: 1px solid #3d5134;
+      border-radius: 3px;
+      background: linear-gradient(180deg, #6f8f5f, #557349);
+      color: #fbf4e5;
+      font: 700 10px/1 Georgia, serif;
+      cursor: pointer;
     }
 
     #minimap {
@@ -892,7 +937,6 @@
       </div>
     </div>
     <div id="top-actions" class="ui">
-      <div id="coords" class="pill" aria-live="off">(0, 0)</div>
       <button id="share-toggle" type="button" aria-label="Share this world">↗</button>
       <button id="help-toggle" type="button" aria-label="How to play" aria-haspopup="dialog">?</button>
     </div>
@@ -905,6 +949,11 @@
   </div>
 
   <div id="minimap-wrap" class="glass ui" aria-label="World map">
+    <form id="goto-form" hidden autocomplete="off">
+      <input id="goto-input" type="text" inputmode="numeric" placeholder="x, y" aria-label="Board coordinates to jump to">
+      <button id="goto-submit" type="submit">Go</button>
+    </form>
+    <button id="coords" type="button" class="pill" aria-live="off" title="Enter coordinates to jump">(0, 0)</button>
     <canvas id="minimap" width="236" height="236" role="img" aria-label="World location map"></canvas>
     <span id="minimap-label">World</span>
     <span id="minimap-legend" aria-hidden="true">
@@ -976,6 +1025,53 @@
         }
       } catch (_) {}
       let lastFocus = null;
+
+      const coordsButton = document.getElementById('coords');
+      const gotoForm = document.getElementById('goto-form');
+      const gotoInput = document.getElementById('goto-input');
+
+      function jumpTo(x, y) {
+        if (typeof window.simMapGoto === 'function') {
+          window.simMapGoto(x, y);
+        } else {
+          const params = new URLSearchParams(window.location.search);
+          params.set('x', String(x));
+          params.set('y', String(y));
+          window.location.search = params.toString();
+        }
+      }
+
+      function parseCoords(value) {
+        const match = String(value).trim().match(/^\(?\s*(-?\d+)\s*[, ]\s*(-?\d+)\s*\)?$/);
+        if (!match) return null;
+        const x = Number(match[1]);
+        const y = Number(match[2]);
+        if (!Number.isInteger(x) || !Number.isInteger(y)) return null;
+        if (x < 0 || x > 999 || y < 0 || y > 999) return null;
+        return [x, y];
+      }
+
+      coordsButton.addEventListener('click', function () {
+        const opening = gotoForm.hidden;
+        gotoForm.hidden = !opening;
+        if (opening) {
+          gotoInput.value = coordsButton.textContent.replace(/[()]/g, '').trim();
+          gotoInput.focus();
+          gotoInput.select();
+        }
+      });
+
+      gotoForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        const parsed = parseCoords(gotoInput.value);
+        if (!parsed) {
+          showToast('Enter coordinates as x, y');
+          gotoInput.focus();
+          return;
+        }
+        jumpTo(parsed[0], parsed[1]);
+        gotoForm.hidden = true;
+      });
 
       function syncColour() {
         introColour.textContent = colour.textContent.trim() || 'White';
@@ -1175,7 +1271,7 @@
   <script>
     (function () {
       const params = new URLSearchParams(window.location.search);
-      const entry = '/static/main.bc.wasm.js?v=20261126k';
+      const entry = '/static/main.bc.wasm.js?v=20261126l';
       let loaded = false;
       function loadClient() {
         if (loaded) return;

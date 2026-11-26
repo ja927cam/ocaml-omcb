@@ -207,9 +207,11 @@ The board grid fills the whole window.
   them and swap sides. Drag the king onto its destination, or drag the king
   onto the rook or the rook onto the king. Either piece loses this right after
   any move.
-- The current centre is shown in the top-right corner. A new visitor without
-  explicit coordinates joins near the busiest group of current viewers.
+- The current centre is shown just above the minimap. Click it to enter
+  coordinates, or call `window.simMapGoto(x, y)` from the console.
 - `?x=<board_x>&y=<board_y>` opens the client centred on that board.
+- Click a green viewer dot or a gold recent-move dot on the minimap to jump
+  directly to that board.
 - The bottom-left corner shows the running tally of black and white kings
   captured across the world. The minimap shows green dots for live viewers
   and fading gold dots for recent moves.
