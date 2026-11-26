@@ -197,6 +197,44 @@ The board grid fills the whole window.
 - At 216 px per board, roughly three boards fit vertically in a 700 px
   window; larger windows show more of the world.
 
+## Hourly email report
+
+`scripts/hourly_report.py` fetches `/metrics`, `/healthz` and `/readyz`,
+compares the live counters with the previous successful run, and emails a
+plain-text summary through `msmtp`. It flags queue buildup, websocket drops or
+send failures, board-load failures, restarts, WAL/snapshot problems, high RSS
+and sustained broadcast latency. The previous state is only advanced after a
+successful send, so a failed email is covered by the next report.
+
+Install the user timer (the service uses `%h/Work/sim-map`; adjust it if the
+checkout lives elsewhere):
+
+```bash
+cp scripts/sim-map-hourly-report.service scripts/sim-map-hourly-report.timer \
+  ~/.config/systemd/user/
+# edit SIM_MAP_REPORT_TO in the service if needed
+systemctl --user daemon-reload
+systemctl --user enable --now sim-map-hourly-report.timer
+systemctl --user list-timers sim-map-hourly-report.timer
+```
+
+Preview a report without sending it or advancing the state:
+
+```bash
+python3 scripts/hourly_report.py --dry-run
+```
+
+Recent runs and delivery errors:
+
+```bash
+journalctl --user -u sim-map-hourly-report.service
+```
+
+The comparison state is stored at
+`~/.local/state/sim-map-hourly-report/state.json`. A first run establishes a
+baseline; later runs report one-hour deltas. If the machine is asleep, the
+timer's `Persistent=true` sends the missed report when it wakes.
+
 ## Documentation
 
 - `SPEC.md` — complete implementation specification and invariants.

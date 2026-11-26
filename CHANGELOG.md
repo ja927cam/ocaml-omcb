@@ -105,6 +105,13 @@
   connection, persistence and adaptive-commit metrics. `/state-hash` and
   `/debug/*` remain internal to the Docker network.
 
+- Added `scripts/hourly_report.py` and a systemd user timer that emails an
+  hourly activity and health summary from the public metrics endpoints. The
+  report compares counters with the previous successful run and flags queue
+  buildup, websocket drops/send failures, board-load failures, restarts,
+  WAL/snapshot issues, high RSS and sustained broadcast latency. State only
+  advances after a successful send.
+
 ### Production CI/CD
 
 - Added `.github/workflows/deploy.yml`: on every push to `main`, validate the
