@@ -140,6 +140,7 @@ def snapshot(metrics: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "captured_at": datetime.now(timezone.utc).isoformat(),
+        "started_ns": integer(value("started_ns")),
         "uptime_ms": number(value("uptime_ms")),
         "moves_processed": integer(value("worker", "moves_processed")),
         "requests_processed": integer(value("worker", "requests_processed")),
@@ -245,24 +246,37 @@ def build_report(
     elif str(ready.get("status")) != "ready":
         issue("CRITICAL", f"readiness endpoint returned {ready!r}")
 
-    if previous and current["uptime_ms"] < number(previous.get("uptime_ms")):
+    previous_start = previous.get("started_ns") if previous else None
+    restarted = bool(
+        previous
+        and (
+            current["uptime_ms"] < number(previous.get("uptime_ms"))
+            or (
+                isinstance(previous_start, (int, float))
+                and previous_start != current["started_ns"]
+            )
+        )
+    )
+    if restarted:
         issue("WATCH", "process restarted during the window (deploy or crash)")
         window = "process restarted — deltas reset"
+        window_seconds = None
+    comparison = None if restarted else previous
 
-    d_moves = delta(current, previous, "moves_processed")
-    d_requests = delta(current, previous, "requests_processed")
-    d_rejected = delta(current, previous, "requests_rejected")
-    d_events = delta(current, previous, "events_broadcast")
-    d_recipients = delta(current, previous, "recipients")
-    d_board_requests = delta(current, previous, "board_requests")
-    d_board_boards = delta(current, previous, "board_boards")
-    d_board_failures = delta(current, previous, "board_failures")
-    d_sequence = delta(current, previous, "sequence")
-    d_kings_white = delta(current, previous, "kings_white")
-    d_kings_black = delta(current, previous, "kings_black")
-    d_outbox_dropped = delta(current, previous, "outbox_dropped")
-    d_send_failures = delta(current, previous, "send_failures")
-    d_outbox_unregisters = delta(current, previous, "outbox_full_unregisters")
+    d_moves = delta(current, comparison, "moves_processed")
+    d_requests = delta(current, comparison, "requests_processed")
+    d_rejected = delta(current, comparison, "requests_rejected")
+    d_events = delta(current, comparison, "events_broadcast")
+    d_recipients = delta(current, comparison, "recipients")
+    d_board_requests = delta(current, comparison, "board_requests")
+    d_board_boards = delta(current, comparison, "board_boards")
+    d_board_failures = delta(current, comparison, "board_failures")
+    d_sequence = delta(current, comparison, "sequence")
+    d_kings_white = delta(current, comparison, "kings_white")
+    d_kings_black = delta(current, comparison, "kings_black")
+    d_outbox_dropped = delta(current, comparison, "outbox_dropped")
+    d_send_failures = delta(current, comparison, "send_failures")
+    d_outbox_unregisters = delta(current, comparison, "outbox_full_unregisters")
 
     if d_outbox_dropped and d_outbox_dropped > 0:
         issue("CRITICAL", f"{d_outbox_dropped} outbox drop(s) during the window")
@@ -320,7 +334,7 @@ def build_report(
     if rss_kb > 1_500_000:
         issue("WATCH", f"RSS is high ({rss_kb / 1024:.0f} MiB)")
 
-    if previous:
+    if comparison:
         if d_moves == 0:
             note("no accepted moves in the window")
         if current["clients"] == 0:
@@ -332,7 +346,7 @@ def build_report(
     elif issues:
         severity = "WATCH"
 
-    if previous and window_seconds is not None:
+    if comparison and window_seconds is not None:
         hours = max(window_seconds / 3600.0, 1.0 / 60.0)
     else:
         hours = None
