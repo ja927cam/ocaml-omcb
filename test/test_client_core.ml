@@ -4,6 +4,7 @@ module C = Board_cache
 module V = Viewport
 module P = Snapshot_plan
 module R = Request_tracker
+module H = Move_hints
 
 let failures = ref 0
 
@@ -286,6 +287,92 @@ let test_sustained_pan_bound () =
   V.iter final_window (fun x y ->
       check "final visible board retained" (C.mem cache (key x y)))
 
+let piece_byte ?(unmoved = false) type_code white original =
+  (type_code lsl 1) lor (if white then 1 else 0)
+  lor (if original then 0x10 else 0)
+  lor (if unmoved then 0x20 else 0)
+
+let hint_boards boards =
+  let table = Hashtbl.create 8 in
+  List.iter
+    (fun (bx, by, pieces) ->
+      Hashtbl.add table ((by * 1000) + bx) pieces)
+    boards;
+  fun bx by -> Hashtbl.find_opt table ((by * 1000) + bx)
+
+let empty_pieces () = Bytes.make 64 '\000'
+
+let pieces_with entries =
+  let pieces = empty_pieces () in
+  List.iter (fun (square, byte) -> Bytes.set pieces square (Char.chr byte)) entries;
+  pieces
+
+let has_target targets bx by square =
+  List.exists
+    (fun (t : H.target) -> t.bx = bx && t.by = by && t.square = square)
+    targets
+
+let capture_target targets bx by square =
+  List.exists
+    (fun (t : H.target) ->
+      t.bx = bx && t.by = by && t.square = square && t.capture)
+    targets
+
+let test_hints_rook () =
+  let rook = piece_byte 4 true true in
+  let pieces = pieces_with [ (56, rook) ] in
+  let get = hint_boards [ (0, 0, pieces) ] in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:56 ~piece:rook in
+  check_int "rook open file/rank" 14 (List.length targets);
+  check "rook reaches h1" (has_target targets 0 0 63);
+  let blocked = pieces_with [ (56, rook); (48, piece_byte 1 true true) ] in
+  let get = hint_boards [ (0, 0, blocked) ] in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:56 ~piece:rook in
+  check "rook blocked by own pawn" (not (has_target targets 0 0 48));
+  check "rook blocked before a3" (not (has_target targets 0 0 40));
+  check_int "rook blocked target count" 7 (List.length targets);
+  let captured = pieces_with [ (56, rook); (48, piece_byte 1 false true) ] in
+  let get = hint_boards [ (0, 0, captured) ] in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:56 ~piece:rook in
+  check "rook capture" (capture_target targets 0 0 48);
+  check "rook stops after capture" (not (has_target targets 0 0 40))
+
+let test_hints_knight_pawn () =
+  let knight = piece_byte 2 true true in
+  let pieces = pieces_with [ (57, knight) ] in
+  let get = hint_boards [ (0, 0, pieces) ] in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:57 ~piece:knight in
+  check_int "knight from b1" 3 (List.length targets);
+  check "knight a3" (has_target targets 0 0 40);
+  let pawn = piece_byte 1 true true in
+  let pieces = pieces_with [ (52, pawn); (43, piece_byte 1 false true) ] in
+  let get = hint_boards [ (0, 0, pieces) ] in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:52 ~piece:pawn in
+  check "pawn one forward" (has_target targets 0 0 44);
+  check "pawn two forward" (has_target targets 0 0 36);
+  check "pawn diagonal capture" (capture_target targets 0 0 43)
+
+let test_hints_cross_board () =
+  let rook = piece_byte 4 true true in
+  let left = pieces_with [ (63, rook) ] in
+  let right = empty_pieces () in
+  let get = hint_boards [ (0, 0, left); (1, 0, right) ] in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:63 ~piece:rook in
+  check "rook crosses into next board" (has_target targets 1 0 56);
+  let blocked_right = pieces_with [ (0, piece_byte 1 false true) ] in
+  let get = hint_boards [ (0, 0, left); (1, 0, blocked_right) ] in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:63 ~piece:rook in
+  check "cross-board capture is not offered"
+    (not (capture_target targets 1 0 56))
+
+let test_hints_castle () =
+  let king = piece_byte ~unmoved:true 6 true true in
+  let rook = piece_byte ~unmoved:true 4 true true in
+  let pieces = pieces_with [ (60, king); (63, rook) ] in
+  let get = hint_boards [ (0, 0, pieces) ] in
+  let targets = H.targets ~get ~bx:0 ~by:0 ~square:60 ~piece:king in
+  check "king-side castle offered" (has_target targets 0 0 62)
+
 let () =
   test_cache_lru ();
   test_cache_capacity ();
@@ -303,6 +390,10 @@ let () =
   test_live_update_race ();
   test_evicted_board_reloads ();
   test_sustained_pan_bound ();
+  test_hints_rook ();
+  test_hints_knight_pawn ();
+  test_hints_cross_board ();
+  test_hints_castle ();
   if !failures = 0 then Printf.printf "client core tests: OK\n%!"
   else begin
     Printf.eprintf "client core tests: %d failure(s)\n%!" !failures;

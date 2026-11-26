@@ -389,6 +389,10 @@ let main () =
   let page_bg = C2d.color (Jstr.v "#1b1b1b") in
   let src_hl = C2d.color (Jstr.v "rgba(255, 235, 59, 0.45)") in
   let dst_hl = C2d.color (Jstr.v "rgba(20, 85, 30, 0.45)") in
+  let hint_fill = C2d.color (Jstr.v "rgba(201, 164, 92, 0.55)") in
+  let hint_stroke = C2d.color (Jstr.v "#e4c889") in
+  let hint_dot = C2d.color (Jstr.v "rgba(79, 107, 67, 0.9)") in
+  let hint_capture = C2d.color (Jstr.v "#8f4f45") in
 
   (* One board tile blit replaces 64 per-square fills on every frame. Render
      the tile at 3x so it stays crisp when the user zooms in. *)
@@ -475,6 +479,9 @@ let main () =
   let piece_info_data : Protocol.Types.piece_info option ref = ref None in
   let click_streak : click_streak option ref = ref None in
   let pointer_down_at : (float * float) option ref = ref None in
+  let pointer_down_time = ref 0. in
+  let selected : (board_state * int) option ref = ref None in
+  let hint_targets : Move_hints.target list ref = ref [] in
   (* Load telemetry. The browser tests assert the board count, batch count and
      bytes transferred, and the new panning test reads the cache counters. *)
   let snapshot_batches = ref 0 in
@@ -965,6 +972,31 @@ let main () =
       done
     done;
 
+    (* Tap selection and possible-move hints. *)
+    (match !selected with
+     | Some (state, square) when state.loaded && (not state.stale) ->
+       let ox = (float state.bx -. !view_left) *. board_px () in
+       let oy = (float state.by -. !view_top) *. board_px () in
+       C2d.set_fill_style ctx hint_fill;
+       C2d.fill_rect ctx
+         ~x:(ox +. (float (square mod 8) *. cell_px ()))
+         ~y:(oy +. (float (square / 8) *. cell_px ()))
+         ~w:(cell_px ()) ~h:(cell_px ());
+       C2d.set_stroke_style ctx hint_stroke;
+       C2d.set_line_width ctx 3.;
+       C2d.stroke_rect ctx
+         ~x:(ox +. (float (square mod 8) *. cell_px ()) +. 1.)
+         ~y:(oy +. (float (square / 8) *. cell_px ()) +. 1.)
+         ~w:(cell_px () -. 2.) ~h:(cell_px () -. 2.)
+     | Some _ ->
+       selected := None;
+       hint_targets := [];
+       El.set_at (Jstr.v "data-selected-square") None body_el;
+       El.set_at (Jstr.v "data-selected-board") None body_el;
+       El.set_at (Jstr.v "data-hint-count") None body_el;
+       El.set_at (Jstr.v "data-hint-targets") None body_el
+     | None -> ());
+
     (* Drag highlights. *)
     (match !drag with
      | None -> ()
@@ -1019,6 +1051,36 @@ let main () =
       done
     done;
 
+    List.iter
+      (fun (target : Move_hints.target) ->
+        let ox = (float target.bx -. !view_left) *. board_px () in
+        let oy = (float target.by -. !view_top) *. board_px () in
+        let cx = ox +. (float (target.square mod 8) +. 0.5) *. cell_px () in
+        let cy = oy +. (float (target.square / 8) +. 0.5) *. cell_px () in
+        if
+          cx >= -.cell_px () && cy >= -.cell_px ()
+          && cx <= float !canvas_w +. cell_px ()
+          && cy <= float !canvas_h +. cell_px ()
+        then
+          if target.capture then begin
+            C2d.set_stroke_style ctx hint_capture;
+            C2d.set_line_width ctx (max 2. (cell_px () *. 0.07));
+            let path = C2d.Path.create () in
+            C2d.Path.arc path ~cx ~cy ~r:(cell_px () *. 0.34) ~start:0.
+              ~stop:(2. *. Float.pi);
+            C2d.Path.close path;
+            C2d.stroke ctx path
+          end
+          else begin
+            C2d.set_fill_style ctx hint_dot;
+            let path = C2d.Path.create () in
+            C2d.Path.arc path ~cx ~cy ~r:(max 3. (cell_px () *. 0.15))
+              ~start:0. ~stop:(2. *. Float.pi);
+            C2d.Path.close path;
+            C2d.fill ctx path
+          end)
+      !hint_targets;
+
     match !drag with
     | None -> ()
     | Some d ->
@@ -1033,6 +1095,52 @@ let main () =
          atlas := C2d.image_src_of_el atlas_image;
          request_draw ())
        (El.as_target atlas_image));
+
+  let get_loaded_pieces bx by =
+    match Board_cache.find_loaded cache (board_key bx by) with
+    | Some state -> Some state.pieces
+    | None -> None
+  in
+  let clear_selection () =
+    selected := None;
+    hint_targets := [];
+    El.set_at (Jstr.v "data-selected-square") None body_el;
+    El.set_at (Jstr.v "data-selected-board") None body_el;
+    El.set_at (Jstr.v "data-hint-count") None body_el;
+    El.set_at (Jstr.v "data-hint-targets") None body_el
+  in
+  let select_piece state square =
+    if state.loaded && not state.stale then begin
+      let piece = Bytes.unsafe_get state.pieces square in
+      if piece <> empty && owns_piece piece then begin
+        selected := Some (state, square);
+        hint_targets :=
+          Move_hints.targets ~get:get_loaded_pieces ~bx:state.bx
+            ~by:state.by ~square ~piece:(Char.code piece);
+        El.set_at (Jstr.v "data-selected-square")
+          (Some (Jstr.v (string_of_int square)))
+          body_el;
+        El.set_at (Jstr.v "data-selected-board")
+          (Some (Jstr.v (Printf.sprintf "%d,%d" state.bx state.by)))
+          body_el;
+        El.set_at (Jstr.v "data-hint-count")
+          (Some (Jstr.v (string_of_int (List.length !hint_targets))))
+          body_el;
+        El.set_at (Jstr.v "data-hint-targets")
+          (Some
+             (Jstr.v
+                (String.concat ","
+                   (List.map
+                      (fun (target : Move_hints.target) ->
+                        Printf.sprintf "%d:%d:%d" target.bx target.by
+                          target.square)
+                      !hint_targets))))
+          body_el
+      end
+      else clear_selection ()
+    end
+    else clear_selection ()
+  in
 
   let select_center bx by =
     let left =
@@ -1457,153 +1565,9 @@ let main () =
     Bytes.unsafe_set e.dst_state.pieces e.dst e.pawn_piece
   in
 
-  let on_pointer_down ev =
-    update_layout ();
-    let pointer = Ev.as_type ev in
-    let id = Ev.Pointer.id pointer in
-    let cx, cy = to_canvas ev in
-    Hashtbl.replace pointers id (cx, cy);
-    if Hashtbl.length pointers = 2 then begin
-      (* The second touch turns a potential drag/pan into a pinch. Nothing
-         has been committed yet, so it is safe to cancel the gesture. *)
-      drag := None;
-      panning := None;
-      pointer_down_at := None;
-      let points = Hashtbl.fold (fun _ p acc -> p :: acc) pointers [] in
-      match points with
-      | (x1, y1) :: (x2, y2) :: _ ->
-        let mid_x = (x1 +. x2) /. 2. in
-        let mid_y = (y1 +. y2) /. 2. in
-        pinch :=
-          Some
-            {
-              start_distance =
-                max 1. (sqrt (((x2 -. x1) ** 2.) +. ((y2 -. y1) ** 2.)));
-              start_zoom = !zoom;
-              world_x = !view_left +. (mid_x /. board_px ());
-              world_y = !view_top +. (mid_y /. board_px ());
-            }
-      | _ -> ()
-    end
-    else if !pinch = None && !pending = None then begin
-      pointer_down_at := Some (cx, cy);
-      let button = Ev.Pointer.as_mouse pointer |> Ev.Mouse.button in
-      let target = board_at_canvas cx cy in
-      let drag_state =
-        match target with
-        | None -> None
-        | Some (bx, by, col, row) ->
-          let state = state_of bx by in
-          let sq = (row * 8) + col in
-          if
-            state.loaded && Bytes.unsafe_get state.pieces sq <> empty
-            && owns_piece (Bytes.unsafe_get state.pieces sq)
-          then
-            let byte = Bytes.unsafe_get state.pieces sq in
-            Some (state, sq, byte)
-          else None
-      in
-      match drag_state with
-      | Some (state, sq, byte) when button = 0 ->
-        drag :=
-          Some
-            {
-              state;
-              from = sq;
-              piece_byte = byte;
-              piece = glyph_of_byte byte;
-              x = cx;
-              y = cy;
-            }
-      | _ ->
-        panning :=
-          Some
-            {
-              start_cx = cx;
-              start_cy = cy;
-              start_left = !view_left;
-              start_top = !view_top;
-            }
-    end
-  in
-
-  let on_pointer_move ev =
-    let pointer = Ev.as_type ev in
-    let id = Ev.Pointer.id pointer in
-    let cx, cy = to_canvas ev in
-    if Hashtbl.mem pointers id then Hashtbl.replace pointers id (cx, cy);
-    match !pinch with
-    | Some p when Hashtbl.length pointers >= 2 ->
-      let points = Hashtbl.fold (fun _ p acc -> p :: acc) pointers [] in
-      (match points with
-       | (x1, y1) :: (x2, y2) :: _ ->
-         let distance =
-           max 1. (sqrt (((x2 -. x1) ** 2.) +. ((y2 -. y1) ** 2.)))
-         in
-         let mid_x = (x1 +. x2) /. 2. in
-         let mid_y = (y1 +. y2) /. 2. in
-         zoom :=
-           clamp_float
-             (p.start_zoom *. distance /. p.start_distance)
-             (min_zoom ()) 3.5;
-         view_left :=
-           clamp_float
-             (p.world_x -. (mid_x /. board_px ()))
-             0. (max_left ());
-         view_top :=
-           clamp_float
-             (p.world_y -. (mid_y /. board_px ()))
-             0. (max_top ());
-         visible_rect := current_visible ();
-         schedule_reconcile ();
-         request_draw ()
-       | _ -> ())
-    | _ ->
-      (match !panning with
-       | Some p ->
-         let dx = (cx -. p.start_cx) /. board_px () in
-         let dy = (cy -. p.start_cy) /. board_px () in
-         view_left := clamp_float (p.start_left -. dx) 0. (max_left ());
-         view_top := clamp_float (p.start_top -. dy) 0. (max_top ());
-         visible_rect := current_visible ();
-         schedule_reconcile ();
-         request_draw ()
-       | None ->
-         (match !drag with
-          | None -> ()
-          | Some d ->
-            drag := Some { d with x = cx; y = cy };
-            request_draw ()))
-  in
-
-  let on_pointer_up ev =
-    let id = Ev.Pointer.id (Ev.as_type ev) in
-    Hashtbl.remove pointers id;
-    if !pinch <> None then begin
-      if Hashtbl.length pointers < 2 then begin
-        pinch := None;
-        drag := None;
-        panning := None;
-        reconcile ~force:true ();
-        request_draw ()
-      end
-    end
-    else
-    match !panning with
-    | Some _ ->
-      panning := None;
-      reconcile ~force:true ();
-      request_draw ()
-    | None ->
-      (match !drag with
-       | None -> ()
-       | Some d ->
-         let cx, cy = to_canvas ev in
-         (match board_at_canvas cx cy with
-          | Some (bx, by, col, row) ->
-            let dst_state = state_of bx by in
-            let dst = (row * 8) + col in
-            if dst_state.loaded && dst <> d.from then begin
+  let finish_drag d bx by dst =
+    let dst_state = state_of bx by in
+    if dst_state.loaded && dst <> d.from then begin
               let src_bx = d.state.bx and src_by = d.state.by in
               let same_board = bx = src_bx && by = src_by in
               let dst_piece = Bytes.unsafe_get dst_state.pieces dst in
@@ -1785,7 +1749,225 @@ let main () =
                   end
               end
             end
+  in
+
+  let handle_tap cx cy =
+    match board_at_canvas cx cy with
+    | None -> clear_selection ()
+    | Some (bx, by, col, row) ->
+      let square = (row * 8) + col in
+      let state = state_of bx by in
+      (match !selected with
+       | Some (source, source_square)
+         when source == state && source_square = square ->
+         clear_selection ()
+       | Some (source, source_square) ->
+         let target_piece =
+           if state.loaded then Bytes.unsafe_get state.pieces square else empty
+         in
+         if state.loaded && target_piece <> empty && owns_piece target_piece
+         then select_piece state square
+         else if
+           List.exists
+             (fun (target : Move_hints.target) ->
+               target.bx = bx && target.by = by
+               && target.square = square)
+             !hint_targets
+         then begin
+           let piece = Bytes.unsafe_get source.pieces source_square in
+           finish_drag
+             {
+               state = source;
+               from = source_square;
+               piece_byte = piece;
+               piece = glyph_of_byte piece;
+               x = cx;
+               y = cy;
+             }
+             bx by square;
+           clear_selection ()
+         end
+         else clear_selection ()
+       | None ->
+         if state.loaded then begin
+           let piece = Bytes.unsafe_get state.pieces square in
+           if piece <> empty && owns_piece piece then
+             select_piece state square
+           else clear_selection ()
+         end
+         else clear_selection ())
+  in
+
+  let on_pointer_down ev =
+    update_layout ();
+    pointer_down_time := Performance.now_ms G.performance;
+    let pointer = Ev.as_type ev in
+    let id = Ev.Pointer.id pointer in
+    let cx, cy = to_canvas ev in
+    Hashtbl.replace pointers id (cx, cy);
+    if Hashtbl.length pointers = 2 then begin
+      (* The second touch turns a potential drag/pan into a pinch. Nothing
+         has been committed yet, so it is safe to cancel the gesture. *)
+      drag := None;
+      panning := None;
+      pointer_down_at := None;
+      let points = Hashtbl.fold (fun _ p acc -> p :: acc) pointers [] in
+      match points with
+      | (x1, y1) :: (x2, y2) :: _ ->
+        let mid_x = (x1 +. x2) /. 2. in
+        let mid_y = (y1 +. y2) /. 2. in
+        pinch :=
+          Some
+            {
+              start_distance =
+                max 1. (sqrt (((x2 -. x1) ** 2.) +. ((y2 -. y1) ** 2.)));
+              start_zoom = !zoom;
+              world_x = !view_left +. (mid_x /. board_px ());
+              world_y = !view_top +. (mid_y /. board_px ());
+            }
+      | _ -> ()
+    end
+    else if !pinch = None && !pending = None then begin
+      pointer_down_at := Some (cx, cy);
+      let button = Ev.Pointer.as_mouse pointer |> Ev.Mouse.button in
+      let target = board_at_canvas cx cy in
+      let drag_state =
+        match target with
+        | None -> None
+        | Some (bx, by, col, row) ->
+          let state = state_of bx by in
+          let sq = (row * 8) + col in
+          if
+            state.loaded && Bytes.unsafe_get state.pieces sq <> empty
+            && owns_piece (Bytes.unsafe_get state.pieces sq)
+          then
+            let byte = Bytes.unsafe_get state.pieces sq in
+            Some (state, sq, byte)
+          else None
+      in
+      match drag_state with
+      | Some (state, sq, byte) when button = 0 ->
+        drag :=
+          Some
+            {
+              state;
+              from = sq;
+              piece_byte = byte;
+              piece = glyph_of_byte byte;
+              x = cx;
+              y = cy;
+            }
+      | _ ->
+        panning :=
+          Some
+            {
+              start_cx = cx;
+              start_cy = cy;
+              start_left = !view_left;
+              start_top = !view_top;
+            }
+    end
+  in
+
+  let on_pointer_move ev =
+    let pointer = Ev.as_type ev in
+    let id = Ev.Pointer.id pointer in
+    let cx, cy = to_canvas ev in
+    if Hashtbl.mem pointers id then Hashtbl.replace pointers id (cx, cy);
+    match !pinch with
+    | Some p when Hashtbl.length pointers >= 2 ->
+      let points = Hashtbl.fold (fun _ p acc -> p :: acc) pointers [] in
+      (match points with
+       | (x1, y1) :: (x2, y2) :: _ ->
+         let distance =
+           max 1. (sqrt (((x2 -. x1) ** 2.) +. ((y2 -. y1) ** 2.)))
+         in
+         let mid_x = (x1 +. x2) /. 2. in
+         let mid_y = (y1 +. y2) /. 2. in
+         zoom :=
+           clamp_float
+             (p.start_zoom *. distance /. p.start_distance)
+             (min_zoom ()) 3.5;
+         view_left :=
+           clamp_float
+             (p.world_x -. (mid_x /. board_px ()))
+             0. (max_left ());
+         view_top :=
+           clamp_float
+             (p.world_y -. (mid_y /. board_px ()))
+             0. (max_top ());
+         visible_rect := current_visible ();
+         schedule_reconcile ();
+         request_draw ()
+       | _ -> ())
+    | _ ->
+      (match !panning with
+       | Some p ->
+         let dx = (cx -. p.start_cx) /. board_px () in
+         let dy = (cy -. p.start_cy) /. board_px () in
+         view_left := clamp_float (p.start_left -. dx) 0. (max_left ());
+         view_top := clamp_float (p.start_top -. dy) 0. (max_top ());
+         visible_rect := current_visible ();
+         schedule_reconcile ();
+         request_draw ()
+       | None ->
+         (match !drag with
+          | None -> ()
+          | Some d ->
+            drag := Some { d with x = cx; y = cy };
+            request_draw ()))
+  in
+
+  let on_pointer_up ev =
+    let id = Ev.Pointer.id (Ev.as_type ev) in
+    Hashtbl.remove pointers id;
+    let now = Performance.now_ms G.performance in
+    let tap =
+      !pinch = None
+      &&
+      match !pointer_down_at with
+      | None -> false
+      | Some (sx, sy) ->
+        let cx, cy = to_canvas ev in
+        let dx = cx -. sx and dy = cy -. sy in
+        (dx *. dx) +. (dy *. dy) <= 144.
+        && now -. !pointer_down_time <= 700.
+    in
+    if !pinch <> None then begin
+      if Hashtbl.length pointers < 2 then begin
+        pinch := None;
+        drag := None;
+        panning := None;
+        reconcile ~force:true ();
+        request_draw ()
+      end
+    end
+    else if tap then begin
+      pointer_down_at := None;
+      panning := None;
+      drag := None;
+      let cx, cy = to_canvas ev in
+      handle_tap cx cy;
+      request_draw ()
+    end
+    else
+    match !panning with
+    | Some _ ->
+      pointer_down_at := None;
+      panning := None;
+      reconcile ~force:true ();
+      request_draw ()
+    | None ->
+      (match !drag with
+       | None -> ()
+       | Some d ->
+         let cx, cy = to_canvas ev in
+         (match board_at_canvas cx cy with
+          | Some (bx, by, col, row) ->
+            finish_drag d bx by ((row * 8) + col);
+            clear_selection ()
           | None -> ());
+         pointer_down_at := None;
          drag := None;
          request_draw ())
   in
@@ -1795,6 +1977,8 @@ let main () =
     pinch := None;
     drag := None;
     panning := None;
+    pointer_down_at := None;
+    clear_selection ();
     request_draw ()
   in
 

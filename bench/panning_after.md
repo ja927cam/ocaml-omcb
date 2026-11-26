@@ -1,7 +1,7 @@
 # Client panning after
 
 - Initial loaded boards: 841
-- Rapid-pan settle: 63 ms
+- Rapid-pan settle: 10 ms
 - Peak visible blanks during pan: 0
 - Visible blanks after settle: 0
 - Batch requests: 70
@@ -10,7 +10,7 @@
 - Subscription add/remove messages: 0/0
 - Subscription window resets: 70
 - Cache occupancy/peak/evictions: 900/900/8289 (limit 900)
-- Server subscriptions/RSS: 841 / 550396 KiB
+- Server subscriptions/RSS: 841 / 553368 KiB
 - Board-load regions/samples: 4 / 70
 - Return snapshot requests: 0
-- Browser JS heap used: 9378 KiB
+- Browser JS heap used: 10397 KiB

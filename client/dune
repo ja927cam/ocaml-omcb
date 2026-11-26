@@ -1,6 +1,6 @@
 (library
  (name sim_map_client_core)
- (modules board_cache viewport snapshot_plan request_tracker)
+ (modules board_cache viewport snapshot_plan request_tracker move_hints)
  (libraries))
 
 (executable

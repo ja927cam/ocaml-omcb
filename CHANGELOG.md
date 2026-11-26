@@ -50,6 +50,13 @@
 
 ### Client experience
 
+- Added tap-to-select and tap-to-move for phones, tablets and touch screens.
+  Tapping one of your pieces highlights possible destinations; tapping a
+  highlighted square sends the move. Dragging remains supported. Move hints
+  cover pieces, blocking, same-board captures, cross-board quiet moves,
+  pawn double steps, en passant and basic castling; the server remains the
+  authority for check, pins and final legality.
+
 - Added a first-visit introduction and help dialog explaining the shared
   world, panning, zooming, moves and piece inspection.
 - Added a branded top bar, player colour, coordinate and zoom controls, a
