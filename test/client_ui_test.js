@@ -178,7 +178,8 @@ async function main() {
       fail(`simMapGoto did not move the camera: ${apiCoords}`);
     }
     await evaluate("document.getElementById('coords').click()");
-    await evaluate("document.getElementById('goto-input').value = '444, 555'");
+    await evaluate("document.getElementById('goto-x').value = '444'");
+    await evaluate("document.getElementById('goto-y').value = '555'");
     await evaluate("document.getElementById('goto-form').requestSubmit()");
     await sleep(350);
     const formCoords = await evaluate("document.getElementById('coords').textContent");

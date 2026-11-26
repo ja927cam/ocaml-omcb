@@ -58,8 +58,8 @@
 
 ### Client experience
 
-- Moved the coordinate readout above the minimap. Click it to enter an
-  `x, y` pair, or call `window.simMapGoto(x, y)` programmatically. Clicking a
+- Moved the coordinate readout above the minimap. Click it to enter separate
+  x and y values, or call `window.simMapGoto(x, y)` programmatically. Clicking a
   viewer or recent-move marker on the minimap now teleports directly to that
   board.
 
