@@ -67,6 +67,7 @@ type committed = {
   sequence : int64;
   request_id : int32;
   boards : event_board list;
+  captured_piece_id : int32;
   timing : Metrics.move_timing option;
 }
 
@@ -182,6 +183,9 @@ let committed_of_accepted t (accepted : Move_engine.accepted) timing =
     sequence = accepted.sequence;
     request_id = accepted.request_id;
     boards;
+    captured_piece_id =
+      (if Piece.is_empty accepted.captured_piece then 0l
+       else Piece.id accepted.captured_piece);
     timing;
   }
 

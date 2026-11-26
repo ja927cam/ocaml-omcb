@@ -64,6 +64,7 @@ node test/snapshot_consistency_test.js  # snapshot/move race and concurrent clie
 node test/client_panning_test.js    # rapid panning, cache bound and settle time
 node test/client_ui_test.js         # intro, help, zoom, minimap, mobile, status page
 node test/client_tap_move_test.js   # touch tap-to-select and tap-to-move
+node test/client_activity_tally_test.js  # join-near-activity and king tally
 node test/client_reconnect_test.js  # server restart / automatic reconnect
 MODE=bounded node test/subscription_stress_test.js  # subscription/RSS bounds
 MODE=add-only node test/subscription_stress_test.js # before comparison
@@ -166,8 +167,12 @@ Environment variables:
 board, revisions and bounded ledger. It is intended for recovery tests and
 diagnostics; computing it reads the whole world and takes about a second.
 `GET /healthz` and `GET /readyz` are lightweight liveness/readiness probes.
-`GET /metrics` also includes `/proc` RSS, OCaml GC statistics and explicit
-live-snapshot-copy accounting for operational profiling.
+`GET /active.json` suggests a board near the densest cluster of current
+viewers, or near recent moves when nobody else is connected.
+`GET /tally.json` returns the cumulative black/white king captures still
+retained in the ledger. `GET /metrics` also includes `/proc` RSS, OCaml GC
+statistics and explicit live-snapshot-copy accounting for operational
+profiling.
 
 `SIGTERM`/`SIGINT` drain the worker, wait up to 30 seconds for an in-flight
 snapshot, fsync/close the WAL and exit 0. `SIGKILL` remains a crash. See
@@ -179,11 +184,15 @@ The board grid fills the whole window.
 
 - Scroll to zoom in and out around the pointer.
 - Drag empty space (or use a non-left button) to pan.
-- Drag a piece to move it. Quiet moves may cross board boundaries. A piece
-  can only capture while it is on its own original board; leaving clears the
-  capturable bit and returning restores it.
-- The current centre is shown in the top-right corner.
+- Drag a piece to move it, or tap a piece and then tap one of its highlighted
+  destinations. Quiet moves may cross board boundaries. A piece can only
+  capture while it is on its own original board; leaving clears the capturable
+  bit and returning restores it.
+- The current centre is shown in the top-right corner. A new visitor without
+  explicit coordinates joins near the busiest group of current viewers.
 - `?x=<board_x>&y=<board_y>` opens the client centred on that board.
+- The bottom-left corner shows the running tally of black and white kings
+  captured across the world.
 - At 216 px per board, roughly three boards fit vertically in a 700 px
   window; larger windows show more of the world.
 

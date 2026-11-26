@@ -1290,61 +1290,137 @@ let main () =
   let yes_no value = if value then "yes" else "no" in
   let flag flags bit = flags land (1 lsl bit) <> 0 in
 
+  let piece_glyph type_code white =
+    match type_code with
+    | 1 -> if white then "\xe2\x99\x99" else "\xe2\x99\x9f"
+    | 2 -> if white then "\xe2\x99\x98" else "\xe2\x99\x9e"
+    | 3 -> if white then "\xe2\x99\x97" else "\xe2\x99\x9d"
+    | 4 -> if white then "\xe2\x99\x96" else "\xe2\x99\x9c"
+    | 5 -> if white then "\xe2\x99\x95" else "\xe2\x99\x9b"
+    | 6 -> if white then "\xe2\x99\x94" else "\xe2\x99\x9a"
+    | _ -> if white then "\xe2\x99\x99" else "\xe2\x99\x9f"
+  in
   let render_piece_info (info : Protocol.Types.piece_info) =
     let square = square_label info.square in
     let title =
-      Printf.sprintf "Piece at (%d, %d) · %s" info.board_x info.board_y
-        square
+      match info.status with
+      | Protocol.Types.Piece_absent ->
+        Printf.sprintf "Empty square · %s · board (%d, %d)" square
+          info.board_x info.board_y
+      | Protocol.Types.Piece_found ->
+        let colour = if info.is_white then "White" else "Black" in
+        Printf.sprintf "%s %s · %s · board (%d, %d)" colour
+          (piece_type_name info.type_code) square info.board_x info.board_y
     in
     El.set_children piece_info_title_el [ El.txt (Jstr.v title) ];
+    let node class_name children =
+      El.div ~at:[ At.class' (Jstr.v class_name) ] children
+    in
+    let span class_name text =
+      El.span ~at:[ At.class' (Jstr.v class_name) ]
+        [ El.txt (Jstr.v text) ]
+    in
+    let stat label value =
+      node "piece-stat"
+        [ span "piece-label" label; span "piece-value" value ]
+    in
+    let chip label on =
+      El.span
+        ~at:
+          [ At.class' (Jstr.v "piece-chip");
+            At.class' (Jstr.v (if on then "on" else "off")) ]
+        [ El.txt (Jstr.v label) ]
+    in
+    let section title children =
+      node "piece-section"
+        (El.h3 ~at:[ At.class' (Jstr.v "piece-section-title") ]
+           [ El.txt (Jstr.v title) ]
+         :: children)
+    in
     let body =
       match info.status with
       | Protocol.Types.Piece_absent ->
-        Printf.sprintf "No piece on %s." square
+        [ node "piece-empty"
+            [ El.strong [ El.txt (Jstr.v "Empty square") ];
+              El.p
+                [ El.txt
+                    (Jstr.v
+                       (Printf.sprintf "No piece on %s of board (%d, %d)."
+                          square info.board_x info.board_y)) ] ] ]
       | Protocol.Types.Piece_found ->
         let flags = info.flags in
         let colour = if info.is_white then "White" else "Black" in
         let kind = piece_type_name info.type_code in
-        let en_passant =
-          if info.type_code = 1 then yes_no (flag flags 0) else "n/a"
+        let original_board =
+          let original = (Int32.to_int info.id - 1) / 32 in
+          Printf.sprintf "(%d, %d)" (original mod 1000) (original / 1000)
         in
-        let castling =
-          if info.type_code = 4 || info.type_code = 6 then
-            yes_no (info.move_count = 0)
-          else "n/a"
+        let at_home = flag flags 7 in
+        let move_name = "En passant vulnerable" in
+        let rules =
+          (if info.type_code = 1 || info.type_code = 4 || info.type_code = 6
+           then
+             [
+               stat move_name
+                 (if info.type_code = 1 then yes_no (flag flags 0)
+                  else "n/a");
+               stat "Castling"
+                 (if info.type_code = 4 || info.type_code = 6 then
+                    yes_no (info.move_count = 0)
+                  else "n/a");
+             ]
+           else [])
+          @ [
+              stat "Adopted" (yes_no info.adopted);
+              stat "Captured another type" (yes_no (flag flags 6));
+            ]
         in
-        let pad label value =
-          Printf.sprintf "%-15s %s" label value
-        in
-        String.concat "\n"
-          [
-            pad "Position"
-              (Printf.sprintf "board (%d, %d), %s" info.board_x
-                 info.board_y square);
-            (let original = (Int32.to_int info.id - 1) / 32 in
-             pad "Original board"
-               (Printf.sprintf "(%d, %d)" (original mod 1000)
-                  (original / 1000)));
-            pad "Colour" colour;
-            pad "Type" kind;
-            pad "Piece ID" (Int32.to_string info.id);
-            pad "Moves" (string_of_int info.move_count);
-            pad "Captures" (string_of_int info.capture_count);
-            pad "On original" (yes_no (flag flags 7));
-            pad "En passant" en_passant;
-            pad "Castling" castling;
-            pad "Adopted" (yes_no info.adopted);
-            pad "Captured other" (yes_no (flag flags 6));
-            pad "Killer flags"
-              (Printf.sprintf "king=%s queen=%s adopted=%s"
-                 (yes_no (flag flags 1 || flag flags 2))
-                 (yes_no (flag flags 3 || flag flags 4))
-                 (yes_no (flag flags 5)));
-            pad "Revision" (Int64.to_string info.revision);
-            pad "Raw" (Printf.sprintf "0x%Lx" info.raw);
-          ]
+        [
+          node "piece-hero"
+            [
+              span "piece-glyph"
+                (piece_glyph info.type_code info.is_white);
+              node "piece-hero-copy"
+                [
+                  span "piece-name" (Printf.sprintf "%s %s" colour kind);
+                  span "piece-location"
+                    (Printf.sprintf "Board (%d, %d) · square %s"
+                       info.board_x info.board_y square);
+                ];
+            ];
+          node "piece-grid"
+            [
+              stat "Moves" (string_of_int info.move_count);
+              stat "Captures" (string_of_int info.capture_count);
+              stat "Piece ID" (Int32.to_string info.id);
+              stat "Revision" (Int64.to_string info.revision);
+            ];
+          section "Origin"
+            [
+              node "piece-grid"
+                [
+                  stat "Home board" original_board;
+                  stat "At home" (yes_no at_home);
+                ];
+            ];
+          section "Rules" [ node "piece-grid" rules ];
+          section "Powers"
+            [
+              node "piece-chips"
+                [
+                  chip "King killer" (flag flags 1);
+                  chip "Queen killer" (flag flags 3);
+                  chip "Adopted killer" (flag flags 5);
+                ];
+            ];
+          node "piece-raw"
+            [
+              El.txt
+                (Jstr.v (Printf.sprintf "Raw value 0x%Lx" info.raw));
+            ];
+        ]
     in
-    El.set_children piece_info_body_el [ El.txt (Jstr.v body) ];
+    El.set_children piece_info_body_el body;
     El.set_at (Jstr.v "hidden") None piece_info_el
   in
 
@@ -2255,7 +2331,7 @@ let main () =
                if not !unloading then connect_ws ()))
       end);
 
-  select_center (query_coord "x" 0) (query_coord "y" 0);
+  select_center (query_coord "x" 500) (query_coord "y" 500);
   Metrics.init ();
   connect_ws ();
   request_draw ()

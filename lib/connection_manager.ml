@@ -33,6 +33,7 @@ type conn = {
   snapshot_buffers : (int, buffered_event list ref) Hashtbl.t;
   mutable next_snapshot_token : int;
   subscriptions : (int, unit) Hashtbl.t;
+  mutable view_center : (int * int) option;
   mutable closed : bool;
   closed_signal : unit Lwt.t;
   closed_wakener : unit Lwt.u;
@@ -335,6 +336,7 @@ let register ?(close_raw = fun () -> Lwt.return_unit) t ~send_raw =
       snapshot_buffers = Hashtbl.create 8;
       next_snapshot_token = 0;
       subscriptions = Hashtbl.create 1024;
+      view_center = None;
       closed = false;
       closed_signal;
       closed_wakener;
@@ -357,6 +359,7 @@ let set_window conn ~center_x ~center_y ~radius =
     let center_x = max 0 (min 999 center_x) in
     let center_y = max 0 (min 999 center_y) in
     let radius = max 0 (min 100 radius) in
+    conn.view_center <- Some (center_x, center_y);
     clear_subscriptions conn;
     let x0 = max 0 (center_x - radius) in
     let x1 = min 999 (center_x + radius) in
@@ -372,6 +375,38 @@ let set_window conn ~center_x ~center_y ~radius =
 let wait_closed conn = conn.closed_signal
 
 let client_count t = Hashtbl.length t.clients
+
+let view_hotspot t =
+  let counts = Array.make 100 0 in
+  let sum_x = Array.make 100 0 in
+  let sum_y = Array.make 100 0 in
+  Hashtbl.iter
+    (fun _ conn ->
+      match conn.view_center with
+      | None -> ()
+      | Some (x, y) ->
+        let x = max 0 (min 999 x) and y = max 0 (min 999 y) in
+        let index = ((y / 100) * 10) + (x / 100) in
+        counts.(index) <- counts.(index) + 1;
+        sum_x.(index) <- sum_x.(index) + x;
+        sum_y.(index) <- sum_y.(index) + y)
+    t.clients;
+  let best = ref (-1) in
+  for index = 0 to 99 do
+    if counts.(index) > 0
+       && (!best < 0 || counts.(index) > counts.(!best))
+    then best := index
+  done;
+  if !best < 0 then None
+  else
+    let index = !best in
+    let count = counts.(index) in
+    Some
+      ( int_of_float
+          (Float.round (float sum_x.(index) /. float count)),
+        int_of_float
+          (Float.round (float sum_y.(index) /. float count)),
+        count )
 
 let begin_snapshot conn ~board_x ~board_y =
   if conn.closed then 0

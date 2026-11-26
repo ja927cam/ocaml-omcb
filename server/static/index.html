@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#18120d">
   <link rel="canonical" href="https://chess.jamesashwood.com/">
-  <link rel="preload" href="/static/main.bc.wasm.js" as="script">
+  <link rel="preload" href="/static/main.bc.wasm.js?v=20261126c" as="script">
   <title>One Million Chessboards — a shared living world</title>
   <meta name="description" content="A single shared world of 1,000 × 1,000 live chessboards. Pan, zoom and play. Every move is permanent.">
   <meta property="og:type" content="website">
@@ -308,6 +308,51 @@
       box-shadow: 0 0 0 2px rgba(143, 79, 69, 0.2);
     }
 
+    #tally {
+      position: fixed;
+      left: 20px;
+      bottom: 58px;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 11px;
+      border: 1px solid rgba(93, 69, 43, 0.55);
+      border-radius: 4px;
+      background: linear-gradient(180deg, #f4e9d5, #e4d1ad);
+      color: var(--ink);
+      font: 600 11px/1 Georgia, serif;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.26);
+      pointer-events: none;
+      user-select: none;
+    }
+
+    #tally .tally-title {
+      color: #6d5740;
+      font: 700 8px/1.1 Georgia, serif;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    #tally .tally-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #tally .tally-piece {
+      font: 400 17px/1 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    }
+
+    #tally .tally-row.black .tally-piece { color: #241a12; }
+    #tally .tally-row.white .tally-piece { color: #7a5c36; }
+
+    #tally b {
+      color: #352519;
+      font: 700 13px/1 Georgia, serif;
+    }
+
     #hint {
       left: 50%;
       transform: translateX(-50%);
@@ -446,9 +491,8 @@
     }
 
     #piece-info header span {
-      font: 700 12px/1 Georgia, serif;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
+      font: 700 13px/1.2 Georgia, serif;
+      letter-spacing: 0;
       color: #4b3320;
     }
 
@@ -466,11 +510,124 @@
     #piece-info-body {
       margin: 0;
       padding: 14px;
-      font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+      font: 13px/1.5 Georgia, serif;
       color: #4a3a2b;
-      white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
+
+    .piece-hero {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 4px 2px 14px;
+      border-bottom: 1px solid rgba(93, 68, 40, 0.24);
+    }
+
+    .piece-glyph {
+      width: 54px;
+      height: 54px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(93, 68, 40, 0.35);
+      border-radius: 4px;
+      background: #f7eedf;
+      color: #2f2115;
+      font: 400 36px/1 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      text-align: center;
+      box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.42);
+    }
+
+    .piece-hero-copy { display: flex; flex-direction: column; gap: 4px; }
+
+    .piece-name {
+      font: 700 21px/1.05 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      color: #2a1e13;
+    }
+
+    .piece-location { color: #75604a; font: 12px/1.3 Georgia, serif; }
+
+    .piece-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .piece-stat {
+      padding: 8px 9px;
+      border: 1px solid rgba(93, 68, 40, 0.22);
+      border-radius: 3px;
+      background: rgba(255, 252, 243, 0.38);
+    }
+
+    .piece-label {
+      display: block;
+      color: #7b654c;
+      font: 700 9px/1 Georgia, serif;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .piece-value {
+      display: block;
+      margin-top: 4px;
+      color: #352519;
+      font: 600 14px/1.15 Georgia, serif;
+      overflow-wrap: anywhere;
+    }
+
+    .piece-section {
+      margin-top: 14px;
+      padding-top: 11px;
+      border-top: 1px solid rgba(93, 68, 40, 0.2);
+    }
+
+    .piece-section-title {
+      margin-bottom: 5px;
+      color: #6a4b2c;
+      font: 700 10px/1 Georgia, serif;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .piece-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+    .piece-chip {
+      padding: 5px 8px;
+      border: 1px solid rgba(93, 68, 40, 0.28);
+      border-radius: 999px;
+      font: 600 10px/1 Georgia, serif;
+      letter-spacing: 0.03em;
+    }
+
+    .piece-chip.on {
+      color: #f8f1e2;
+      background: #557349;
+      border-color: #3f5936;
+    }
+
+    .piece-chip.off {
+      color: #8d7a62;
+      background: rgba(255, 255, 255, 0.18);
+      text-decoration: line-through;
+    }
+
+    .piece-raw {
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(93, 68, 40, 0.2);
+      color: #8d7a62;
+      font: 10px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .piece-empty strong {
+      display: block;
+      color: #4b2f1b;
+      font: 700 18px/1.2 Georgia, serif;
+    }
+
+    .piece-empty p { margin-top: 6px; color: #75604a; }
 
     #intro {
       position: fixed;
@@ -697,6 +854,12 @@
     </div>
   </header>
 
+  <div id="tally" role="status" aria-label="Kings captured across the shared world" title="Kings captured across the whole world">
+    <span class="tally-title">Kings taken</span>
+    <span class="tally-row black"><span class="tally-piece" aria-hidden="true">&#9818;</span><b id="tally-black">0</b></span>
+    <span class="tally-row white"><span class="tally-piece" aria-hidden="true">&#9812;</span><b id="tally-white">0</b></span>
+  </div>
+
   <div id="minimap-wrap" class="glass ui" aria-label="World map">
     <canvas id="minimap" width="236" height="236" role="img" aria-label="World location map"></canvas>
     <span id="minimap-label">World</span>
@@ -720,7 +883,7 @@
       <span id="piece-info-title">Piece</span>
       <button id="piece-info-close" type="button" aria-label="Close piece information">×</button>
     </header>
-    <pre id="piece-info-body"></pre>
+    <div id="piece-info-body"></div>
   </aside>
 
   <div id="toast" hidden role="status">Link copied</div>
@@ -733,7 +896,7 @@
       <div class="controls">
         <div class="control"><b>Pan</b>Drag empty space to explore the world.</div>
         <div class="control"><b>Zoom</b>Scroll, pinch, or use the + / − controls.</div>
-        <div class="control"><b>Move</b>Drag one of your pieces to make a move.</div>
+        <div class="control"><b>Move</b>Tap a piece, then tap a highlighted square. Dragging still works.</div>
         <div class="control"><b>Inspect</b>Triple-click a piece for its full history.</div>
       </div>
       <p class="note">You are playing <strong id="intro-colour">White</strong> on this device. Captures are only allowed on the board a piece started on.</p>
@@ -843,6 +1006,33 @@
         }
       } catch (_) {}
 
+      // Captured-king tally and recent activity. Both are small JSON
+      // endpoints, so they do not complicate the WASM client.
+      window.__simMapActive = null;
+      const tallyBlack = document.getElementById('tally-black');
+      const tallyWhite = document.getElementById('tally-white');
+      async function refreshTally() {
+        try {
+          const response = await fetch('/tally.json', { cache: 'no-store' });
+          if (!response.ok) return;
+          const data = await response.json();
+          if (tallyBlack && Number.isFinite(data.black)) tallyBlack.textContent = String(data.black);
+          if (tallyWhite && Number.isFinite(data.white)) tallyWhite.textContent = String(data.white);
+        } catch (_) {}
+      }
+      async function refreshActivity() {
+        try {
+          const response = await fetch('/active.json', { cache: 'no-store' });
+          if (!response.ok) return;
+          const data = await response.json();
+          window.__simMapActive = data && data.active ? data : null;
+        } catch (_) {}
+      }
+      refreshTally();
+      refreshActivity();
+      setInterval(refreshTally, 5000);
+      setInterval(refreshActivity, 7000);
+
       // Lightweight world minimap. It reads the viewport attributes that the
       // client already writes each frame.
       const minimap = document.getElementById('minimap');
@@ -881,6 +1071,27 @@
           ctx.beginPath();
           ctx.arc(vx + vw / 2, vy + vh / 2, 3, 0, Math.PI * 2);
           ctx.fill();
+          const active = window.__simMapActive;
+          const label = document.getElementById('minimap-label');
+          if (label) {
+            label.textContent = active && active.watchers > 0
+              ? 'World · ' + active.watchers + ' here'
+              : 'World';
+          }
+          if (active && Number.isFinite(active.x) && Number.isFinite(active.y)) {
+            const ax = Math.min(size - 7, Math.max(7, active.x * scale));
+            const ay = Math.min(size - 7, Math.max(7, active.y * scale));
+            const pulse = 3 + Math.sin(Date.now() / 420) * 1.4;
+            ctx.strokeStyle = 'rgba(201, 164, 92, 0.9)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(ax, ay, pulse + 2.5, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = '#c9a45c';
+            ctx.beginPath();
+            ctx.arc(ax, ay, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
           ctx.strokeStyle = 'rgba(79, 107, 67, 0.55)';
           ctx.lineWidth = 1;
           ctx.beginPath();
@@ -893,7 +1104,42 @@
       }
     })();
   </script>
-  <script src="/static/main.bc.wasm.js?v=20261126b"></script>
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const entry = '/static/main.bc.wasm.js?v=20261126c';
+      let loaded = false;
+      function loadClient() {
+        if (loaded) return;
+        loaded = true;
+        const tag = document.createElement('script');
+        tag.src = entry;
+        document.body.appendChild(tag);
+      }
+      if (params.has('x') && params.has('y')) {
+        loadClient();
+        return;
+      }
+      // New visitors land near other people when the world is already lived
+      // in, otherwise near the most recent move. The 2.5 s cap keeps a slow
+      // API from delaying the board.
+      const timer = setTimeout(loadClient, 2500);
+      fetch('/active.json', { cache: 'no-store' })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (data) {
+          if (data && data.active && Number.isFinite(data.x) && Number.isFinite(data.y)) {
+            params.set('x', String(Math.round(data.x)));
+            params.set('y', String(Math.round(data.y)));
+            history.replaceState(null, '', window.location.pathname + '?' + params.toString());
+          }
+        })
+        .catch(function () {})
+        .then(function () {
+          clearTimeout(timer);
+          loadClient();
+        });
+    })();
+  </script>
   <script>
     // If the WASM entrypoint fails to boot (for example a stale cached client
     // after a deploy), tell the visitor instead of leaving a silent board.

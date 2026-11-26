@@ -17,7 +17,7 @@ chess.jamesashwood.com {
 		# The HTML shell and the stable entrypoint must be revalidated so a
 		# deploy/rollback switches client and server together. Dune's hashed
 		# WASM chunks are content-addressed and can be cached forever.
-		@nocache path / /status /static/main.bc.wasm.js /static/og.png
+		@nocache path / /status /static/main.bc.wasm.js /static/og.png /active.json /tally.json
 		header @nocache Cache-Control "no-cache"
 		@hashed path /static/main.bc.wasm.assets/*
 		header @hashed Cache-Control "public, max-age=31536000, immutable"

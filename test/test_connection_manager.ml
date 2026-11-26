@@ -9,8 +9,9 @@ let settle () =
 let event_board ~x ~y ~revision changes =
   State_worker.{ board_x = x; board_y = y; revision; changes }
 
-let committed ?(sequence = 1L) ?(request_id = 7l) ?timing boards =
-  State_worker.{ sequence; request_id; boards; timing }
+let committed ?(sequence = 1L) ?(request_id = 7l) ?(captured_piece_id = 0l)
+    boards =
+  State_worker.{ sequence; request_id; boards; captured_piece_id; timing = None }
 
 let changed_piece () =
   Piece.create ~id:1l ~piece_type:Piece.Pawn ~is_white:true
@@ -382,5 +383,21 @@ let () =
      check "batched snapshot release kind" (Char.code (Bytes.get frame 0) = 4);
      check "batched snapshot release count" (Char.code (Bytes.get frame 1) = 1)
    | _ -> failwith "expected one released batch frame");
+
+  (* New visitors should be pointed at the densest cluster of current views. *)
+  let manager = Connection_manager.create () in
+  let make () =
+    Connection_manager.register manager ~send_raw:(fun _ -> Lwt.return_unit)
+  in
+  let a = make () and b = make () and c = make () in
+  Connection_manager.set_window a ~center_x:200 ~center_y:210 ~radius:1;
+  Connection_manager.set_window b ~center_x:206 ~center_y:214 ~radius:1;
+  Connection_manager.set_window c ~center_x:700 ~center_y:700 ~radius:1;
+  (match Connection_manager.view_hotspot manager with
+   | Some (x, y, watchers) ->
+     check "view hotspot x" (x = 203);
+     check "view hotspot y" (y = 212);
+     check "view hotspot watchers" (watchers = 2)
+   | None -> failwith "expected a view hotspot");
 
   Printf.printf "All connection manager tests passed.\n"

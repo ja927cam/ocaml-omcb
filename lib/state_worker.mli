@@ -50,6 +50,7 @@ type committed = {
   sequence : int64;
   request_id : int32;
   boards : event_board list;
+  captured_piece_id : int32;
   timing : Metrics.move_timing option;
 }
 

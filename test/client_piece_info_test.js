@@ -305,6 +305,18 @@ async function main() {
         fail(`white piece panel is missing ${JSON.stringify(expected)}: ${whiteText}`);
       }
     }
+    const structure = JSON.parse(
+      await evaluate(`JSON.stringify({
+        tag: document.getElementById('piece-info-body').tagName,
+        glyph: document.querySelector('#piece-info-body .piece-glyph')?.textContent || '',
+        stats: document.querySelectorAll('#piece-info-body .piece-stat').length,
+        sections: document.querySelectorAll('#piece-info-body .piece-section').length
+      })`)
+    );
+    if (structure.tag !== 'DIV') fail(`piece panel body is not readable DOM: ${structure.tag}`);
+    if (!structure.glyph.trim()) fail('piece panel is missing its glyph');
+    if (structure.stats < 4) fail(`piece panel only has ${structure.stats} stats`);
+    if (structure.sections < 2) fail(`piece panel only has ${structure.sections} sections`);
     const title = await panelTitle();
     if (!title.includes(`(${board.x}, ${board.y})`)) {
       fail(`piece panel title did not identify the board: ${title}`);

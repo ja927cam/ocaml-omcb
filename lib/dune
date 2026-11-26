@@ -20,5 +20,7 @@
   move_engine
   metrics
   board_load_metrics
+  activity_map
+  kings_captured
   state_worker
   connection_manager))

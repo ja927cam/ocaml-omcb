@@ -7,6 +7,10 @@ let cross_origin_isolation inner request =
 
 let now_ns () = Int64.of_float (Unix.gettimeofday () *. 1_000_000_000.)
 let board_load = Board_load_metrics.create ()
+let kings_captured = Kings_captured.create ()
+let activity = Activity_map.create ()
+let json_headers =
+  [ ("Content-Type", "application/json"); ("Cache-Control", "no-store") ]
 
 let int_env name default =
   match Sys.getenv_opt name with
@@ -280,6 +284,7 @@ let metrics_json manager worker persistence adaptive ~fixed_group ~fixed_delay_u
         ("memory", memory_json ());
         ("adaptive", adaptive_json adaptive ~fixed_group ~fixed_delay_us);
         ("board_load", Board_load_metrics.json board_load);
+        ("kings_captured", Kings_captured.json kings_captured);
       ]
     ()
 
@@ -334,6 +339,12 @@ let prometheus_metrics_body manager worker persistence adaptive ~fixed_group
     "Process uptime in seconds";
   prometheus_metric buffer "sim_map_uptime_seconds"
     (json_float "uptime_ms" json /. 1000.);
+  prometheus_header buffer "sim_map_kings_captured" "counter"
+    "Kings captured since the retained ledger window begins";
+  prometheus_metric buffer "sim_map_kings_captured{colour=\"white\"}"
+    (float_of_int (Kings_captured.white kings_captured));
+  prometheus_metric buffer "sim_map_kings_captured{colour=\"black\"}"
+    (float_of_int (Kings_captured.black kings_captured));
   prometheus_header buffer "sim_map_stage_latency_seconds" "summary"
     "Move pipeline stage latency";
   let stages =
@@ -1042,6 +1053,9 @@ let () =
     recovery.initialised_world occupied data_dir;
   if Int64.equal (Game_state.sequence state) 0L && occupied <> 32_000_000 then
     failwith "initial world does not contain 32,000,000 pieces";
+  Game_state.with_state state (fun ~board:_ ~ledger ~sequence ->
+      Kings_captured.scan_ledger kings_captured ledger;
+      (sequence, ()));
   log_phase "recovery verification" verify_started;
   let worker_started = now_ns () in
   let outbox_capacity = max 1 (int_env "CONNECTION_OUTBOX_CAPACITY" 256) in
@@ -1068,7 +1082,13 @@ let () =
     Persistence.move_snapshot_due persistence
     || Persistence.time_snapshot_due persistence
   in
-  let on_commit committed =
+  let on_commit (committed : State_worker.committed) =
+    Kings_captured.note_capture kings_captured committed.captured_piece_id;
+    let now = Unix.gettimeofday () in
+    List.iter
+      (fun (board : State_worker.event_board) ->
+        Activity_map.note activity ~bx:board.board_x ~by:board.board_y ~now)
+      committed.boards;
     Connection_manager.enqueue_move manager committed;
     Persistence.note_commit persistence;
     if snapshot_due () then request_snapshot ()
@@ -1196,6 +1216,43 @@ let () =
           Dream.from_filesystem "server/static" "index.html" req);
        Dream.get "/status" (fun req ->
           Dream.from_filesystem "server/static" "status.html" req);
+       Dream.get "/tally.json" (fun _req ->
+         Dream.respond ~headers:json_headers
+           (Yojson.Safe.to_string (Kings_captured.json kings_captured)));
+       Dream.get "/active.json" (fun _req ->
+         let json =
+           match Connection_manager.view_hotspot manager with
+           | Some (x, y, watchers) ->
+             `Assoc
+               [
+                 ("x", `Int x);
+                 ("y", `Int y);
+                 ("active", `Bool true);
+                 ("watchers", `Int watchers);
+                 ("source", `String "players");
+               ]
+           | None -> (
+             match Activity_map.suggest activity ~now:(Unix.gettimeofday ()) with
+             | Some hotspot ->
+               `Assoc
+                 [
+                   ("x", `Int hotspot.Activity_map.x);
+                   ("y", `Int hotspot.Activity_map.y);
+                   ("active", `Bool true);
+                   ("watchers", `Int 0);
+                   ("source", `String "recent");
+                 ]
+             | None ->
+               `Assoc
+                 [
+                   ("x", `Int 500);
+                   ("y", `Int 500);
+                   ("active", `Bool false);
+                   ("watchers", `Int 0);
+                   ("source", `String "default");
+                 ])
+         in
+         Dream.respond ~headers:json_headers (Yojson.Safe.to_string json));
        Dream.get "/metrics" (fun _req ->
          Dream.respond
            ~headers:[ ("Content-Type", "application/json") ]

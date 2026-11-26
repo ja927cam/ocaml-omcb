@@ -57,6 +57,20 @@
   pawn double steps, en passant and basic castling; the server remains the
   authority for check, pins and final legality.
 
+- Rebuilt the piece-information panel as readable parchment cards: a large
+  colour glyph, clear name and location, move/capture counts, origin, rules
+  and special powers, with the raw packed value kept as a footer for
+  debugging.
+
+- New visitors now join near current activity. The server exposes the densest
+  cluster of connected viewers at `/active.json`, falling back to a decaying
+  map of recent move destinations when nobody else is watching. Explicit
+  `?x=`/`?y=` links still open exactly where requested.
+
+- Added a corner tally of captured black and white kings. The counts are
+  derived from the bounded ledger at startup and updated on every commit, and
+  are available at `/tally.json` and in `/metrics`.
+
 - Added a first-visit introduction and help dialog explaining the shared
   world, panning, zooming, moves and piece inspection.
 - Added a branded top bar, player colour, coordinate and zoom controls, a
