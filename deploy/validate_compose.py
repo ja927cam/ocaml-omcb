@@ -18,6 +18,7 @@ LEGACY_IMAGE = "ghcr.io/ja927cam/sim-map"
 CADDY_IMAGE = "caddy:2.8.4-alpine"
 APP_DATA_SOURCE = "/srv/chess/data"
 APP_DATA_TARGET = "/var/lib/ocaml-omcb/data"
+LEGACY_APP_DATA_TARGET = "/var/lib/sim-map/data"
 CADDY_DATA_SOURCE = "/srv/chess/caddy/data"
 CADDY_CONFIG_SOURCE = "/srv/chess/caddy/config"
 APP_STOP_GRACE = "45s"
@@ -85,17 +86,25 @@ def validate(
     security = app.get("security_opt") or []
     if not any("no-new-privileges" in option for option in security):
         errors.append("app must set no-new-privileges")
-    if bind_mounts(app) != {
-        ("bind", APP_DATA_SOURCE, APP_DATA_TARGET)
-    }:
+    app_binds = bind_mounts(app)
+    if app_binds not in (
+        {("bind", APP_DATA_SOURCE, APP_DATA_TARGET)},
+        {("bind", APP_DATA_SOURCE, LEGACY_APP_DATA_TARGET)},
+    ):
         errors.append(
-            f"app volumes must be exactly {APP_DATA_SOURCE} -> "
-            f"{APP_DATA_TARGET}"
+            f"app volumes must be {APP_DATA_SOURCE} -> "
+            f"{APP_DATA_TARGET} or {LEGACY_APP_DATA_TARGET}"
         )
 
     environment = app.get("environment") or {}
-    if environment.get("OCAML_OMCB_DATA_DIR") != APP_DATA_TARGET:
-        errors.append(f"app OCAML_OMCB_DATA_DIR must be {APP_DATA_TARGET!r}")
+    if environment.get("OCAML_OMCB_DATA_DIR") not in {
+        APP_DATA_TARGET,
+        LEGACY_APP_DATA_TARGET,
+    }:
+        errors.append(
+            "app OCAML_OMCB_DATA_DIR must be "
+            f"{APP_DATA_TARGET!r} or {LEGACY_APP_DATA_TARGET!r}"
+        )
     if environment.get("OCAML_OMCB_PORT") != "8080":
         errors.append("app OCAML_OMCB_PORT must be '8080'")
     if environment.get("OCAML_OMCB_INTERFACE") != "0.0.0.0":

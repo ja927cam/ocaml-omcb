@@ -8,12 +8,18 @@ services:
     stop_grace_period: 45s
 
     environment:
-      OCAML_OMCB_DATA_DIR: /var/lib/ocaml-omcb/data
+      OCAML_OMCB_DATA_DIR: /var/lib/sim-map/data
       OCAML_OMCB_PORT: "8080"
       OCAML_OMCB_INTERFACE: 0.0.0.0
+      # Legacy names remain for the pre-rename deploy validator and for
+      # rollback to an older image.
+      SIM_MAP_DATA_DIR: /var/lib/sim-map/data
+      SIM_MAP_PORT: "8080"
+      SIM_MAP_INTERFACE: 0.0.0.0
 
       # Production defaults. Override any of these in /opt/ocaml-omcb/.env.
-      # The SIM_MAP_* fallbacks keep existing /opt/sim-map installs working.
+      # The SIM_MAP_* fallbacks and legacy data path keep existing
+      # /opt/sim-map installs deployable during the rename.
       OCAML_OMCB_ADAPTIVE: "${OCAML_OMCB_ADAPTIVE:-${SIM_MAP_ADAPTIVE:-1}}"
       OCAML_OMCB_ADAPTIVE_MAX: "${OCAML_OMCB_ADAPTIVE_MAX:-${SIM_MAP_ADAPTIVE_MAX:-256}}"
       OCAML_OMCB_WAL_GROUP: "${OCAML_OMCB_WAL_GROUP:-${SIM_MAP_WAL_GROUP:-64}}"
@@ -27,7 +33,7 @@ services:
     volumes:
       - type: bind
         source: /srv/chess/data
-        target: /var/lib/ocaml-omcb/data
+        target: /var/lib/sim-map/data
         bind:
           create_host_path: false
 
