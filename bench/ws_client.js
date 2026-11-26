@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /* Shared browser-like WebSocket client for the load harnesses. */
 
-const WS_URL = process.env.SIM_MAP_WS_URL || "ws://localhost:8080/ws";
+const WS_URL =
+  process.env.OCAML_OMCB_WS_URL ||
+  process.env.SIM_MAP_WS_URL ||
+  "ws://localhost:8080/ws";
 const WIRE_FRAME = 4096;
 const EVENT_KIND = 3;
 const EVENT_BATCH_KIND = 4;
