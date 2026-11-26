@@ -58,6 +58,12 @@
 
 ### Client experience
 
+- Castling can now be initiated by dragging the king onto its destination, the
+  king onto the rook, or the rook onto the king. Both pieces move to the two
+  central squares and swap sides, including across boards up to 36 squares
+  away.
+
+
 - Extended castling across boards. An unmoved king and rook on the same rank
   may castle with a clear path up to 36 squares apart. The king and rook land
   on the two central squares between them and swap sides. The client shows the

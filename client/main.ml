@@ -1698,6 +1698,7 @@ let main () =
               in
               let pawn = piece_type_code d.piece_byte = 1 in
               let king = piece_type_code d.piece_byte = 6 in
+              let rook = piece_type_code d.piece_byte = 4 in
               (* Captures are only allowed on the mover's original board. If
                  it is off that board, or the target is on another board, the
                  drag snaps back without sending a request. *)
@@ -1745,56 +1746,104 @@ let main () =
                     | Some _ -> true
                     | None -> false)
               in
+              (* Castling can be initiated by dropping the king on its
+                 destination, on the rook, or by dropping the rook on the
+                 king. *)
+              let castle =
+                let matching_castle castles =
+                  List.find_opt
+                    (fun (c : Move_hints.castle) ->
+                      if king then
+                        (c.king_bx = bx && c.king_by = by
+                         && c.king_square = dst)
+                        || (c.rook_bx = bx && c.rook_by = by
+                            && c.rook_square = dst)
+                      else
+                        c.rook_bx = src_bx && c.rook_by = src_by
+                        && c.rook_square = d.from)
+                    castles
+                in
+                let castles =
+                  if king && dy = 0 then
+                    Move_hints.castling ~get:get_loaded_pieces ~bx:src_bx
+                      ~by:src_by ~square:d.from
+                      ~piece:(Char.code d.piece_byte)
+                  else if
+                    rook && dst_piece <> empty
+                    && piece_type_code dst_piece = 6
+                    && owns_piece dst_piece
+                  then
+                    Move_hints.castling ~get:get_loaded_pieces ~bx ~by
+                      ~square:dst ~piece:(Char.code dst_piece)
+                  else []
+                in
+                match matching_castle castles with
+                | None -> None
+                | Some c ->
+                  let king_src_state = if king then d.state else dst_state in
+                  let king_src = if king then d.from else dst in
+                  let king_dst_state = state_of c.king_bx c.king_by in
+                  let rook_src_state =
+                    if king then state_of c.rook_bx c.rook_by else d.state
+                  in
+                  let rook_dst_state =
+                    state_of c.rook_dst_bx c.rook_dst_by
+                  in
+                  if
+                    king_dst_state.loaded && rook_src_state.loaded
+                    && rook_dst_state.loaded
+                  then
+                    Some
+                      {
+                        king_src_state;
+                        king_dst_state;
+                        rook_src_state;
+                        rook_dst_state;
+                        king_src;
+                        king_dst = c.king_square;
+                        rook_src = c.rook_square;
+                        rook_dst = c.rook_dst_square;
+                        king_piece =
+                          (if king then d.piece_byte else dst_piece);
+                        rook_piece =
+                          (if king then
+                             Bytes.unsafe_get rook_src_state.pieces
+                               c.rook_square
+                           else d.piece_byte);
+                      }
+                  else None
+              in
               let capture_blocked =
-                is_capture
+                castle = None && is_capture
                 && ((not same_board)
                    || not (on_original_board d.piece_byte))
               in
-              let within_limit = abs dx <= 36 && abs dy <= 36 in
+              let within_limit =
+                castle <> None || (abs dx <= 36 && abs dy <= 36)
+              in
               if within_limit && not capture_blocked then begin
                 let request_id = alloc_request_id () in
-                let expected_piece_id =
-                  Int32.of_int
-                    ((d.from lsl 8) lor Char.code d.piece_byte)
-                in
-                let castle =
-                  if king && dy = 0 && abs dx >= 2 then
-                    let castles =
-                      Move_hints.castling ~get:get_loaded_pieces ~bx:src_bx
-                        ~by:src_by ~square:d.from
-                        ~piece:(Char.code d.piece_byte)
-                    in
-                    match
-                      List.find_opt
-                        (fun (c : Move_hints.castle) ->
-                          c.king_bx = bx && c.king_by = by
-                          && c.king_square = dst)
-                        castles
-                    with
-                    | None -> None
-                    | Some c ->
-                      let rook_src_state = state_of c.rook_bx c.rook_by in
-                      let rook_dst_state =
-                        state_of c.rook_dst_bx c.rook_dst_by
-                      in
-                      if rook_src_state.loaded && rook_dst_state.loaded then
-                        Some
-                          {
-                            king_src_state = d.state;
-                            king_dst_state = dst_state;
-                            rook_src_state;
-                            rook_dst_state;
-                            king_src = d.from;
-                            king_dst = dst;
-                            rook_src = c.rook_square;
-                            rook_dst = c.rook_dst_square;
-                            king_piece = d.piece_byte;
-                            rook_piece =
-                              Bytes.unsafe_get rook_src_state.pieces
-                                c.rook_square;
-                          }
-                      else None
-                  else None
+                let move_src_bx, move_src_by, move_src, move_dst_bx,
+                    move_dst_by, move_dst, expected_piece_id =
+                  match castle with
+                  | Some c ->
+                    ( c.king_src_state.bx,
+                      c.king_src_state.by,
+                      c.king_src,
+                      c.king_dst_state.bx,
+                      c.king_dst_state.by,
+                      c.king_dst,
+                      Int32.of_int
+                        ((c.king_src lsl 8) lor Char.code c.king_piece) )
+                  | None ->
+                    ( src_bx,
+                      src_by,
+                      d.from,
+                      bx,
+                      by,
+                      dst,
+                      Int32.of_int
+                        ((d.from lsl 8) lor Char.code d.piece_byte) )
                 in
                 let action =
                   match castle with
@@ -1846,8 +1895,9 @@ let main () =
                   if
                     not
                       (send_move ~request_id ~expected_piece_id
-                         ~src_board:(src_bx, src_by) ~dst_board:(bx, by)
-                         d.from dst)
+                         ~src_board:(move_src_bx, move_src_by)
+                         ~dst_board:(move_dst_bx, move_dst_by)
+                         move_src move_dst)
                   then begin
                     (match action with
                      | Normal undo -> restore_normal undo
