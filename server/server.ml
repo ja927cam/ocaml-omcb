@@ -1220,37 +1220,74 @@ let () =
          Dream.respond ~headers:json_headers
            (Yojson.Safe.to_string (Kings_captured.json kings_captured)));
        Dream.get "/active.json" (fun _req ->
+         let now = Unix.gettimeofday () in
+         let viewers = Connection_manager.view_points manager in
+         let recent = Activity_map.recent activity ~now in
+         let viewer_json =
+           `List
+             (List.map
+                (fun (x, y) ->
+                  `Assoc [ ("x", `Int x); ("y", `Int y) ])
+                viewers)
+         in
+         let recent_json =
+           `List
+             (List.map
+                (fun (move : Activity_map.move) ->
+                  let age_ms =
+                    max 0
+                      (int_of_float
+                         (Float.round ((now -. move.at) *. 1000.)))
+                  in
+                  `Assoc
+                    [
+                      ("x", `Int move.x);
+                      ("y", `Int move.y);
+                      ("age_ms", `Int age_ms);
+                    ])
+                recent)
+         in
+         let fields =
+           [
+             ("watchers_total", `Int (Connection_manager.view_count manager));
+             ("viewers", viewer_json);
+             ("recent", recent_json);
+           ]
+         in
          let json =
            match Connection_manager.view_hotspot manager with
            | Some (x, y, watchers) ->
              `Assoc
-               [
-                 ("x", `Int x);
-                 ("y", `Int y);
-                 ("active", `Bool true);
-                 ("watchers", `Int watchers);
-                 ("source", `String "players");
-               ]
+               ([
+                  ("x", `Int x);
+                  ("y", `Int y);
+                  ("active", `Bool true);
+                  ("watchers", `Int watchers);
+                  ("source", `String "players");
+                ]
+               @ fields)
            | None -> (
-             match Activity_map.suggest activity ~now:(Unix.gettimeofday ()) with
+             match Activity_map.suggest activity ~now with
              | Some hotspot ->
                `Assoc
-                 [
-                   ("x", `Int hotspot.Activity_map.x);
-                   ("y", `Int hotspot.Activity_map.y);
-                   ("active", `Bool true);
-                   ("watchers", `Int 0);
-                   ("source", `String "recent");
-                 ]
+                 ([
+                    ("x", `Int hotspot.Activity_map.x);
+                    ("y", `Int hotspot.Activity_map.y);
+                    ("active", `Bool true);
+                    ("watchers", `Int 0);
+                    ("source", `String "recent");
+                  ]
+                 @ fields)
              | None ->
                `Assoc
-                 [
-                   ("x", `Int 500);
-                   ("y", `Int 500);
-                   ("active", `Bool false);
-                   ("watchers", `Int 0);
-                   ("source", `String "default");
-                 ])
+                 ([
+                    ("x", `Int 500);
+                    ("y", `Int 500);
+                    ("active", `Bool false);
+                    ("watchers", `Int 0);
+                    ("source", `String "default");
+                  ]
+                 @ fields))
          in
          Dream.respond ~headers:json_headers (Yojson.Safe.to_string json));
        Dream.get "/metrics" (fun _req ->

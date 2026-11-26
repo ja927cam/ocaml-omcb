@@ -83,6 +83,15 @@ async function freePort() {
   if (suggestion.source !== "players" || suggestion.watchers < 1) {
     throw new Error(`suggestion did not report the viewer: ${JSON.stringify(suggestion)}`);
   }
+  if (
+    !Array.isArray(suggestion.viewers) ||
+    !suggestion.viewers.some((viewer) => viewer.x === 321 && viewer.y === 654)
+  ) {
+    throw new Error(`viewer point missing: ${JSON.stringify(suggestion)}`);
+  }
+  if (!Array.isArray(suggestion.recent)) {
+    throw new Error(`recent move list missing: ${JSON.stringify(suggestion)}`);
+  }
 
   const cdpPort = 9800 + Math.floor(Math.random() * 150);
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "omc-activity-"));

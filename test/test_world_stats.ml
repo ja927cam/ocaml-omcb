@@ -28,6 +28,25 @@ let test_kings_captured () =
   check_int "ledger black kings" 1 (Kings_captured.black scanned);
   check_int "ledger white kings" 1 (Kings_captured.white scanned)
 
+let test_recent_moves () =
+  let activity = Activity_map.create () in
+  Activity_map.note activity ~bx:100 ~by:200 ~now:1000.;
+  Activity_map.note activity ~bx:300 ~by:400 ~now:1010.;
+  (match Activity_map.recent activity ~now:1011. with
+   | [ newest; older ] ->
+     check_int "recent newest x" 300 newest.Activity_map.x;
+     check_int "recent newest y" 400 newest.Activity_map.y;
+     check_int "recent older x" 100 older.Activity_map.x
+   | _ -> failwith "FAIL: expected two recent moves");
+  check_int "recent old window" 0
+    (List.length (Activity_map.recent activity ~now:2000.));
+  for index = 0 to 599 do
+    Activity_map.note activity ~bx:(index mod 1000) ~by:(index mod 1000)
+      ~now:(2000. +. float index)
+  done;
+  check_int "recent cap" 200
+    (List.length (Activity_map.recent activity ~now:2600.))
+
 let test_activity_map () =
   let activity = Activity_map.create () in
   Activity_map.note activity ~bx:120 ~by:340 ~now:1000.;
@@ -51,5 +70,6 @@ let test_activity_map () =
 
 let () =
   test_kings_captured ();
+  test_recent_moves ();
   test_activity_map ();
   print_endline "world stats tests: OK"

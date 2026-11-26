@@ -169,7 +169,8 @@ board, revisions and bounded ledger. It is intended for recovery tests and
 diagnostics; computing it reads the whole world and takes about a second.
 `GET /healthz` and `GET /readyz` are lightweight liveness/readiness probes.
 `GET /active.json` suggests a board near the densest cluster of current
-viewers, or near recent moves when nobody else is connected.
+viewers, or near recent moves when nobody else is connected. It also returns
+bounded `viewers` and `recent` move lists used by the world minimap.
 `GET /tally.json` returns the cumulative black/white king captures still
 retained in the ledger. `GET /metrics` also includes `/proc` RSS, OCaml GC
 statistics and explicit live-snapshot-copy accounting for operational
@@ -193,7 +194,8 @@ The board grid fills the whole window.
   explicit coordinates joins near the busiest group of current viewers.
 - `?x=<board_x>&y=<board_y>` opens the client centred on that board.
 - The bottom-left corner shows the running tally of black and white kings
-  captured across the world.
+  captured across the world. The minimap shows green dots for live viewers
+  and fading gold dots for recent moves.
 - At 216 px per board, roughly three boards fit vertically in a 700 px
   window; larger windows show more of the world.
 

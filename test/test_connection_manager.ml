@@ -399,5 +399,11 @@ let () =
      check "view hotspot y" (y = 212);
      check "view hotspot watchers" (watchers = 2)
    | None -> failwith "expected a view hotspot");
+  let points = Connection_manager.view_points manager in
+  check "view points include A" (List.mem (200, 210) points);
+  check "view points include B" (List.mem (206, 214) points);
+  check "view points include C" (List.mem (700, 700) points);
+  check "view points count" (List.length points = 3);
+  check "view count" (Connection_manager.view_count manager = 3);
 
   Printf.printf "All connection manager tests passed.\n"

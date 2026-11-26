@@ -376,6 +376,23 @@ let wait_closed conn = conn.closed_signal
 
 let client_count t = Hashtbl.length t.clients
 
+let view_points t =
+  Hashtbl.fold
+    (fun _ conn acc ->
+      match conn.view_center with
+      | None -> acc
+      | Some (x, y) -> (max 0 (min 999 x), max 0 (min 999 y)) :: acc)
+    t.clients []
+  |> List.sort (fun (ax, ay) (bx, by) ->
+         match compare ax bx with 0 -> compare ay by | order -> order)
+  |> List.filteri (fun index _ -> index < 200)
+
+let view_count t =
+  Hashtbl.fold
+    (fun _ conn count ->
+      match conn.view_center with None -> count | Some _ -> count + 1)
+    t.clients 0
+
 let view_hotspot t =
   let counts = Array.make 100 0 in
   let sum_x = Array.make 100 0 in

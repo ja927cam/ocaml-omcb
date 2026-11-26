@@ -94,6 +94,12 @@
 
 ### Monitoring
 
+- The world minimap now shows live viewer positions as green dots and recent
+  move destinations as fading gold dots, with a small legend and a total live
+  viewer count. `/active.json` exposes the bounded `viewers` and `recent`
+  lists alongside the existing join suggestion.
+
+
 - Added per-region board-load metrics. Snapshot batches are grouped into
   10 x 10 world regions (100 x 100 boards each), with request/board/failure
   counters and p50/p95/max/last server batch latency in `/metrics` under
