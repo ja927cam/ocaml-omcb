@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#18120d">
   <link rel="canonical" href="https://chess.jamesashwood.com/">
-  <link rel="preload" href="/static/main.bc.wasm.js?v=20261126m" as="script">
+  <link rel="preload" href="/static/main.bc.wasm.js?v=20261126n" as="script">
   <title>One Million Chessboards — a shared living world</title>
   <meta name="description" content="A single shared world of 1,000 × 1,000 live chessboards. Pan, zoom and play. Every move is permanent.">
   <meta property="og:type" content="website">
@@ -1145,6 +1145,12 @@
 
       document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape' && !intro.hidden) closeIntro();
+        const target = event.target;
+        if (
+          target
+          && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+            || target.isContentEditable)
+        ) return;
         if (event.metaKey || event.ctrlKey || event.altKey) return;
         if (event.key === '?') { event.preventDefault(); openIntro(); return; }
         if (event.key === '+' || event.key === '=') { event.preventDefault(); document.getElementById('zoom-in').click(); return; }
@@ -1276,7 +1282,7 @@
   <script>
     (function () {
       const params = new URLSearchParams(window.location.search);
-      const entry = '/static/main.bc.wasm.js?v=20261126m';
+      const entry = '/static/main.bc.wasm.js?v=20261126n';
       let loaded = false;
       function loadClient() {
         if (loaded) return;

@@ -177,13 +177,37 @@ async function main() {
     if (apiCoords !== "(222, 333)") {
       fail(`simMapGoto did not move the camera: ${apiCoords}`);
     }
+    const typeInto = async (id, text) => {
+      await evaluate(`document.getElementById('${id}').focus(); document.getElementById('${id}').select()`);
+      for (const character of text) {
+        await send("Input.dispatchKeyEvent", {
+          type: "keyDown",
+          key: character,
+          text: character,
+          unmodifiedText: character,
+        });
+        await send("Input.dispatchKeyEvent", {
+          type: "keyUp",
+          key: character,
+        });
+      }
+    };
     await evaluate("document.getElementById('coords').click()");
-    await evaluate("document.getElementById('goto-x').value = '444'");
-    await evaluate("document.getElementById('goto-y').value = '555'");
+    await typeInto("goto-x", "600");
+    await typeInto("goto-y", "700");
+    const typed = JSON.parse(
+      await evaluate(`JSON.stringify({
+        x: document.getElementById('goto-x').value,
+        y: document.getElementById('goto-y').value
+      })`)
+    );
+    if (typed.x !== "600" || typed.y !== "700") {
+      fail(`coordinate inputs did not accept multi-digit values: ${JSON.stringify(typed)}`);
+    }
     await evaluate("document.getElementById('goto-form').requestSubmit()");
     await sleep(350);
     const formCoords = await evaluate("document.getElementById('coords').textContent");
-    if (formCoords !== "(444, 555)") {
+    if (formCoords !== "(600, 700)") {
       fail(`coordinate form did not move the camera: ${formCoords}`);
     }
     await evaluate("window.__simMapActive = { viewers: [{ x: 900, y: 100 }], recent: [], watchers_total: 1 }");
