@@ -219,34 +219,46 @@ send failures, board-load failures, restarts, WAL/snapshot problems, high RSS
 and sustained broadcast latency. The previous state is only advanced after a
 successful send, so a failed email is covered by the next report.
 
-Install the user timer (the service uses `%h/Work/ocaml-omcb`; adjust it if the
-checkout lives elsewhere):
+Production runs it from the VPS as the `ocaml-omcb-hourly-report` systemd
+timer. The compatibility install during the rename uses:
+
+```text
+/opt/sim-map/hourly_report.py
+/root/.msmtprc                     (root-only SMTP config)
+/var/lib/sim-map-hourly-report/   (comparison state)
+```
+
+Install or refresh it as root:
 
 ```bash
-cp scripts/ocaml-omcb-hourly-report.service scripts/ocaml-omcb-hourly-report.timer \
-  ~/.config/systemd/user/
-# edit OCAML_OMCB_REPORT_TO in the service if needed
-systemctl --user daemon-reload
-systemctl --user enable --now ocaml-omcb-hourly-report.timer
-systemctl --user list-timers ocaml-omcb-hourly-report.timer
+install -m 0755 scripts/hourly_report.py /opt/sim-map/hourly_report.py
+install -m 0644 deploy/ocaml-omcb-hourly-report.service \
+  /etc/systemd/system/ocaml-omcb-hourly-report.service
+install -m 0644 deploy/ocaml-omcb-hourly-report.timer \
+  /etc/systemd/system/ocaml-omcb-hourly-report.timer
+install -d -m 0700 /var/lib/sim-map-hourly-report
+systemctl daemon-reload
+systemctl enable --now ocaml-omcb-hourly-report.timer
+systemctl list-timers ocaml-omcb-hourly-report.timer
 ```
 
 Preview a report without sending it or advancing the state:
 
 ```bash
-python3 scripts/hourly_report.py --dry-run
+OCAML_OMCB_REPORT_STATE=/var/lib/sim-map-hourly-report/state.json \
+  python3 /opt/sim-map/hourly_report.py --dry-run
 ```
 
 Recent runs and delivery errors:
 
 ```bash
-journalctl --user -u ocaml-omcb-hourly-report.service
+journalctl -u ocaml-omcb-hourly-report.service
 ```
 
-The comparison state is stored at
-`~/.local/state/ocaml-omcb-hourly-report/state.json`. A first run establishes a
-baseline; later runs report one-hour deltas. If the machine is asleep, the
-timer's `Persistent=true` sends the missed report when it wakes.
+A first run establishes a baseline; later runs report one-hour deltas. The
+timer's `Persistent=true` sends a missed report after the VPS wakes. For local
+development, the same script can be run from the checkout; its default state
+lives at `~/.local/state/ocaml-omcb-hourly-report/state.json`.
 
 ## Documentation
 

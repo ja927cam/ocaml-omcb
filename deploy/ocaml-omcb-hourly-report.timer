@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly email report for chess.jamesashwood.com
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=60
+Unit=ocaml-omcb-hourly-report.service
+
+[Install]
+WantedBy=timers.target

@@ -281,7 +281,13 @@ def build_report(
     if d_outbox_dropped and d_outbox_dropped > 0:
         issue("CRITICAL", f"{d_outbox_dropped} outbox drop(s) during the window")
     if d_send_failures and d_send_failures > 0:
-        issue("CRITICAL", f"{d_send_failures} websocket send failure(s)")
+        if d_outbox_dropped and d_outbox_dropped > 0 or d_send_failures >= 3:
+            issue("WATCH", f"{d_send_failures} websocket send failure(s)")
+        else:
+            note(
+                f"{d_send_failures} websocket send failure(s) "
+                "(usually a disconnected client)"
+            )
     if d_outbox_unregisters and d_outbox_unregisters > 0:
         issue("WATCH", f"{d_outbox_unregisters} outbox-full disconnect(s)")
     if d_board_failures and d_board_failures > 0:

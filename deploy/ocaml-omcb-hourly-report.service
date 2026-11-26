@@ -1,0 +1,17 @@
+[Unit]
+Description=Hourly email report for chess.jamesashwood.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Environment=OCAML_OMCB_REPORT_URL=https://chess.jamesashwood.com
+Environment=OCAML_OMCB_REPORT_TO=contact@jamesashwood.com
+Environment=OCAML_OMCB_REPORT_STATE=/var/lib/sim-map-hourly-report/state.json
+ExecStart=/usr/bin/python3 /opt/sim-map/hourly_report.py
+TimeoutStartSec=120
+Nice=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
