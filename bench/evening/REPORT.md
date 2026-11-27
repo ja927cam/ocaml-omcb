@@ -26,6 +26,7 @@ This report is the evidence base for the systems chapters appended to
 | Durable write path, no fsync | **21.1k moves/s** | same workload, `WAL_SYNC=0` |
 | Write path on tmpfs | **35.1k moves/s** | 2,000,000 moves, ledger wrap verified |
 | Snapshot batches | **~600k boards/s** | compact protocol, standard boards |
+| 30-minute mixed soak | **5.52 M moves, 0 rejects** | 96 writers, 256 subscribers, six phases |
 | Browser initial load | **462 ms for 841 boards** | production HTTPS, cold cache |
 | Browser rendering | **59–60 fps** | 1200×900 and 390×844, idle/pan/zoom |
 | Production RSS | **~1.03 GiB** | core 512 MiB + reusable 512 MiB snapshot buffer |
@@ -457,6 +458,40 @@ zero duplicates, zero unexpected closes. Adaptive delivered the most total
 moves and the best heavy-phase p50 (12.8 ms vs 28.3 ms fixed-16 and 15.7 ms
 fixed-64).
 
+### 30-minute adaptive soak
+
+`test/adaptive_soak_test.js`, 300 seconds per phase, 96 writers, 256
+subscribers, 8 sentinel subscribers.
+
+| Phase | Accepted | Moves/s | Move p50 | Move p95 | Queue max | Fsync p95 max | Lag p95 max | Batch end | Class |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| quiet | 36,364 | 121 | 7.3 ms | 11.6 ms | 4 | 42.5 ms | 16.9 ms | 16 | moderate |
+| heavy-writes | 3,718,280 | 12,392 | 6.4 ms | 14.7 ms | 93 | 30.8 ms | 13.6 ms | 128 | heavy |
+| fanout | 475,869 | 1,586 | 7.6 ms | 18.0 ms | 16 | 32.9 ms | 16.4 ms | 64 | heavy |
+| mixed | 669,665 | 2,232 | 15.5 ms | 28.5 ms | 47 | 33.2 ms | 28.0 ms | 32 | moderate |
+| snapshot-writes | 573,095 | 1,907 | 21.1 ms | 84.2 ms | 63 | 84.8 ms | 75.7 ms | 64 | heavy |
+| quiet-again | 19,500 | 65 | 11.2 ms | 123.6 ms | 3 | 216.7 ms | 60.9 ms | 8 | moderate |
+
+Totals: 5,516,428 moves including 23,655 sentinel moves, **0 rejected, 0
+errors, 0 missing events, 0 duplicate events, 0 outbox drops, 0 send
+failures**. The sentinels never resynchronised, and the final state digest
+matched before and after recovery (`5,516,428`).
+
+Stability:
+
+- RSS: 564 MiB first median, 1,185 MiB last median, 1,187 MiB max. The ~620
+  MiB growth is the reusable 512 MiB snapshot buffer plus 256 subscribers ×
+  625 board subscriptions and the associated outbox/hash-table memory. It is a
+  high-water mark, not per-move growth; fds stayed at 369–370.
+- Worker queue max 93 of 4,096; outbox depth max 0.
+- The controller made 106–129 batch changes and 88–117 direction flips per
+  5-minute phase under fan-out/mixed/snapshot load. Correctness was unaffected,
+  but this is visible oscillation and a candidate for extra damping.
+- Fsync p95 reached 216.7 ms in the quiet-again phase, which is why its p95
+  latency is 123.6 ms while p50 stays at 11.2 ms. A single slow btrfs commit
+  affects the tail, not the median.
+
+
 ---
 
 ## 10. Weak points, ranked
@@ -496,6 +531,14 @@ fixed-64).
 9. **Client-side 25×25 cache.** Loading 625–841 boards is fast (214–462 ms),
    but panning beyond the prefetch margin triggers another batch. A larger
    cache or predictive prefetch would smooth long pans.
+10. **Subscriber memory.** 256 subscribers × 625 board subscriptions is 160,000
+    hash entries plus 256 outboxes. Combined with the snapshot buffer, the
+    30-minute soak peaked at 1.19 GiB. A bitset or bulk-window representation
+    would reduce this substantially at high fan-out.
+11. **Adaptive policy oscillation.** Under fan-out/mixed/snapshot load the
+    controller made 106–129 batch changes and 88–117 direction flips per
+    5 minutes. It stayed correct and kept p50 low, but the churn is worth
+    damping with a longer hysteresis window or a rate limit on changes.
 
 ---
 
@@ -504,6 +547,7 @@ fixed-64).
 | Change | Expected effect | Risk |
 |---|---|---|
 | Keep adaptive group commit as default | 10–30% over fixed-64; much better under burst | low |
+| Dampen adaptive policy changes | less controller churn, same median latency | low |
 | Add `fdatasync` option for WAL | avoids metadata journal writes; small gain on btrfs | low |
 | Snapshot copy outside worker / revisioned shadow | removes 1–7 ms stalls from move path | medium |
 | Shard boards across 2–4 writer domains | near-linear move scaling until fsync | high |
@@ -602,6 +646,7 @@ node bench/slow_client_test.js
 | `bench/evening/crash_results.json` | 1-client SIGKILL trials |
 | `bench/evening/crash64_results.json` | 64-client SIGKILL trials |
 | `bench/evening/adaptive_commit_results.md` | adaptive policy transitions |
+| `bench/evening/adaptive_soak_results.md` | 30-minute six-phase soak |
 | `bench/evening/slow_results.json` | slow-client isolation |
 | `bench/evening/write_failure_results.json` | dead-socket test |
 | `bench/evening/recovery_*_results.json` | soak results before restart tests |

@@ -3140,10 +3140,15 @@ The stress suite covers cases that are easy to miss in normal play:
    no temporary file and no corrupt snapshot; the old snapshot or WAL is used.
 10. **Adaptive transitions.** Quiet → heavy → quiet → fan-out → mixed →
     snapshot. The controller must not oscillate or starve delivery.
+11. **Thirty-minute mixed soak.** 96 writers and 256 subscribers, six 5-minute
+    phases. The measured run accepted 5,516,428 moves with zero rejects, zero
+    errors, zero missing/duplicate sentinel events, and a matching recovery
+    digest. RSS peaked at 1.19 GiB (snapshot buffer plus subscriber state);
+    queue depth peaked at 93 of 4,096; outbox depth stayed at 0.
 
 #### 7A.7 Identifying weak points
 
-The measurements point to five bottlenecks, in order:
+The measurements point to six bottlenecks, in order:
 
 1. **fsync latency.** Strict mode is 577 moves/s. Group commit raises it to
    ~12k, but every group still pays ~1.5 ms.
@@ -3158,6 +3163,10 @@ The measurements point to five bottlenecks, in order:
 5. **No dependency/cancellation.** Order-dependent moves are rejected and
    retried. This is a semantic limit, not a throughput limit, but it affects
    user experience in contested positions.
+6. **Subscriber memory and adaptive churn.** 256 subscribers × 625
+   subscriptions plus 256 outboxes and the 512 MiB snapshot buffer reach
+   ~1.19 GiB RSS. The controller also changes policy frequently under mixed
+   load (106–129 changes per 5 minutes), which is correct but noisy.
 
 #### 7A.8 What the tests do not prove
 
@@ -3237,6 +3246,19 @@ Results:
 - heavy phase p50 12.8 ms vs 28.3 ms fixed-16 and 15.7 ms fixed-64;
 - total moves 33,868 vs 18,230 and 30,805;
 - zero missing/duplicate events in all modes.
+
+The 30-minute soak gives the steady-state picture:
+
+- 5,516,428 moves, zero rejects/errors;
+- heavy-writes phase: 3,718,280 moves in 300 s (12,392/s), p50 6.4 ms;
+- fan-out: 1,586/s, p50 7.6 ms; mixed: 2,232/s, p50 15.5 ms; snapshot
+  writes: 1,907/s, p50 21.1 ms, p95 84.2 ms;
+- queue max 93, outbox max 0, drops 0, send failures 0;
+- RSS 564 MiB → 1,187 MiB peak, fds 369–370, recovery digest match.
+
+The controller changed batch 106–129 times and reversed direction 88–117 times
+per 5-minute phase under fan-out/mixed/snapshot load. It kept the median low,
+but the churn is a candidate for extra hysteresis or a rate limit.
 
 The next fsync improvements, in order of risk:
 
