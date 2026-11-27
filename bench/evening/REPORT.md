@@ -28,6 +28,7 @@ This report is the evidence base for the systems chapters appended to
 | Snapshot batches | **~600k boards/s** | compact protocol, standard boards |
 | Browser initial load | **462 ms for 841 boards** | production HTTPS, cold cache |
 | Browser rendering | **59–60 fps** | 1200×900 and 390×844, idle/pan/zoom |
+| Production RSS | **~1.03 GiB** | core 512 MiB + reusable 512 MiB snapshot buffer |
 | Production move RTT | **27.2 ms p50** | WAN, TLS, event delivery included |
 | Crash recovery | **0 acked moves lost** | 3 SIGKILL trials, 15k acked moves each |
 | Restart after 500k WAL records | **1.7 s** | 41 MiB WAL, no snapshot |
@@ -184,6 +185,24 @@ Observations:
   payload + 8-byte checksum.
 - Adaptive commit settled at an average group of ~46 on btrfs, with fsync p50
   ~1.67 ms and p95 ~1.94 ms. That is the expected storage-bound regime.
+
+Production memory deserves a separate note. The reusable snapshot buffer is a
+full second world copy (536,777,216 bytes), and it is retained after the first
+snapshot so later snapshots do not allocate another 512 MiB. A live production
+sample on `5bfa34e` showed:
+
+```text
+RSS                     1,082,420 KiB (~1.03 GiB)
+snapshot_buffer         true
+snapshot_copy_live      1
+snapshot_copy_live_bytes 536,777,216
+core state              536,777,216
+```
+
+So the no-snapshot benchmark RSS of ~550 MiB is not the production steady
+state. Budget about **1.1 GiB** for the process plus container/runtime overhead,
+and leave headroom for the page cache and the WAL. This is expected behaviour,
+not a leak.
 
 ---
 
@@ -470,7 +489,11 @@ fixed-64).
 7. **No dependency or cancellation protocol.** Order-sensitive moves are
    rejected and must be retried by the client. This is correct but adds
    latency and user-visible failure in contested positions.
-8. **Client-side 25×25 cache.** Loading 625–841 boards is fast (214–462 ms),
+8. **The reusable snapshot buffer costs 512 MiB permanently.** It avoids
+   per-snapshot allocation and is the right default for a busy server, but it
+   doubles steady-state RSS. A lazy buffer, `fork`/copy-on-write, or an
+   incremental snapshot would reduce idle memory.
+9. **Client-side 25×25 cache.** Loading 625–841 boards is fast (214–462 ms),
    but panning beyond the prefetch margin triggers another batch. A larger
    cache or predictive prefetch would smooth long pans.
 
@@ -489,6 +512,7 @@ fixed-64).
 | Replace 4 KiB padding with a flush primitive | 10–100× less event bandwidth | medium (vendor patch) |
 | Dependency-tree + cancellation protocol | removes retry latency in contested moves | high |
 | Incremental snapshot / reflink | faster restart, less 512 MiB I/O | medium |
+| Optional/lazy snapshot buffer | ~512 MiB lower idle RSS | low |
 | Bitset subscriptions / reusable recipient buffer | less allocation at high fan-out | low |
 
 The highest return for the least risk is the snapshot/worker separation and a

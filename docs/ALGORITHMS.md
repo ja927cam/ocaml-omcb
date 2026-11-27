@@ -1642,6 +1642,8 @@ production.
 
 The chapters follow the requested structure. Each chapter has a **Subpart A**
 with the core material. Cross-references to Part I are written as "Section N".
+Chapter 1 is Part I's opening performance-goals section; the chapter numbering
+continues from there.
 
 The measured numbers in these chapters come from the overnight run recorded in
 `bench/evening/REPORT.md`. They are machine-specific; the reasoning and the
@@ -2137,9 +2139,12 @@ O(1) lookup by sequence, no per-event allocation and no linked list.
 | Snapshot payload, full board | 1 | 65 | 65 bytes |
 
 Process RSS after startup is ~540–555 MiB, which matches the core state plus
-the OCaml runtime, Lwt buffers and the snapshot buffer. During a snapshot the
-process can temporarily hold a second 512 MiB world copy; the implementation
-reuses one buffer so repeated snapshots do not grow without bound.
+the OCaml runtime, Lwt buffers and the snapshot buffer. After the first
+snapshot the process retains one reusable second world copy (512 MiB), so
+steady-state production RSS is ~1.03 GiB. The implementation deliberately
+reuses that buffer instead of allocating a new 512 MiB world for every
+snapshot. Budget ~1.1 GiB for the process and leave headroom for the page
+cache and the WAL.
 
 #### 3A.8 Worked example: a capture
 
@@ -2537,7 +2542,9 @@ write, a validation failure cannot leave a half-applied board.
 `Move_engine.process` is the transaction:
 
 1. Read the source square.
-2. Check `expected_piece_id` (ID, client signature, or zero).
+2. Check `expected_piece_id` (full ID or client signature). The engine also
+   treats zero as "skip the stale check", but the protocol rejects zero, so a
+   normal client always sends a real identity.
 3. Validate.
 4. Build the ledger event (move, moved ID, captured ID, flags).
 5. Validate the ledger event (field ranges).
@@ -2670,6 +2677,8 @@ The writer:
 The capture is done in the worker so it is a consistent point-in-time view. The
 write happens asynchronously. The implementation reuses a single snapshot
 buffer, so repeated snapshots do not allocate a new 512 MiB world each time.
+That buffer is retained after the first snapshot, which is why production RSS
+settles at about 1.03 GiB rather than 550 MiB.
 
 Measured: a 512 MiB snapshot takes about 2.2–2.3 s (~230 MiB/s), and restart
 from a snapshot plus 89k WAL records takes about 1.4 s.
