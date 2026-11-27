@@ -74,6 +74,8 @@ let with_state t f =
   t.sequence <- sequence;
   value
 
+let with_board t f = f t.board
+
 let reset t =
   Board.clear_all t.board;
   Bigarray.Array1.fill t.revisions 0L;

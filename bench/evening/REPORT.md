@@ -8,7 +8,10 @@ harnesses added in this report.
 Machine: AMD Ryzen 7 250 (8 cores / 16 threads, 3.3 GHz boost), 29 GiB RAM,
 btrfs on `/home` with `compress=zstd:3`, tmpfs on `/dev/shm` and `/tmp`.
 Everything ran on one host over loopback unless a result explicitly says
-"production" or "WAN".
+"production" or "WAN". All load and soak runs used the default
+`OCAML_OMCB_SIMULATION=0`; simulated world activity is a production feature and
+is not included in these numbers. At its default cap it adds at most a few
+moves per second around viewers, well below the measured write ceilings.
 
 This report is the evidence base for the systems chapters appended to
 `docs/ALGORITHMS.md`. Raw results are in `bench/evening/`.

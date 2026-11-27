@@ -2723,6 +2723,46 @@ The state layer maintains:
 These are tested directly and by the crash/fault suites. They are not
 machine-checked; Section 13 lists the proof obligations.
 
+#### 5A.12 Simulated world activity
+
+A shared world can look empty even when the server is healthy. The optional
+simulator keeps legal activity near people who are actually looking:
+
+- Every tick, `Connection_manager.view_points` returns the current viewer
+  centres (bounded to 200).
+- The task selects up to `SIM_MAX` neighbourhoods, rotating through the list so
+  no single viewer is always skipped.
+- For each neighbourhood it picks a board within `SIM_RADIUS`, never the
+  viewer's exact board, and retries with a slightly larger radius if that board
+  has no legal move.
+- `Simulated_move.pick` chooses a random occupied piece and walks the 64 squares
+  of the same board in a random cyclic order. It returns the first move the
+  authoritative validator accepts, skips king captures, and uses the source
+  piece's full ID as the expected identity.
+- The worker's `Simulate` request runs the generator and then calls the same
+  `Move_engine.process` path as a client move. The transition is written to the
+  WAL, appended to the ledger, applied to the board, given a revision, broadcast
+  to subscribers and counted in metrics.
+- The request ID is negative and decremented, so it cannot collide with a live
+  client request. A client that receives the event applies it normally and
+  simply has no matching pending request.
+- When no viewer is connected, a slower ambient pulse runs near the recent
+  activity hotspot (or the world centre), so the minimap and join-near-activity
+  logic do not go completely cold.
+
+The generator is not a chess engine. It does not look for checks, tactics or
+good moves; it only needs a stream of legal, local moves. Because it calls the
+validator and the normal transaction path, it cannot bypass a rule, corrupt a
+revision or create a second writer.
+
+The server defaults simulation off so unit tests, load tests and benchmark
+harnesses still see pristine boards. Production enables it through
+`OCAML_OMCB_SIMULATION=1` in the Compose environment. `/metrics` exposes
+`simulation.submitted`, `simulation.accepted`, `simulation.skipped`,
+`simulation.rejected` and the last simulated board. `test/test_simulated_move.ml` checks generation and
+`test/simulation_test.js` checks the end-to-end near-viewer and ambient
+behaviour.
+
 ---
 
 ## Chapter 6 — State, Part II: Conflicting Moves, Dependencies and Cancellation

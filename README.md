@@ -174,6 +174,11 @@ Environment variables:
 | `OCAML_OMCB_ADAPTIVE_HYSTERESIS` | `3` | Samples required before increasing the policy |
 | `OCAML_OMCB_SNAPSHOT_MOVES` | `100000` | Commit count between snapshots (`0` disables) |
 | `OCAML_OMCB_SNAPSHOT_SECONDS` | `600` | Seconds between snapshots (`0` disables) |
+| `OCAML_OMCB_SIMULATION` | `0` | Simulated activity near viewers (`1` enables; production Compose sets `1`) |
+| `OCAML_OMCB_SIM_INTERVAL_MS` | `1000` | Time between simulated-activity ticks |
+| `OCAML_OMCB_SIM_MAX` | `8` | Maximum distinct viewer neighbourhoods served per tick |
+| `OCAML_OMCB_SIM_RADIUS` | `1` | Board radius around a viewer for simulated moves |
+| `OCAML_OMCB_SIM_AMBIENT_MS` | `2000` | Ambient move interval when nobody is connected |
 | `OCAML_OMCB_DEBUG_GC` | `0` | Test-only `/debug/gc` endpoint (`1` enables) |
 
 `GET /state-hash` returns the current global sequence and a digest of the
@@ -183,6 +188,20 @@ diagnostics; computing it reads the whole world and takes about a second.
 `GET /active.json` suggests a board near the densest cluster of current
 viewers, or near recent moves when nobody else is connected. It also returns
 bounded `viewers` and `recent` move lists used by the world minimap.
+
+### Simulated world activity
+
+When `OCAML_OMCB_SIMULATION=1`, a background task keeps the world visibly
+alive. Every tick it reads the current viewer centres and picks a legal move on
+a board within `OCAML_OMCB_SIM_RADIUS` of each selected viewer, never on the
+viewer's exact board. Moves go through the normal state worker, WAL, ledger,
+revision, broadcast and metrics path, so nearby clients see ordinary live
+events. Simulated moves skip king captures, stay on the chosen board, and use
+negative request IDs so they cannot collide with a client request. When nobody
+is connected, a slower ambient move keeps the recent-activity map and minimap
+from going completely cold. The server defaults this off so deterministic test
+and benchmark harnesses see pristine boards; the production Compose file sets
+it on.
 `GET /tally.json` returns the cumulative black/white king captures still
 retained in the ledger. `GET /metrics` also includes `/proc` RSS, OCaml GC
 statistics and explicit live-snapshot-copy accounting for operational

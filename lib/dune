@@ -15,6 +15,7 @@
   move
   move_validator
   move_processor
+  simulated_move
   game_state
   move_request
   move_engine

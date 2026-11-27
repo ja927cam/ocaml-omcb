@@ -56,6 +56,21 @@
   request tracker, plus a headless-browser panning stress test with recorded
   before/after request and cache measurements.
 
+### World activity simulation
+
+- Added an opt-in server task that plays legal moves near active viewers so the
+  world stays visibly alive. It reads viewer centres, chooses boards within a
+  configurable radius (never the viewer's exact board), and submits moves
+  through the normal state worker, WAL, ledger, revision, broadcast and metrics
+  path. Simulated moves skip king captures and use negative request IDs to
+  avoid colliding with client requests.
+- Added a slower ambient pulse near recent activity when nobody is connected.
+- The server defaults simulation off so test and benchmark harnesses remain
+  deterministic; the production Compose file enables it.
+- Added `/metrics` and Prometheus counters for submitted/accepted/rejected
+  simulated moves, a move-generation unit test and an end-to-end near-viewer /
+  ambient integration test.
+
 ### Measurement and systems handbook
 
 - Added an overnight performance/stress report at `bench/evening/REPORT.md`,

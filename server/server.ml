@@ -9,6 +9,40 @@ let now_ns () = Int64.of_float (Unix.gettimeofday () *. 1_000_000_000.)
 let board_load = Board_load_metrics.create ()
 let kings_captured = Kings_captured.create ()
 let activity = Activity_map.create ()
+
+type simulation_stats = {
+  enabled : bool ref;
+  submitted : int ref;
+  accepted : int ref;
+  skipped : int ref;
+  rejected : int ref;
+  last_board : (int * int) option ref;
+}
+
+let simulation_stats =
+  {
+    enabled = ref false;
+    submitted = ref 0;
+    accepted = ref 0;
+    skipped = ref 0;
+    rejected = ref 0;
+    last_board = ref None;
+  }
+
+let simulation_json () =
+  `Assoc
+    [
+      ("enabled", `Bool !(simulation_stats.enabled));
+      ("submitted", `Int !(simulation_stats.submitted));
+      ("accepted", `Int !(simulation_stats.accepted));
+      ("skipped", `Int !(simulation_stats.skipped));
+      ("rejected", `Int !(simulation_stats.rejected));
+      ( "last_board",
+        match !(simulation_stats.last_board) with
+        | None -> `Null
+        | Some (x, y) -> `Assoc [ ("x", `Int x); ("y", `Int y) ] );
+    ]
+
 let json_headers =
   [ ("Content-Type", "application/json"); ("Cache-Control", "no-store") ]
 
@@ -302,6 +336,7 @@ let metrics_json manager worker persistence adaptive ~fixed_group ~fixed_delay_u
         ("adaptive", adaptive_json adaptive ~fixed_group ~fixed_delay_us);
         ("board_load", Board_load_metrics.json board_load);
         ("kings_captured", Kings_captured.json kings_captured);
+        ("simulation", simulation_json ());
       ]
     ()
 
@@ -362,6 +397,16 @@ let prometheus_metrics_body manager worker persistence adaptive ~fixed_group
     (float_of_int (Kings_captured.white kings_captured));
   prometheus_metric buffer "ocaml_omcb_kings_captured{colour=\"black\"}"
     (float_of_int (Kings_captured.black kings_captured));
+  prometheus_header buffer "ocaml_omcb_simulation_moves_total" "counter"
+    "Simulated moves submitted, accepted, skipped and rejected";
+  prometheus_metric buffer "ocaml_omcb_simulation_moves_total{result=\"submitted\"}"
+    (float_of_int !(simulation_stats.submitted));
+  prometheus_metric buffer "ocaml_omcb_simulation_moves_total{result=\"accepted\"}"
+    (float_of_int !(simulation_stats.accepted));
+  prometheus_metric buffer "ocaml_omcb_simulation_moves_total{result=\"skipped\"}"
+    (float_of_int !(simulation_stats.skipped));
+  prometheus_metric buffer "ocaml_omcb_simulation_moves_total{result=\"rejected\"}"
+    (float_of_int !(simulation_stats.rejected));
   prometheus_header buffer "ocaml_omcb_stage_latency_seconds" "summary"
     "Move pipeline stage latency";
   let stages =
@@ -1140,6 +1185,118 @@ let () =
       ~config:State_worker.default_config state
   in
   worker_ref := Some worker;
+  let simulation_stopping = ref false in
+  let simulation_enabled = int_env "OCAML_OMCB_SIMULATION" 0 <> 0 in
+  let simulation_interval_ms =
+    max 100 (int_env "OCAML_OMCB_SIM_INTERVAL_MS" 1000)
+  in
+  let simulation_max = max 1 (int_env "OCAML_OMCB_SIM_MAX" 8) in
+  let simulation_radius = max 1 (int_env "OCAML_OMCB_SIM_RADIUS" 1) in
+  let simulation_ambient_ms =
+    max 250 (int_env "OCAML_OMCB_SIM_AMBIENT_MS" 2000)
+  in
+  simulation_stats.enabled := simulation_enabled;
+  if simulation_enabled then begin
+    Printf.printf
+      "simulation: enabled interval=%dms max=%d radius=%d ambient=%dms\n%!"
+      simulation_interval_ms simulation_max simulation_radius
+      simulation_ambient_ms;
+    let random = Random.State.make_self_init () in
+    let simulation_request_id = ref (-1l) in
+    let next_request_id () =
+      let id = !simulation_request_id in
+      simulation_request_id := Int32.pred id;
+      id
+    in
+    let clamp value = max 0 (min 999 value) in
+    let near x y radius =
+      let radius = max 1 radius in
+      let rec pick () =
+        let dx = Random.State.int random ((2 * radius) + 1) - radius in
+        let dy = Random.State.int random ((2 * radius) + 1) - radius in
+        if dx = 0 && dy = 0 then pick ()
+        else
+          let board_x = clamp (x + dx) and board_y = clamp (y + dy) in
+          if board_x = x && board_y = y then pick ()
+          else (board_x, board_y)
+      in
+      pick ()
+    in
+    let cursor = ref 0 in
+    let points_snapshot () =
+      let points = Array.of_list (Connection_manager.view_points manager) in
+      let total = Array.length points in
+      if total = 0 then []
+      else begin
+        let take = min simulation_max total in
+        let selected =
+          List.init take (fun index ->
+              points.((!cursor + index) mod total))
+        in
+        cursor := (!cursor + take) mod total;
+        selected
+      end
+    in
+    let try_near ~radius (x, y) =
+      let rec attempt remaining =
+        if remaining <= 0 then Lwt.return_unit
+        else begin
+          let board_x, board_y = near x y (radius + (3 - remaining)) in
+          incr simulation_stats.submitted;
+          State_worker.submit_simulated worker ~board_x ~board_y
+            ~request_id:(next_request_id ())
+          >>= function
+          | Ok true ->
+            incr simulation_stats.accepted;
+            simulation_stats.last_board := Some (board_x, board_y);
+            Lwt.return_unit
+          | Ok false ->
+            incr simulation_stats.skipped;
+            attempt (remaining - 1)
+          | Error _ ->
+            incr simulation_stats.rejected;
+            Lwt.return_unit
+        end
+      in
+      attempt 3
+    in
+    Lwt.async (fun () ->
+        let last_ambient = ref 0. in
+        let rec loop () =
+          if !simulation_stopping then Lwt.return_unit
+          else
+            Lwt_unix.sleep
+              (float simulation_interval_ms /. 1000.)
+            >>= fun () ->
+            let points = points_snapshot () in
+            let work =
+              match points with
+              | [] ->
+                let now = Unix.gettimeofday () in
+                if
+                  now -. !last_ambient
+                  >= float simulation_ambient_ms /. 1000.
+                then begin
+                  last_ambient := now;
+                  let x, y =
+                    match Activity_map.suggest activity ~now with
+                    | Some hotspot -> (hotspot.x, hotspot.y)
+                    | None -> (500, 500)
+                  in
+                  try_near ~radius:(max 3 simulation_radius) (x, y)
+                end
+                else Lwt.return_unit
+              | points ->
+                Lwt_list.iter_p
+                  (fun point ->
+                    try_near ~radius:simulation_radius point)
+                  points
+                >>= fun () -> Lwt.return_unit
+            in
+            work >>= fun () -> loop ()
+        in
+        loop ());
+  end;
   (match adaptive_controller with
    | None -> ()
    | Some controller ->
@@ -1202,6 +1359,7 @@ let () =
   let shutdown signal =
     if not !stopping then begin
       stopping := true;
+      simulation_stopping := true;
       Printf.eprintf "received signal %d: draining worker and snapshot\n%!" signal;
       flush stderr;
       Lwt.async (fun () ->

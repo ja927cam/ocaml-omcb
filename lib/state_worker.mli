@@ -144,6 +144,19 @@ val submit_piece_info :
     revision and the full packed piece, or [Piece.empty] for an empty square.
     Invalid coordinates or a square outside [0; 63] return [Invalid_request]. *)
 
+val submit_simulated :
+  t ->
+  board_x:int ->
+  board_y:int ->
+  request_id:int32 ->
+  (bool, submit_error) result Lwt.t
+(** Choose and commit one legal simulated move on the given board. Returns
+    [true] if a move was accepted, [false] if the board had no legal
+    non-king-capturing move or the generated request was rejected. The move
+    goes through the same WAL, ledger, revision, broadcast and metrics path as
+    a client move. The caller must use a request ID that cannot collide with a
+    live client request (the server uses negative IDs). *)
+
 val request_snapshot : t -> (unit, submit_error) result Lwt.t
 (** Queue a consistent world-snapshot boundary. Resolves after [on_snapshot]
     has run (or after the request is refused). *)

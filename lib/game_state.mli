@@ -121,3 +121,8 @@ val with_state :
 (** Internal transaction interface: provides the board/ledger and the current
     sequence, and commits the returned sequence afterwards. Only the move
     engine and test setup should use this. *)
+
+val with_board : t -> (Board.t -> 'a) -> 'a
+(** Internal read-only view of the authoritative board. The callback must not
+    yield or mutate the board. Used by the state worker to choose a simulated
+    move atomically with the move that follows it. *)
