@@ -272,7 +272,11 @@ lives at `~/.local/state/ocaml-omcb-hourly-report/state.json`.
 
 - `SPEC.md` — complete implementation specification and invariants.
 - `docs/ALGORITHMS.md` — algorithm design, complexity, benchmarks, testing and
-  formal-verification opportunities.
+  formal-verification opportunities. Part II (Chapters 2–9) is the systems
+  handbook: project layout, protocols, storage, state, conflicts, testing,
+  improvements and deployment.
+- `bench/evening/REPORT.md` — overnight performance and stress measurements
+  (durable write path, fsync, snapshots, scaling, browser, crash recovery).
 - `bench/README.md` — benchmark runner and dashboard.
 - `docs/FAILURE_AUDIT.md` — production-hardening and failure-injection audit.
 - `CHANGELOG.md` — recent release and hardening notes.

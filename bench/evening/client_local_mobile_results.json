@@ -1,0 +1,102 @@
+{
+  "label": "local-mobile",
+  "generated": "2026-11-27T00:06:47.888Z",
+  "url": "http://127.0.0.1:18080/?x=500&y=500",
+  "mobile": true,
+  "loaded": true,
+  "boards": 841,
+  "boards_loaded_ms": 179.01597500000003,
+  "ready_state": "complete",
+  "timing": {
+    "navigation": {
+      "duration": 85.7800000011921,
+      "domContentLoaded": 33.41000000014901,
+      "load": 85.7800000011921,
+      "responseEnd": 4.490000000223517,
+      "transferSize": 42241
+    },
+    "resources": [
+      {
+        "name": "http://127.0.0.1:18080/static/main.bc.wasm.js?v=20261126n",
+        "transferSize": 20158,
+        "encodedBodySize": 19858,
+        "decodedBodySize": 19858,
+        "duration": 3.6549999993294477,
+        "initiatorType": "link"
+      },
+      {
+        "name": "http://127.0.0.1:18080/tally.json",
+        "transferSize": 321,
+        "encodedBodySize": 21,
+        "decodedBodySize": 21,
+        "duration": 1.3999999985098839,
+        "initiatorType": "fetch"
+      },
+      {
+        "name": "http://127.0.0.1:18080/active.json",
+        "transferSize": 408,
+        "encodedBodySize": 108,
+        "decodedBodySize": 108,
+        "duration": 1.4199999999254942,
+        "initiatorType": "fetch"
+      },
+      {
+        "name": "http://127.0.0.1:18080/static/main.bc.wasm.assets/code-15e9f5d7926e924db1bb.wasm",
+        "transferSize": 186138,
+        "encodedBodySize": 185838,
+        "decodedBodySize": 185838,
+        "duration": 7.205000000074506,
+        "initiatorType": "fetch"
+      },
+      {
+        "name": "http://127.0.0.1:18080/static/pieces.png",
+        "transferSize": 421920,
+        "encodedBodySize": 421620,
+        "decodedBodySize": 421620,
+        "duration": 6.660000000149012,
+        "initiatorType": "img"
+      }
+    ],
+    "memory": {
+      "usedJSHeapSize": 2032625,
+      "totalJSHeapSize": 4558337,
+      "jsHeapSizeLimit": 4395630592
+    },
+    "canvas": {
+      "width": 1170,
+      "height": 2532
+    }
+  },
+  "perf_metrics": {
+    "JSHeapUsedSize": 1933988,
+    "JSHeapTotalSize": 4456448,
+    "Nodes": 319,
+    "LayoutCount": 7,
+    "RecalcStyleCount": 7,
+    "TaskDuration": 0.191345,
+    "ScriptDuration": 0.023576
+  },
+  "heap": {
+    "usedSize": 4974152,
+    "totalSize": 8126464,
+    "embedderHeapUsedSize": 2654072,
+    "backingStorageSize": 102920
+  },
+  "frame_rate": {
+    "idle": {
+      "frames": 92,
+      "seconds": 1.5169218519999998,
+      "fps": 60.64871958897846
+    },
+    "pan": {
+      "frames": 90,
+      "seconds": 1.5112432789999999,
+      "fps": 59.553477711484994
+    },
+    "zoom": {
+      "frames": 90,
+      "seconds": 1.5128949389999997,
+      "fps": 59.488539665691135
+    }
+  }
+}

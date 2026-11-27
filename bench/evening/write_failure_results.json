@@ -1,0 +1,14 @@
+{
+  "generated": "2026-11-27T00:14:39.324Z",
+  "moves": 37500,
+  "duration_ms": 11343.952736,
+  "fds_without_slow": 13,
+  "fds_before": 14,
+  "fds_after": 14,
+  "idle_ticks_per_second": 0,
+  "drops_after_reset": 9486,
+  "send_failures": 24,
+  "clients_after": 5,
+  "responsive": true,
+  "surviving_client": true
+}

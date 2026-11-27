@@ -1,0 +1,158 @@
+{
+  "label": "one",
+  "generated": "2026-11-27T00:00:27.387Z",
+  "clients": 1,
+  "repeats": 10,
+  "cases": [
+    {
+      "size": 1,
+      "boards_per_request": 1,
+      "requests": 10,
+      "boards": 10,
+      "duration_ms": 3.4595600000000033,
+      "boards_per_second": 2890.5409936523693,
+      "requests_per_second": 2890.5409936523693,
+      "payload_bytes": {
+        "n": 10,
+        "p50_ms": 15,
+        "p95_ms": 15,
+        "p99_ms": 15,
+        "max_ms": 15,
+        "mean_ms": 15
+      },
+      "latency": {
+        "n": 10,
+        "p50_ms": 0.21888400000000274,
+        "p95_ms": 1.2961799999999997,
+        "p99_ms": 1.2961799999999997,
+        "max_ms": 1.2961799999999997,
+        "mean_ms": 0.33665540000000077
+      }
+    },
+    {
+      "size": 5,
+      "boards_per_request": 25,
+      "requests": 10,
+      "boards": 250,
+      "duration_ms": 1.7067559999999986,
+      "boards_per_second": 146476.70785982307,
+      "requests_per_second": 5859.068314392924,
+      "payload_bytes": {
+        "n": 10,
+        "p50_ms": 63,
+        "p95_ms": 63,
+        "p99_ms": 63,
+        "max_ms": 63,
+        "mean_ms": 63
+      },
+      "latency": {
+        "n": 10,
+        "p50_ms": 0.14887199999999723,
+        "p95_ms": 0.248340000000006,
+        "p99_ms": 0.248340000000006,
+        "max_ms": 0.248340000000006,
+        "mean_ms": 0.16840350000000087
+      }
+    },
+    {
+      "size": 15,
+      "boards_per_request": 225,
+      "requests": 10,
+      "boards": 2250,
+      "duration_ms": 4.502861999999993,
+      "boards_per_second": 499682.20211945276,
+      "requests_per_second": 2220.809787197568,
+      "payload_bytes": {
+        "n": 10,
+        "p50_ms": 463,
+        "p95_ms": 463,
+        "p99_ms": 463,
+        "max_ms": 463,
+        "mean_ms": 463
+      },
+      "latency": {
+        "n": 10,
+        "p50_ms": 0.42856999999999346,
+        "p95_ms": 0.5856169999999992,
+        "p99_ms": 0.5856169999999992,
+        "max_ms": 0.5856169999999992,
+        "mean_ms": 0.4482221999999993
+      }
+    },
+    {
+      "size": 25,
+      "boards_per_request": 625,
+      "requests": 10,
+      "boards": 6250,
+      "duration_ms": 12.555111999999994,
+      "boards_per_second": 497805.196799519,
+      "requests_per_second": 796.4883148792304,
+      "payload_bytes": {
+        "n": 10,
+        "p50_ms": 1263,
+        "p95_ms": 1263,
+        "p99_ms": 1263,
+        "max_ms": 1263,
+        "mean_ms": 1263
+      },
+      "latency": {
+        "n": 10,
+        "p50_ms": 1.2494119999999924,
+        "p95_ms": 1.4004369999999966,
+        "p99_ms": 1.4004369999999966,
+        "max_ms": 1.4004369999999966,
+        "mean_ms": 1.2536636999999984
+      }
+    },
+    {
+      "size": 50,
+      "boards_per_request": 2500,
+      "requests": 10,
+      "boards": 25000,
+      "duration_ms": 43.451173,
+      "boards_per_second": 575358.460403359,
+      "requests_per_second": 230.1433841613436,
+      "payload_bytes": {
+        "n": 10,
+        "p50_ms": 5013,
+        "p95_ms": 5013,
+        "p99_ms": 5013,
+        "max_ms": 5013,
+        "mean_ms": 5013
+      },
+      "latency": {
+        "n": 10,
+        "p50_ms": 4.368718000000001,
+        "p95_ms": 5.424945000000008,
+        "p99_ms": 5.424945000000008,
+        "max_ms": 5.424945000000008,
+        "mean_ms": 4.342587599999999
+      }
+    },
+    {
+      "size": 64,
+      "boards_per_request": 4096,
+      "requests": 10,
+      "boards": 40960,
+      "duration_ms": 67.60614100000001,
+      "boards_per_second": 605862.1213123227,
+      "requests_per_second": 147.91555696101628,
+      "payload_bytes": {
+        "n": 10,
+        "p50_ms": 8205,
+        "p95_ms": 8205,
+        "p99_ms": 8205,
+        "max_ms": 8205,
+        "mean_ms": 8205
+      },
+      "latency": {
+        "n": 10,
+        "p50_ms": 6.644238999999999,
+        "p95_ms": 7.783412999999996,
+        "p99_ms": 7.783412999999996,
+        "max_ms": 7.783412999999996,
+        "mean_ms": 6.757773700000004
+      }
+    }
+  ]
+}

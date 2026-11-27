@@ -1,0 +1,59 @@
+window.WRITE_BURST_RESULTS = window.WRITE_BURST_RESULTS || {};
+window.WRITE_BURST_RESULTS["disk-g64"] = {
+  "generated": "2026-11-26T23:59:37.055Z",
+  "label": "disk-g64",
+  "clients": 256,
+  "rounds": 20,
+  "board_base": {
+    "x": 100,
+    "y": 100
+  },
+  "moves": 5120,
+  "duration_ms": 589.7294909999999,
+  "moves_per_second": 8681.946685959445,
+  "move_rtt": {
+    "n": 5120,
+    "p50_ms": 13.480493000000024,
+    "p95_ms": 96.44463400000001,
+    "p99_ms": 117.61192700000001,
+    "max_ms": 119.90240600000001
+  },
+  "accepted": 5120,
+  "rejected": 0,
+  "duplicate_sequences": 0,
+  "snapshot_errors": 0,
+  "server": {
+    "cpu_seconds": 0.26,
+    "fds_before": 263,
+    "fds_after": 263,
+    "rss_kb": 144225
+  },
+  "persistence": {
+    "data_dir": "/home/james/Work/ocaml-omcb/bench/evening/wbdata-ZdgKXV",
+    "sequence": "5120",
+    "wal_segments": 1,
+    "wal_bytes": "430096",
+    "snapshots": 0,
+    "last_snapshot_sequence": null,
+    "snapshot_pending": false,
+    "snapshot_write_ms": 0,
+    "commits_since_snapshot": 5120,
+    "sync": true,
+    "group_size": 64,
+    "sync_count": 100,
+    "group_count": 100,
+    "batched_moves": 5120,
+    "last_group_size": 63,
+    "average_group_size": 51.2,
+    "last_sync_ms": 1.65087890625,
+    "fsync_p50_us": 1595.947265625,
+    "fsync_p95_us": 3118.1640625,
+    "snapshot_active": false,
+    "snapshot_writing": false,
+    "snapshot_buffer": false,
+    "snapshot_copy_live": 0,
+    "snapshot_copy_live_bytes": 0,
+    "dirty": false,
+    "truncated_wal": false
+  }
+};

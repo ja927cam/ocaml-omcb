@@ -56,6 +56,19 @@
   request tracker, plus a headless-browser panning stress test with recorded
   before/after request and cache measurements.
 
+### Measurement and systems handbook
+
+- Added an overnight performance/stress report at `bench/evening/REPORT.md`,
+  with reproducible harnesses for fsync cost, write bursts, long soaks,
+  snapshot throughput, conflicts, crash recovery and browser performance.
+- Added Part II to `docs/ALGORITHMS.md`: Chapters 2–9 cover project
+  organisation, on-device/on-server code, protocols, packed storage,
+  serialisation, the move transaction, conflicting moves and dependency
+  trees, testing at scale, improvements and deployment.
+- Recorded the measured production envelope: about 12k durable moves/s on the
+  benchmark disk with adaptive group commit, 35k moves/s with the WAL on
+  tmpfs, ~600k snapshot boards/s, and a 60 fps client.
+
 ### Client experience
 
 - Moved the coordinate readout above the minimap. Click it to enter separate

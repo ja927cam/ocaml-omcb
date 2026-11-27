@@ -1,0 +1,59 @@
+window.WRITE_BURST_RESULTS = window.WRITE_BURST_RESULTS || {};
+window.WRITE_BURST_RESULTS["tmpfs-g64"] = {
+  "generated": "2026-11-26T23:59:31.914Z",
+  "label": "tmpfs-g64",
+  "clients": 256,
+  "rounds": 20,
+  "board_base": {
+    "x": 100,
+    "y": 100
+  },
+  "moves": 5120,
+  "duration_ms": 230.57581000000002,
+  "moves_per_second": 22205.278168598863,
+  "move_rtt": {
+    "n": 5120,
+    "p50_ms": 5.697609999999997,
+    "p95_ms": 10.677714999999978,
+    "p99_ms": 14.331301999999994,
+    "max_ms": 16.358053000000012
+  },
+  "accepted": 5120,
+  "rejected": 0,
+  "duplicate_sequences": 0,
+  "snapshot_errors": 0,
+  "server": {
+    "cpu_seconds": 0.2,
+    "fds_before": 263,
+    "fds_after": 263,
+    "rss_kb": 144179
+  },
+  "persistence": {
+    "data_dir": "/dev/shm/wb-UTwHMk",
+    "sequence": "5120",
+    "wal_segments": 1,
+    "wal_bytes": "430096",
+    "snapshots": 0,
+    "last_snapshot_sequence": null,
+    "snapshot_pending": false,
+    "snapshot_write_ms": 0,
+    "commits_since_snapshot": 5120,
+    "sync": true,
+    "group_size": 64,
+    "sync_count": 156,
+    "group_count": 156,
+    "batched_moves": 5120,
+    "last_group_size": 6,
+    "average_group_size": 32.82051282051282,
+    "last_sync_ms": 0.0009765625,
+    "fsync_p50_us": 0.9765625,
+    "fsync_p95_us": 2.197265625,
+    "snapshot_active": false,
+    "snapshot_writing": false,
+    "snapshot_buffer": false,
+    "snapshot_copy_live": 0,
+    "snapshot_copy_live_bytes": 0,
+    "dirty": false,
+    "truncated_wal": false
+  }
+};

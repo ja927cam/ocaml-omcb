@@ -1,0 +1,88 @@
+{
+  "label": "crash",
+  "generated": "2026-11-27T00:04:25.913Z",
+  "trials": [
+    {
+      "trial": 0,
+      "kill_ms": 813,
+      "sent": 470,
+      "last_ack": 470,
+      "ready": true,
+      "restart_ready_ms": 473,
+      "recovered_sequence": 471,
+      "acked_moves_survived": true,
+      "unacked_but_durable": 1,
+      "acked_but_lost": 0,
+      "wal_files": [
+        {
+          "name": "wal-00000000000000000001.log",
+          "bytes": 39580
+        },
+        {
+          "name": "wal-00000000000000000472.log",
+          "bytes": 16
+        }
+      ],
+      "log": {
+        "recovery": "recovery: sequence=471 snapshot=none replayed=471 torn_tail=false initialised=true occupied=32000000 data_dir=/home/james/Work/ocaml-omcb/bench/evening/crash-data/trial-0",
+        "total": "total startup: 430864640 ns (0.431 s)",
+        "phase": "persistence recovery: 325701888 ns (0.326 s)"
+      }
+    },
+    {
+      "trial": 1,
+      "kill_ms": 804,
+      "sent": 446,
+      "last_ack": 446,
+      "ready": true,
+      "restart_ready_ms": 467,
+      "recovered_sequence": 447,
+      "acked_moves_survived": true,
+      "unacked_but_durable": 1,
+      "acked_but_lost": 0,
+      "wal_files": [
+        {
+          "name": "wal-00000000000000000001.log",
+          "bytes": 37564
+        },
+        {
+          "name": "wal-00000000000000000448.log",
+          "bytes": 16
+        }
+      ],
+      "log": {
+        "recovery": "recovery: sequence=447 snapshot=none replayed=447 torn_tail=false initialised=true occupied=32000000 data_dir=/home/james/Work/ocaml-omcb/bench/evening/crash-data/trial-1",
+        "total": "total startup: 445876992 ns (0.446 s)",
+        "phase": "persistence recovery: 342853120 ns (0.343 s)"
+      }
+    },
+    {
+      "trial": 2,
+      "kill_ms": 804,
+      "sent": 424,
+      "last_ack": 424,
+      "ready": true,
+      "restart_ready_ms": 469,
+      "recovered_sequence": 425,
+      "acked_moves_survived": true,
+      "unacked_but_durable": 1,
+      "acked_but_lost": 0,
+      "wal_files": [
+        {
+          "name": "wal-00000000000000000001.log",
+          "bytes": 35716
+        },
+        {
+          "name": "wal-00000000000000000426.log",
+          "bytes": 16
+        }
+      ],
+      "log": {
+        "recovery": "recovery: sequence=425 snapshot=none replayed=425 torn_tail=false initialised=true occupied=32000000 data_dir=/home/james/Work/ocaml-omcb/bench/evening/crash-data/trial-2",
+        "total": "total startup: 431430912 ns (0.431 s)",
+        "phase": "persistence recovery: 334423040 ns (0.334 s)"
+      }
+    }
+  ],
+  "all_acked_survived": true
+}

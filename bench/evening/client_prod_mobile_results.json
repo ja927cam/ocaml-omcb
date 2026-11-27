@@ -1,0 +1,102 @@
+{
+  "label": "prod-mobile",
+  "generated": "2026-11-27T00:07:01.110Z",
+  "url": "https://chess.jamesashwood.com/?x=500&y=500",
+  "mobile": true,
+  "loaded": true,
+  "boards": 841,
+  "boards_loaded_ms": 412.49416199999996,
+  "ready_state": "complete",
+  "timing": {
+    "navigation": {
+      "duration": 158.36500000022352,
+      "domContentLoaded": 103.17500000074506,
+      "load": 158.36500000022352,
+      "responseEnd": 94.6699999999255,
+      "transferSize": 11746
+    },
+    "resources": [
+      {
+        "name": "https://chess.jamesashwood.com/static/main.bc.wasm.js?v=20261126n",
+        "transferSize": 8335,
+        "encodedBodySize": 8035,
+        "decodedBodySize": 20516,
+        "duration": 55.97000000067055,
+        "initiatorType": "link"
+      },
+      {
+        "name": "https://chess.jamesashwood.com/tally.json",
+        "transferSize": 323,
+        "encodedBodySize": 23,
+        "decodedBodySize": 23,
+        "duration": 31.155000001192093,
+        "initiatorType": "fetch"
+      },
+      {
+        "name": "https://chess.jamesashwood.com/active.json",
+        "transferSize": 485,
+        "encodedBodySize": 185,
+        "decodedBodySize": 765,
+        "duration": 31.424999998882413,
+        "initiatorType": "fetch"
+      },
+      {
+        "name": "https://chess.jamesashwood.com/static/main.bc.wasm.assets/code-d6cfdca5c822048fe1f4.wasm",
+        "transferSize": 65277,
+        "encodedBodySize": 64977,
+        "decodedBodySize": 184694,
+        "duration": 95.00500000081956,
+        "initiatorType": "fetch"
+      },
+      {
+        "name": "https://chess.jamesashwood.com/static/pieces.png",
+        "transferSize": 421920,
+        "encodedBodySize": 421620,
+        "decodedBodySize": 421620,
+        "duration": 112.125,
+        "initiatorType": "img"
+      }
+    ],
+    "memory": {
+      "usedJSHeapSize": 2114722,
+      "totalJSHeapSize": 4562306,
+      "jsHeapSizeLimit": 4395630592
+    },
+    "canvas": {
+      "width": 1170,
+      "height": 2532
+    }
+  },
+  "perf_metrics": {
+    "JSHeapUsedSize": 2012144,
+    "JSHeapTotalSize": 4456448,
+    "Nodes": 317,
+    "LayoutCount": 7,
+    "RecalcStyleCount": 7,
+    "TaskDuration": 0.147751,
+    "ScriptDuration": 0.019955
+  },
+  "heap": {
+    "usedSize": 5014168,
+    "totalSize": 8388608,
+    "embedderHeapUsedSize": 2636656,
+    "backingStorageSize": 106829
+  },
+  "frame_rate": {
+    "idle": {
+      "frames": 89,
+      "seconds": 1.5088176089999996,
+      "fps": 58.98615025141346
+    },
+    "pan": {
+      "frames": 90,
+      "seconds": 1.509852222,
+      "fps": 59.608364777717156
+    },
+    "zoom": {
+      "frames": 92,
+      "seconds": 1.5221114160000002,
+      "fps": 60.442304247273235
+    }
+  }
+}

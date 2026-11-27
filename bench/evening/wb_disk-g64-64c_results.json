@@ -1,0 +1,58 @@
+{
+  "generated": "2026-11-26T23:59:57.436Z",
+  "label": "disk-g64-64c",
+  "clients": 64,
+  "rounds": 80,
+  "board_base": {
+    "x": 100,
+    "y": 100
+  },
+  "moves": 5120,
+  "duration_ms": 548.302575,
+  "moves_per_second": 9337.909821050904,
+  "move_rtt": {
+    "n": 5120,
+    "p50_ms": 4.590096999999986,
+    "p95_ms": 6.280922000000032,
+    "p99_ms": 86.979418,
+    "max_ms": 91.347524
+  },
+  "accepted": 5120,
+  "rejected": 0,
+  "duplicate_sequences": 0,
+  "snapshot_errors": 0,
+  "server": {
+    "cpu_seconds": 0.2,
+    "fds_before": 71,
+    "fds_after": 71,
+    "rss_kb": 139942
+  },
+  "persistence": {
+    "data_dir": "/home/james/Work/ocaml-omcb/bench/evening/wbdata-k9q0hT",
+    "sequence": "5120",
+    "wal_segments": 1,
+    "wal_bytes": "430096",
+    "snapshots": 0,
+    "last_snapshot_sequence": null,
+    "snapshot_pending": false,
+    "snapshot_write_ms": 0,
+    "commits_since_snapshot": 5120,
+    "sync": true,
+    "group_size": 64,
+    "sync_count": 161,
+    "group_count": 161,
+    "batched_moves": 5120,
+    "last_group_size": 63,
+    "average_group_size": 31.801242236024844,
+    "last_sync_ms": 1.4521484375,
+    "fsync_p50_us": 1469.970703125,
+    "fsync_p95_us": 1770.01953125,
+    "snapshot_active": false,
+    "snapshot_writing": false,
+    "snapshot_buffer": false,
+    "snapshot_copy_live": 0,
+    "snapshot_copy_live_bytes": 0,
+    "dirty": false,
+    "truncated_wal": false
+  }
+}

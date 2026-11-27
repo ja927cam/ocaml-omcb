@@ -1,0 +1,326 @@
+{
+  "generated": "2026-11-26T23:54:11.021Z",
+  "label": "default",
+  "profile": {
+    "clients": 40,
+    "silent_clients": 4,
+    "snapshots_per_client": 10,
+    "moves": 100,
+    "drivers": 20,
+    "block": 10,
+    "window_radius": 12,
+    "distribution": "high"
+  },
+  "totals": {
+    "connections": 44,
+    "subscriptions": 44,
+    "snapshots": 408,
+    "moves": 100,
+    "requests": 596
+  },
+  "duration_ms": 317.62370500000003,
+  "throughput_requests_per_second": 1876.4342541750777,
+  "snapshot_rtt": {
+    "n": 400,
+    "mean_ms": 2.40816047,
+    "p50_ms": 1.9501280000000065,
+    "p95_ms": 6.207060000000013,
+    "p99_ms": 6.876947000000001,
+    "max_ms": 7.007924000000003
+  },
+  "silent_snapshot_rtt": {
+    "n": 8,
+    "mean_ms": 0.16282050000000936,
+    "p50_ms": 0.1744899999999916,
+    "p95_ms": 0.22721999999998843,
+    "p99_ms": 0.22721999999998843,
+    "max_ms": 0.22721999999998843
+  },
+  "move_rtt": {
+    "n": 100,
+    "mean_ms": 2.7941956000000014,
+    "p50_ms": 2.633991999999978,
+    "p95_ms": 5.166582000000005,
+    "p99_ms": 6.733564999999999,
+    "max_ms": 6.733564999999999
+  },
+  "event_delivery_lag": {
+    "n": 4000,
+    "mean_ms": 4.259204321500004,
+    "p50_ms": 4.24938800000001,
+    "p95_ms": 7.411057000000028,
+    "p99_ms": 8.143191999999999,
+    "max_ms": 8.665780999999981
+  },
+  "accuracy": {
+    "snapshots_ok": 400,
+    "snapshot_errors": 0,
+    "silent_snapshots_ok": 8,
+    "silent_snapshot_errors": 0,
+    "moves_accepted": 100,
+    "moves_rejected": 0,
+    "move_request_id_mismatches": 0,
+    "duplicate_move_sequences": 0,
+    "events": {
+      "expected_total": 4000,
+      "min_expected": 100,
+      "max_expected": 100,
+      "min_events": 100,
+      "max_events": 100,
+      "clients_with_events": 40,
+      "missing_clients": 0,
+      "duplicate_clients": 0,
+      "extra_clients": 0,
+      "missing_events": 0,
+      "extra_events": 0,
+      "duplicate_events": 0,
+      "wrong_board_events": 0,
+      "wrong_revision_events": 0,
+      "wrong_change_events": 0,
+      "wrong_request_id_events": 0,
+      "wrong_board_count_events": 0,
+      "silent_events": 0,
+      "unexpected_closes": 0
+    }
+  },
+  "resources": {
+    "rss_baseline_kb": 546136,
+    "rss_before_kb": 547284,
+    "rss_peak_kb": 555108,
+    "fds_baseline": 8,
+    "fds_before": 52,
+    "fds_peak": 52,
+    "cpu_average_percent": 12.593518484396496,
+    "cpu_peak_percent": 19.824684368722078,
+    "cpu_peak_window_ms": 100,
+    "fds_after_close_requests": 53,
+    "rss_after_close_requests_kb": 555156,
+    "cpu_idle_ticks_per_second": 0,
+    "rss_after_exit_kb": 555172,
+    "fds_after_exit": 7,
+    "cpu_idle_after_exit_ticks_per_second": 0
+  },
+  "server_metrics": {
+    "started_ns": 9286442566409,
+    "uptime_ms": 1080.64984,
+    "stages": {
+      "receive_to_submit": {
+        "n": 100,
+        "mean_ms": 0.000325,
+        "p50_ms": 0.00017,
+        "p95_ms": 0.001273,
+        "p99_ms": 0.002385,
+        "max_ms": 0.002385,
+        "total_ms": 0.032559
+      },
+      "worker_queue_wait": {
+        "n": 100,
+        "mean_ms": 0.04683,
+        "p50_ms": 0.04259,
+        "p95_ms": 0.129094,
+        "p99_ms": 0.154132,
+        "max_ms": 0.154132,
+        "total_ms": 4.683068
+      },
+      "move_processing": {
+        "n": 100,
+        "mean_ms": 0.003995,
+        "p50_ms": 0.002385,
+        "p95_ms": 0.01067,
+        "p99_ms": 0.020379,
+        "max_ms": 0.020379,
+        "total_ms": 0.399518
+      },
+      "commit_to_broadcast": {
+        "n": 100,
+        "mean_ms": 0.013813,
+        "p50_ms": 0.011662,
+        "p95_ms": 0.034525,
+        "p99_ms": 0.04262,
+        "max_ms": 0.04262,
+        "total_ms": 1.381367
+      },
+      "broadcast_wait": {
+        "n": 100,
+        "mean_ms": 0.135887,
+        "p50_ms": 0.086173,
+        "p95_ms": 0.455611,
+        "p99_ms": 0.986115,
+        "max_ms": 0.986115,
+        "total_ms": 13.588728
+      },
+      "broadcast_dispatch": {
+        "n": 100,
+        "mean_ms": 0.003777,
+        "p50_ms": 0.003317,
+        "p95_ms": 0.006953,
+        "p99_ms": 0.012284,
+        "max_ms": 0.012284,
+        "total_ms": 0.377762
+      },
+      "encoding": {
+        "n": 100,
+        "mean_ms": 0.000417,
+        "p50_ms": 0.00032,
+        "p95_ms": 0.000952,
+        "p99_ms": 0.002044,
+        "max_ms": 0.002044,
+        "total_ms": 0.041722
+      },
+      "outbox_enqueue": {
+        "n": 100,
+        "mean_ms": 0.011299,
+        "p50_ms": 0.002314,
+        "p95_ms": 0.009067,
+        "p99_ms": 0.435383,
+        "max_ms": 0.435383,
+        "total_ms": 1.129908
+      },
+      "websocket_write": {
+        "n": 334,
+        "mean_ms": 0.011329,
+        "p50_ms": 0.010089,
+        "p95_ms": 0.019066,
+        "p99_ms": 0.038192,
+        "max_ms": 0.096513,
+        "total_ms": 3.784129
+      },
+      "end_to_end_broadcast": {
+        "n": 100,
+        "mean_ms": 1.914623,
+        "p50_ms": 1.948545,
+        "p95_ms": 3.182389,
+        "p99_ms": 3.224539,
+        "max_ms": 3.224539,
+        "total_ms": 191.462348
+      }
+    },
+    "counters": {
+      "events_broadcast": 100,
+      "recipients": 4000,
+      "outbox_enqueues": 942,
+      "outbox_dropped": 0,
+      "send_failures": 0,
+      "outbox_full_unregisters": 0,
+      "events_without_recipients": 0,
+      "max_outbox_depth": 1,
+      "max_recipients": 40
+    },
+    "end_to_end_p95_ms": 3.182389,
+    "worker": {
+      "queue_depth": 0,
+      "queue_capacity": 4096,
+      "move_queue_depth": 0,
+      "requests_processed": 608,
+      "moves_processed": 100,
+      "moves_submitted": 100,
+      "requests_rejected": 0,
+      "avg_queue_wait_ms": 0.132434,
+      "max_queue_wait_ms": 2.583857,
+      "avg_processing_ms": 0.000998,
+      "max_processing_ms": 0.020379
+    },
+    "connections": {
+      "clients": 44,
+      "subscriptions": 27500,
+      "max_outbox_depth": 0,
+      "total_outbox_depth": 0,
+      "pending_event_count": 0,
+      "outbox_capacity": 256,
+      "event_batching": true
+    },
+    "persistence": {
+      "data_dir": "/tmp/omcb-load-default-lrsFvC",
+      "sequence": "100",
+      "wal_segments": 1,
+      "wal_bytes": "8416",
+      "snapshots": 0,
+      "last_snapshot_sequence": null,
+      "snapshot_pending": false,
+      "snapshot_write_ms": 0,
+      "commits_since_snapshot": 100,
+      "sync": true,
+      "group_size": 64,
+      "sync_count": 30,
+      "group_count": 30,
+      "batched_moves": 100,
+      "last_group_size": 1,
+      "average_group_size": 3.3333333333333335,
+      "last_sync_ms": 0.002197265625,
+      "fsync_p50_us": 0.9765625,
+      "fsync_p95_us": 2.197265625,
+      "snapshot_active": false,
+      "snapshot_writing": false,
+      "snapshot_buffer": false,
+      "snapshot_copy_live": 0,
+      "snapshot_copy_live_bytes": 0,
+      "dirty": false,
+      "truncated_wal": false
+    },
+    "memory": {
+      "rss_kb": 555120,
+      "smaps_rollup_kb": {
+        "Rss": 555116,
+        "Pss": 546726,
+        "Shared_Clean": 10800,
+        "Shared_Dirty": 0,
+        "Private_Clean": 8,
+        "Private_Dirty": 544308,
+        "Anonymous": 544308,
+        "Swap": 0,
+        "Locked": 0
+      },
+      "gc": {
+        "heap_words": 1505791,
+        "live_words": 1405399,
+        "free_words": 95406,
+        "top_heap_words": 1505791,
+        "major_words": 1500822,
+        "minor_words": 216771727,
+        "promoted_words": 650514,
+        "compactions": 0,
+        "major_collections": 11,
+        "minor_collections": 837
+      },
+      "snapshot_copy_live": 0,
+      "snapshot_copy_live_bytes": 0
+    },
+    "adaptive": {
+      "enabled": true,
+      "max_batch_size": 16,
+      "max_batch_delay_us": 0,
+      "classification": "moderate",
+      "samples": 7,
+      "changes": 2,
+      "move_rate": 146.58068224250474,
+      "pending_moves": 0,
+      "fsync_p50_us": 0.7083740234375,
+      "fsync_p95_us": 1.593841552734375,
+      "broadcast_backlog": 0,
+      "event_lag_p95_ms": 2.308425420875,
+      "recipients_per_event": 5.915000000000001,
+      "snapshot_active": false
+    },
+    "board_load": {
+      "overall": {
+        "samples": 0,
+        "requests": 0,
+        "boards": 0,
+        "failures": 0,
+        "p50_ms": 0,
+        "p95_ms": 0,
+        "max_ms": 0,
+        "mean_ms": 0,
+        "last_ms": 0,
+        "last_boards": 0
+      },
+      "regions": []
+    },
+    "kings_captured": {
+      "white": 0,
+      "black": 0
+    }
+  },
+  "metrics_error": null,
+  "post_exit_measured_at": "2026-11-26T23:54:16.575Z"
+}

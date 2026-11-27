@@ -1,0 +1,83 @@
+{
+  "label": "forty",
+  "generated": "2026-11-27T00:00:35.179Z",
+  "clients": 40,
+  "repeats": 10,
+  "cases": [
+    {
+      "size": 5,
+      "boards_per_request": 25,
+      "requests": 400,
+      "boards": 10000,
+      "duration_ms": 32.443766,
+      "boards_per_second": 308225.6233755354,
+      "requests_per_second": 12329.024935021416,
+      "payload_bytes": {
+        "n": 400,
+        "p50_ms": 63,
+        "p95_ms": 63,
+        "p99_ms": 63,
+        "max_ms": 63,
+        "mean_ms": 63
+      },
+      "latency": {
+        "n": 400,
+        "p50_ms": 3.081856000000002,
+        "p95_ms": 4.168930000000003,
+        "p99_ms": 4.516457000000003,
+        "max_ms": 4.957540999999992,
+        "mean_ms": 2.93357389
+      }
+    },
+    {
+      "size": 25,
+      "boards_per_request": 625,
+      "requests": 400,
+      "boards": 250000,
+      "duration_ms": 493.966768,
+      "boards_per_second": 506106.92094169377,
+      "requests_per_second": 809.7710735067101,
+      "payload_bytes": {
+        "n": 400,
+        "p50_ms": 1263,
+        "p95_ms": 1263,
+        "p99_ms": 1263,
+        "max_ms": 1263,
+        "mean_ms": 1263
+      },
+      "latency": {
+        "n": 400,
+        "p50_ms": 47.235806000000025,
+        "p95_ms": 60.096596000000005,
+        "p99_ms": 89.44654400000002,
+        "max_ms": 104.397244,
+        "mean_ms": 48.43078656249997
+      }
+    },
+    {
+      "size": 64,
+      "boards_per_request": 4096,
+      "requests": 400,
+      "boards": 1638400,
+      "duration_ms": 3202.127912,
+      "boards_per_second": 511659.76033002394,
+      "requests_per_second": 124.91693367432225,
+      "payload_bytes": {
+        "n": 400,
+        "p50_ms": 8205,
+        "p95_ms": 8205,
+        "p99_ms": 8205,
+        "max_ms": 8205,
+        "mean_ms": 8205
+      },
+      "latency": {
+        "n": 400,
+        "p50_ms": 307.2985120000001,
+        "p95_ms": 425.9586669999999,
+        "p99_ms": 571.727922,
+        "max_ms": 708.5267440000001,
+        "mean_ms": 314.61458369750017
+      }
+    }
+  ]
+}

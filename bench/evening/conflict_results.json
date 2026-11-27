@@ -1,0 +1,322 @@
+{
+  "label": "conflict",
+  "generated": "2026-11-27T00:01:02.018Z",
+  "results": [
+    {
+      "scenario": "same-piece-race",
+      "trials": 40,
+      "concurrent_requests": 32,
+      "moves": 1280,
+      "accepted": 40,
+      "rejected": 1240,
+      "accepted_per_trial": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "rejection_codes": {
+        "2": 1240
+      }
+    },
+    {
+      "scenario": "stale-after-success",
+      "first_accepted": true,
+      "second_accepted": false,
+      "second_rejection": 2
+    },
+    {
+      "scenario": "independent-boards",
+      "requests": 32,
+      "accepted": 32,
+      "rejected": 0,
+      "duration_ms": 1.6721699999999942,
+      "unique_sequences": 32
+    },
+    {
+      "scenario": "dependent-capture",
+      "trials": 40,
+      "both_accepted": 20,
+      "black_only": 20,
+      "white_only": 0,
+      "details": [
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        },
+        {
+          "order": "black-first",
+          "black_accepted": true,
+          "white_accepted": true,
+          "white_rejection": 0
+        },
+        {
+          "order": "white-first",
+          "black_accepted": true,
+          "white_accepted": false,
+          "white_rejection": 7
+        }
+      ]
+    }
+  ]
+}
